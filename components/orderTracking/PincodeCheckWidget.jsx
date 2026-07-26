@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { Truck, Loader2, CheckCircle, XCircle, IndianRupee, RefreshCw } from "lucide-react";
+import { Truck, Loader2, CheckCircle, XCircle, RefreshCw } from "lucide-react";
 import { printerService } from "@/lib/services/api";
 
 // Auto-extracts the 6-digit pincode from the order's shipping/buyer address
@@ -38,9 +38,6 @@ export default function PincodeCheckWidget({ address }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pincode]);
 
-  const chargeEntry = Array.isArray(result?.charges) ? result.charges[0] : result?.charges;
-  const totalCharge = chargeEntry?.total_amount ?? chargeEntry?.gross_amount ?? null;
-
   if (!pincode) {
     return (
       <div className="bg-slate-50 rounded p-2 col-span-full">
@@ -71,11 +68,6 @@ export default function PincodeCheckWidget({ address }) {
           ) : (
             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
               <XCircle size={9} /> Not Serviceable
-            </span>
-          )}
-          {result.serviceable && totalCharge != null && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded">
-              <IndianRupee size={9} /> ₹{Number(totalCharge).toLocaleString("en-IN")} est.
             </span>
           )}
           {result.serviceable && result.chargesError && (

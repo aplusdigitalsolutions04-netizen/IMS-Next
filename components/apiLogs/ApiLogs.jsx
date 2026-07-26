@@ -5,7 +5,7 @@ import Swal from "sweetalert2";
 import { printerService } from "@/lib/services/api";
 
 const METHODS = ["GET", "POST", "PUT", "DELETE"];
-const LIMIT = 50;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
 
 export default function ApiLogs({ currentUser }) {
   const [logs, setLogs] = useState([]);
@@ -14,6 +14,7 @@ export default function ApiLogs({ currentUser }) {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
 
   const [onlyErrors, setOnlyErrors] = useState(false);
   const [method, setMethod] = useState("");
@@ -44,11 +45,11 @@ export default function ApiLogs({ currentUser }) {
     }
   };
 
-  const fetchLogs = async (targetPage = page) => {
+  const fetchLogs = async (targetPage = page, targetLimit = limit) => {
     if (!isAdmin) return;
     try {
       setLoading(true);
-      const res = await printerService.getApiLogs({ page: targetPage, limit: LIMIT, ...activeFilters() });
+      const res = await printerService.getApiLogs({ page: targetPage, limit: targetLimit, ...activeFilters() });
       setLogs(res.data || []);
       setTotal(res.total || 0);
       setSummary(res.summary || { totalCalls: 0, totalErrors: 0 });
@@ -61,11 +62,11 @@ export default function ApiLogs({ currentUser }) {
   };
 
   useEffect(() => {
-    fetchLogs(1);
+    fetchLogs(1, limit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onlyErrors, method, search, startDate, endDate]);
+  }, [onlyErrors, method, search, startDate, endDate, limit]);
 
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / LIMIT)), [total]);
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / limit)), [total, limit]);
 
   if (!isAdmin) {
     return (
@@ -170,6 +171,7 @@ export default function ApiLogs({ currentUser }) {
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">S.No.</th>
                   <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">Time</th>
                   <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">User</th>
                   <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">Method</th>
@@ -180,8 +182,11 @@ export default function ApiLogs({ currentUser }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
-                {logs.map((log) => (
+                {logs.map((log, index) => (
                   <tr key={log.id} className={log.isError ? "bg-rose-50/50" : "hover:bg-slate-50"}>
+                    <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-slate-400">
+                      {(page - 1) * limit + index + 1}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3 text-xs font-medium text-slate-600">
                       {new Date(log.createdAt).toLocaleString()}
                     </td>
@@ -213,25 +218,38 @@ export default function ApiLogs({ currentUser }) {
           </div>
         )}
 
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-slate-200 p-4">
-            <span className="text-sm text-slate-600">Page {page} of {totalPages} ({total} total)</span>
-            <div className="flex gap-2">
-              <button
-                disabled={page === 1 || loading}
-                onClick={() => fetchLogs(page - 1)}
-                className="rounded border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+        {total > 0 && (
+          <div className="flex flex-col gap-3 border-t border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-600">Page {page} of {totalPages} ({total} total)</span>
+              <select
+                value={limit}
+                onChange={(e) => setLimit(Number(e.target.value))}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-600 outline-none focus:border-indigo-400"
               >
-                Previous
-              </button>
-              <button
-                disabled={page >= totalPages || loading}
-                onClick={() => fetchLogs(page + 1)}
-                className="rounded border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
-              >
-                Next
-              </button>
+                {PAGE_SIZE_OPTIONS.map((val) => (
+                  <option key={val} value={val}>{val} per page</option>
+                ))}
+              </select>
             </div>
+            {totalPages > 1 && (
+              <div className="flex gap-2">
+                <button
+                  disabled={page === 1 || loading}
+                  onClick={() => fetchLogs(page - 1)}
+                  className="rounded border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  disabled={page >= totalPages || loading}
+                  onClick={() => fetchLogs(page + 1)}
+                  className="rounded border border-slate-300 px-3 py-1 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

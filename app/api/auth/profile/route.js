@@ -22,7 +22,7 @@ export const PUT = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireAuth(user);
 
-  const { fullName, email, phone } = await parseJsonBody(request);
+  const { fullName, email, phone, notificationsEnabled } = await parseJsonBody(request);
   const [existing] = await mysqlPool.query("SELECT * FROM users WHERE userid=?", [user.id]);
   if (!existing.length) throw new ApiError(404, "User not found.");
   const cur = existing[0];
@@ -38,10 +38,16 @@ export const PUT = withErrorHandling(async (request) => {
   if (email !== undefined && nemail !== cur.email) { updates.email = nemail; changes.push({ field: "email", oldValue: cur.email, newValue: nemail }); }
   if (phone !== undefined && nphone !== cur.phone) { updates.phone = nphone; changes.push({ field: "phone", oldValue: cur.phone, newValue: nphone }); }
 
+  const nNotif = notificationsEnabled === undefined ? undefined : (notificationsEnabled ? 1 : 0);
+  if (nNotif !== undefined && nNotif !== cur.notificationsEnabled) {
+    updates.notificationsEnabled = nNotif;
+    changes.push({ field: "notificationsEnabled", oldValue: cur.notificationsEnabled, newValue: nNotif });
+  }
+
   if (changes.length > 0) {
     await mysqlPool.query(
-      "UPDATE users SET fullName=?, email=?, phone=? WHERE userid=?",
-      [updates.fullName ?? cur.fullName, updates.email ?? cur.email, updates.phone ?? cur.phone, user.id]
+      "UPDATE users SET fullName=?, email=?, phone=?, notificationsEnabled=? WHERE userid=?",
+      [updates.fullName ?? cur.fullName, updates.email ?? cur.email, updates.phone ?? cur.phone, updates.notificationsEnabled ?? cur.notificationsEnabled, user.id]
     );
     await logUserActivity(mysqlPool, user, "Profile Update", changes, request.headers.get("x-forwarded-for") || null);
   }

@@ -62,11 +62,10 @@ export default function OrderTracking({
     setAppearanceItem(item);
     setAppearanceModalOpen(true);
   };
+  // Confirming a draft happens via View → Update Status → "Order Confirmed"
+  // (handleUpdateStatus below sets confirmDraftBatch directly when it
+  // detects that transition), not a standalone row button.
   const [confirmDraftBatch, setConfirmDraftBatch] = useState(null);
-  const openConfirmDraftModal = (e, batch) => {
-    e.stopPropagation();
-    setConfirmDraftBatch(batch);
-  };
   const handleConfirmDraft = async (payload) => {
     const orderGuid = confirmDraftBatch.items[0]?._orderId || confirmDraftBatch.items[0]?.orderId || confirmDraftBatch.id;
     await ordersService.confirmDraftOrder(orderGuid, payload);
@@ -76,7 +75,7 @@ export default function OrderTracking({
     // stays stuck under the Draft tab (and missing from Active) until the
     // background refresh happens to complete.
     setLocalOrders((prev) =>
-      prev.map((o) => (String(o._orderId) === String(orderGuid) || String(o.id) === String(orderGuid)) ? { ...o, status: "Pending" } : o)
+      prev.map((o) => (String(o._orderId) === String(orderGuid) || String(o.id) === String(orderGuid)) ? { ...o, status: "Order Confirmed" } : o)
     );
     setConfirmDraftBatch(null);
     closeModal();
@@ -163,12 +162,20 @@ export default function OrderTracking({
     setSearchTerm("");
   }, [activeTab]);
 
+  // Guards against re-fetching forever: this effect calls setLocalModels/
+  // setLocalSerials, which used to also be in its own dependency array — an
+  // empty (but non-null) result from either fetch created a new array
+  // reference every time, re-triggering the effect, re-fetching, and
+  // looping indefinitely. A ref instead of the state itself ensures this
+  // only ever runs once per mount (or once per catalogLoaded flip).
+  const dispatchDataFetchAttempted = useRef(false);
   useEffect(() => {
     let mounted = true;
     const loadDispatchData = async () => {
       const hasLocalModels = Array.isArray(localModels) && localModels.length > 0;
       const hasLocalSerials = Array.isArray(localSerials) && localSerials.length > 0;
-      if (catalogLoaded || (hasLocalModels && hasLocalSerials)) return;
+      if (catalogLoaded || (hasLocalModels && hasLocalSerials) || dispatchDataFetchAttempted.current) return;
+      dispatchDataFetchAttempted.current = true;
       try {
         setLoadingDispatchData(true);
         const [modelsRes, serialsRes] = await Promise.all([printerService.getModels(), printerService.getSerials()]);
@@ -184,7 +191,8 @@ export default function OrderTracking({
     };
     loadDispatchData();
     return () => { mounted = false; };
-  }, [catalogLoaded, localModels, localSerials]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogLoaded]);
 
   useEffect(() => {
     let mounted = true;
@@ -493,6 +501,32 @@ export default function OrderTracking({
     }
   };
 
+  // Replaces one of the standard, single-slot documents (GeM Contract,
+  // Invoice, POD, E-Way Bill) directly from the Audit Documents card —
+  // unlike custom/"Additional" docs, these are tracked by a single filename
+  // column (orders.invoiceFilename etc., updated server-side in
+  // app/api/orders/[id]/upload/route.js), so the optimistic update here has
+  // to set that field on selectedBatch/localOrders, not just append to
+  // `documents`.
+  const STANDARD_DOC_FIELD = { gemContract: "contractFilename", invoice: "invoiceFilename", pod: "podFilename", ewayBill: "ewayBillFilename" };
+  const handleReplaceStandardDoc = async (docType, newFile) => {
+    if (!newFile || !selectedBatch) return;
+    const targetItemId = selectedBatch.items[0]?.id;
+    if (!targetItemId) { showToast("Order item not found", "error"); return; }
+    const field = STANDARD_DOC_FIELD[docType];
+
+    try {
+      const result = await printerService.uploadOrderDocument(targetItemId, newFile, docType);
+      const filename = result.filename || newFile.name;
+      setSelectedBatch((prev) => prev ? { ...prev, [field]: filename } : prev);
+      setLocalOrders((prev) => prev.map((o) => (selectedBatch.items.some((bi) => bi.id === o.id) ? { ...o, [field]: filename } : o)));
+      showToast(`${docType === "gemContract" ? "GeM Contract" : docType === "pod" ? "POD" : docType === "ewayBill" ? "E-Way Bill" : "Invoice"} replaced ✅`, "success");
+      onRefresh?.();
+    } catch (err) {
+      showToast(err.message || "Failed to replace document", "error");
+    }
+  };
+
   const handleReplaceExtraDoc = async (oldFilename, docType, newFile) => {
     if (!newFile || !selectedBatch) return;
     const targetItemId = selectedBatch.items[0]?.id;
@@ -597,6 +631,25 @@ export default function OrderTracking({
       showToast("Failed to send for billing", "error");
     } finally {
       setBillingLoadingId(null);
+    }
+  };
+
+  // Opt-in — a still-Draft order only shows up in Billing's Draft tab once
+  // someone explicitly sends it there (app/api/orders/draft/[orderId]/send-to-billing).
+  const [sendingDraftToBillingId, setSendingDraftToBillingId] = useState(null);
+  const handleSendDraftToBilling = async (batch) => {
+    const orderGuid = batch.items[0]?._orderId || batch.items[0]?.orderId || batch.id;
+    setSendingDraftToBillingId(batch.batchKey);
+    try {
+      await ordersService.sendDraftToBilling(orderGuid);
+      setLocalOrders((prev) => prev.map((o) => batch.items.some((bi) => bi.id === o.id) ? { ...o, draftSentToBilling: 1 } : o));
+      showToast("Draft order sent to Billing's Draft tab.", "success");
+      if (onRefresh) onRefresh();
+    } catch (error) {
+      console.error("Send draft to billing failed", error);
+      showToast(error.response?.data?.message || "Failed to send draft for billing", "error");
+    } finally {
+      setSendingDraftToBillingId(null);
     }
   };
 
@@ -1512,6 +1565,7 @@ export default function OrderTracking({
                   {activeTab === "cancelled" ? "Reason" : activeTab === "hold" ? "Hold Status" : "Live Status"}
                 </th>
                 {activeTab === "active" && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Billing / Dispatch</th>}
+                {activeTab === "draft" && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Billing</th>}
                 <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Action</th>
               </tr>
             </thead>
@@ -1783,6 +1837,27 @@ export default function OrderTracking({
                         </td>
                       )}
 
+                      {activeTab === "draft" && (
+                        <td className="p-4 text-center">
+                          <div className="flex flex-col items-center gap-1.5">
+                            {batch.draftSentToBilling ? (
+                              <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                                <CheckCircle size={11} className="text-slate-300" /> Sent to Billing
+                              </span>
+                            ) : (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleSendDraftToBilling(batch); }}
+                                disabled={sendingDraftToBillingId === batch.batchKey}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 font-bold text-xs transition-all disabled:opacity-70 disabled:cursor-not-allowed whitespace-nowrap"
+                              >
+                                {sendingDraftToBillingId === batch.batchKey ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                                {sendingDraftToBillingId === batch.batchKey ? "Sending..." : "Send for Billing"}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+
                       <td className="p-4 text-center">
                         <div className="flex items-center justify-center gap-2">
                           {isRestoreEligible && (
@@ -1853,7 +1928,7 @@ export default function OrderTracking({
                       {activeTab === "hold"
                         ? "Great! All orders are progressing normally"
                         : activeTab === "draft"
-                          ? "This tab is coming soon"
+                          ? "Create one from a Contract to get started"
                           : "Try different search criteria"}
                     </p>
                   </td>
@@ -1920,7 +1995,7 @@ export default function OrderTracking({
             activeTab, canEditOrder, canEditPayment, cancellationReason, closeModal,
             currentUser, editFormData, editItems, extraDocCustomLabel, extraDocFile,
             extraDocInputRef, extraDocType, handleDeleteExtraDoc, handleRemoveSerial,
-            handleReplaceExtraDoc, handleReplaceSerial,
+            handleReplaceExtraDoc, handleReplaceStandardDoc, handleReplaceSerial,
             handleRestoreBatch, handleSaveEdits, handleSavePaymentEdit, handleSaveItemWarrantyDate,
             handleToggleInstallation, handleToggleGemUpload, handleUpdateStatus, handleUploadExtraDoc,
             handleViewDocument, isAdmin, isEditMode, isEditingPayment, isSupervisor,

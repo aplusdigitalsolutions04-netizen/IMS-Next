@@ -1,12 +1,11 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { UserPlus, User, Lock, ArrowRight, Loader2, AlertCircle } from "lucide-react";
+import { User, Lock, ArrowRight, Loader2, AlertCircle, ShieldCheck, Truck, Cpu } from "lucide-react";
 
 import { authService } from "@/lib/services/authService";
-import { getStoredUser } from "@/lib/client/auth";
 
 export default function SignupPage() {
   const [formData, setFormData] = useState({ username: "", password: "" });
@@ -14,13 +13,6 @@ export default function SignupPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
   const router = useRouter();
-  
-  const currentUser = useMemo(() => {
-    if (typeof window !== "undefined") {
-      return getStoredUser();
-    }
-    return null;
-  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -63,118 +55,151 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex justify-center items-center p-4 relative overflow-hidden animate-soft-fade">
-      
-      {/* Decorative Background Blobs */}
-      <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-emerald-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float-soft"></div>
-      <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-teal-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float-soft stagger-3"></div>
+    <div className="min-h-screen bg-gradient-to-br from-[#f4f7f6] via-[#e2e8f0] to-[#cbd5e1] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans relative overflow-hidden">
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-emerald-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-teal-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse delay-700"></div>
 
-      <div className="bg-white/80 backdrop-blur-lg p-8 rounded-2xl shadow-xl w-full max-w-sm border border-white relative z-10 animate-page-enter">
-        
-        {/* Logo & Company Section */}
-        <div className="flex flex-col items-center mb-8">
-          
-          <div className="mb-[-16] transform transition-transform hover:scale-110 duration-300 animate-float-soft">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img 
-              src="/aplus.png" 
-              alt="Company Logo" 
-              className="w-50 h-50 object-contain drop-shadow-lg"
-              onError={(e) => {
-                e.target.style.display = 'none';
-                e.target.nextElementSibling.style.display = 'flex';
-              }}
-            />
-            <div className="hidden p-3 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl shadow-lg items-center justify-center">
-              <UserPlus className="text-white" size={32} />
-            </div>
+      <div className="max-w-6xl w-full flex flex-col lg:flex-row items-center gap-12 relative z-10">
+        <div className="lg:w-1/2 text-left space-y-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="h-[1px] w-8 bg-emerald-500"></span>
+            <h5 className="text-emerald-550 text-xs font-black tracking-[0.3em] uppercase">
+              Inventory Management Digital Portal
+            </h5>
           </div>
 
-          <p className="text-[11px] text-slate-400 font-medium mt-1 tracking-wide">
-            Inventory & Dispatch Management
-          </p>
+          <h1 className="text-4xl lg:text-6xl font-black text-slate-800 leading-tight tracking-tight">
+            One Platform for Inventory, Dispatch &amp; Analytics.
+          </h1>
 
-          <h2 className="text-2xl font-bold text-slate-800 mt-4">Create Account</h2>
-          <p className="text-slate-500 text-sm mt-1">Join us to start tracking inventory</p>
+          <div className="text-slate-600 text-base lg:text-lg max-w-md leading-relaxed font-medium space-y-2">
+            {[
+              "Streamlines inventory tracking",
+              "Simplifies order processing",
+              "Manages returns efficiently",
+              "Reduces operational delays",
+              "Improves stock visibility",
+              "Enhances overall workflow",
+            ].map((line) => (
+              <div key={line} className="flex items-center gap-2">
+                <span className="text-green-500">✔</span>
+                <span>{line}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-4 pt-4">
+            <div className="flex items-center gap-2 bg-white/50 backdrop-blur-sm px-4 py-2 rounded-full border border-white shadow-sm">
+              <Cpu size={14} className="text-emerald-500" />
+              <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Smart Inventory</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white/50 backdrop-blur-sm px-4 py-2 rounded-full border border-white shadow-sm">
+              <ShieldCheck size={14} className="text-emerald-500" />
+              <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">RBAC Enabled</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white/50 backdrop-blur-sm px-4 py-2 rounded-full border border-white shadow-sm">
+              <Truck size={14} className="text-emerald-500" />
+              <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Order Tracking</span>
+            </div>
+          </div>
         </div>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-lg flex items-center gap-2 animate-pulse">
-            <AlertCircle size={16} />
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide ml-1">Username</label>
-            <div className="relative group">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" size={18} />
-              <input
-                type="text"
-                className="w-full border border-slate-200 bg-slate-50/50 p-2.5 pl-10 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all duration-200 text-sm text-slate-700"
-                placeholder="Choose a username"
-                value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                required
+        <div className="lg:w-1/2 w-full max-w-md">
+          <div className="bg-white/90 backdrop-blur-md p-10 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-white/50">
+            <div className="flex justify-between items-center mb-8 w-full">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/aplus.png"
+                className="w-48 h-auto"
+                alt="Logo"
+                onError={(e) => { e.target.style.display = "none"; }}
               />
+              <h4 className="text-2xl font-black text-slate-800 tracking-tight">SIGN UP</h4>
             </div>
-          </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide ml-1">Password</label>
-            <div className="relative group">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" size={18} />
-              <input
-                type="password"
-                className="w-full border border-slate-200 bg-slate-50/50 p-2.5 pl-10 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all duration-200 text-sm text-slate-700"
-                placeholder="Create a password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                required
-              />
-            </div>
-          </div>
-
-          <p className="text-[11px] text-slate-400 ml-1">
-            {setupRequired
-              ? "The first account is created as Administrator."
-              : "This account starts with no role — assign one from the Users page after creation."}
-          </p>
-
-          <button
-            disabled={isLoading}
-            className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-3 rounded-xl font-medium shadow-lg shadow-emerald-200 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {isLoading ? (
-              <Loader2 className="animate-spin" size={20} />
-            ) : (
-              <>
-                Sign Up <ArrowRight size={18} />
-              </>
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-lg flex items-center gap-2">
+                <AlertCircle size={16} />
+                {error}
+              </div>
             )}
-          </button>
-        </form>
 
-        <div className="mt-6 text-center text-sm text-slate-500">
-          Already have an account?{" "}
-          <Link href="/login" className="text-emerald-600 font-bold hover:text-emerald-700 transition-colors">
-            Sign In
-          </Link>
-        </div>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-4">
+                <div className="relative">
+                  <label htmlFor="username" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1 block">
+                    Username
+                  </label>
+                  <div className="relative group">
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" size={16} />
+                    <input
+                      id="username"
+                      type="text"
+                      className="appearance-none block w-full pl-10 pr-4 py-3 border border-slate-200 placeholder-slate-400 text-slate-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm bg-slate-50/50"
+                      placeholder="Choose a username"
+                      value={formData.username}
+                      onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
 
-        <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-          <div className="flex items-center justify-center gap-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img 
-              src="/aplus.png" 
-              alt="" 
-              className="w-4 h-4 object-contain opacity-50"
-              onError={(e) => { e.target.style.display = 'none'; }}
-            />
-            <span className="text-[10px] text-slate-400 font-bold tracking-wide">
+                <div className="relative">
+                  <label htmlFor="password" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1 mb-1 block">
+                    Password
+                  </label>
+                  <div className="relative group">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" size={16} />
+                    <input
+                      id="password"
+                      type="password"
+                      className="appearance-none block w-full pl-10 pr-4 py-3 border border-slate-200 placeholder-slate-400 text-slate-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm bg-slate-50/50"
+                      placeholder="Create a password"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-400 ml-1">
+                {setupRequired
+                  ? "The first account is created as Administrator."
+                  : "This account starts with no role — assign one from the Users page after creation."}
+              </p>
+
+              <div className="flex flex-col space-y-4 pt-2">
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="group relative w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent text-sm font-bold rounded-xl text-white bg-emerald-500 hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all shadow-lg hover:shadow-emerald-500/25 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest"
+                >
+                  {isLoading ? (
+                    <Loader2 className="animate-spin" size={20} />
+                  ) : (
+                    <>
+                      Sign Up <ArrowRight size={18} />
+                    </>
+                  )}
+                </button>
+
+                <div className="flex flex-col items-center space-y-2 text-xs">
+                  <span className="text-slate-400">
+                    Already have an account?{" "}
+                    <Link href="/login" className="text-emerald-500 font-bold hover:underline">
+                      Sign In
+                    </Link>
+                  </span>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <div className="mt-8 text-center">
+            <p className="text-[10px] text-slate-400 font-bold tracking-[0.2em] uppercase">
               © {new Date().getFullYear()} A PLUS DIGITAL SOLUTIONS
-            </span>
+            </p>
           </div>
         </div>
       </div>

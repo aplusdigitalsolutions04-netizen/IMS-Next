@@ -137,8 +137,13 @@ export const POST = withErrorHandling(async (request, { params }) => {
       await conn.query("DELETE FROM order_items WHERE guid = ? AND companyGuid = ?", [draftItemGuid, user.companyId]);
     }
 
+    // 'Order Confirmed' — not 'Pending' — is the status every other order
+    // creation path uses (see NewDispatch.jsx's initial status) and the one
+    // OrderTracking's "Send for Billing" button checks for
+    // (components/orderTracking/OrderTracking.jsx). Using a different string
+    // here meant a confirmed draft order could never show that button.
     await conn.query(
-      "UPDATE orders SET status = 'Pending', dispatchedBy = ?, dispatchDate = NOW() WHERE guid = ? AND companyGuid = ?",
+      "UPDATE orders SET status = 'Order Confirmed', dispatchedBy = ?, dispatchDate = NOW() WHERE guid = ? AND companyGuid = ?",
       [user.username || "System", orderId, user.companyId]
     );
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, authorizeReadWrite, ApiError } from "@/lib/auth";
+import { authenticateRequest, authorizeReadWrite, requireCompany, ApiError } from "@/lib/auth";
 import { logUserActivity } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
@@ -19,16 +19,17 @@ const authorize = (user, method) =>
 // price edit) — full spec editing lives in the Item Variant Master screens.
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
+  requireCompany(user);
   authorize(user, "PUT");
   const { id } = await params;
 
   const { mrp } = await parseJsonBody(request);
 
-  const [existing] = await mysqlPool.query("SELECT itemVariantId FROM inventoryitemvariant WHERE itemVariantId=? AND isDeleted=0", [id]);
+  const [existing] = await mysqlPool.query("SELECT itemVariantId FROM inventoryitemvariant WHERE itemVariantId=? AND isDeleted=0 AND companyGuid=?", [id, user.companyId]);
   if (!existing.length) throw new ApiError(404, "Model not found");
 
   if (mrp !== undefined) {
-    await mysqlPool.query("UPDATE inventoryitemvariant SET sellingPrice=? WHERE itemVariantId=?", [mrp, id]);
+    await mysqlPool.query("UPDATE inventoryitemvariant SET sellingPrice=? WHERE itemVariantId=? AND companyGuid=?", [mrp, id, user.companyId]);
   }
 
   await logUserActivity(mysqlPool, user, "Update Model", [{ field: "sellingPrice", newValue: mrp }], request.headers.get("x-forwarded-for") || null);

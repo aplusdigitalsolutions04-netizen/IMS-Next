@@ -24,7 +24,8 @@ export const GET = withErrorHandling(async (request) => {
       g.godownName, g.godownAddress, g.godownName as warehouseName,
       g.godownAddress as warehouseAddress, s.godownGuid as warehouseGuid,
       iv.vendorFirmName as vendorName,
-      lr.reason as latestReturnReason, lr.returnDate as latestReturnDate, lr.condition as latestReturnCondition
+      lr.reason as latestReturnReason, lr.returnDate as latestReturnDate, lr.condition as latestReturnCondition,
+      COALESCE(NULLIF(s.landingPrice, 0), itv.purchasePrice, 0) as landingPrice
     FROM inventorystockinserial s
     LEFT JOIN inventoryitemvariant itv ON s.itemVariantId=itv.itemVariantId AND itv.isDeleted=0 ${c("itv")}
     LEFT JOIN inventoryitemmaster i ON itv.itemId=i.itemId AND i.isDeleted=0 ${c("i")}

@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack -p ${PORT:-3011}",
+    "dev": "node scripts/start-dev.js",
     "build": "next build --webpack",
-    "start": "next start -p ${PORT:-3011}",
+    "start": "node scripts/start-prod.js",
     "lint": "eslint"
   },
   "dependencies": {

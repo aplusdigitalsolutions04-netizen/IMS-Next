@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest } from "@/lib/auth";
+import { authenticateRequest, requireCompany } from "@/lib/auth";
 import { authorizeReports } from "@/lib/reportsAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
+  requireCompany(user);
   authorizeReports(user, "GET");
 
   const { searchParams } = new URL(request.url);
@@ -21,9 +22,9 @@ export const GET = withErrorHandling(async (request) => {
     LEFT JOIN order_installations ins ON o.guid=ins.orderGuid
     LEFT JOIN inventorystockinserial s ON oi.serialNumberGuid=s.guid
     LEFT JOIN inventoryitemvariant itv ON s.itemVariantId=itv.itemVariantId
-    WHERE (ins.installationRequired='Yes' OR ins.installationRequired='true' OR ins.installationRequired='1') AND o.isDeleted=0
+    WHERE (ins.installationRequired='Yes' OR ins.installationRequired='true' OR ins.installationRequired='1') AND o.isDeleted=0 AND o.companyGuid=?
   `;
-  const sqlParams = [];
+  const sqlParams = [user.companyId];
   if (startDate && endDate) { q += " AND o.dispatchDate>=? AND o.dispatchDate<=?"; sqlParams.push(`${startDate.split("T")[0]} 00:00:00`, `${endDate.split("T")[0]} 23:59:59`); }
   q += " ORDER BY o.dispatchDate DESC";
   const [installations] = await mysqlPool.query(q, sqlParams);

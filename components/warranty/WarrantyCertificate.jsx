@@ -6,8 +6,10 @@ import {
   FileText, Settings, Save, Search, Eye,
   Trash2, CheckCircle2, Clock, Edit3, ArrowLeft,
   Printer, ShieldCheck, Image, Upload, Code2,
-  Loader2, Plus, RefreshCw, X, Copy
+  Loader2, Plus, RefreshCw, X, Copy, ChevronLeft, ChevronRight
 } from "lucide-react";
+
+const LIST_PAGE_SIZE = 20;
 const getStoredToken = () => typeof window !== "undefined" ? sessionStorage.getItem("pt_auth_token") : null;
 
 const API = process.env.NEXT_PUBLIC_API_URL || "";
@@ -186,6 +188,24 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
       (o.gemOrderType || "").toLowerCase().includes(q)
     );
   }, [orders, orderSearch]);
+
+  const [orderPage, setOrderPage] = useState(1);
+  const [orderPageSize, setOrderPageSize] = useState(LIST_PAGE_SIZE);
+  useEffect(() => { setOrderPage(1); }, [orderSearch, orderPageSize]);
+  const orderTotalPages = Math.max(1, Math.ceil(filteredOrders.length / orderPageSize));
+  const paginatedOrders = useMemo(
+    () => filteredOrders.slice((orderPage - 1) * orderPageSize, orderPage * orderPageSize),
+    [filteredOrders, orderPage, orderPageSize]
+  );
+
+  const [certPage, setCertPage] = useState(1);
+  const [certPageSize, setCertPageSize] = useState(LIST_PAGE_SIZE);
+  useEffect(() => { setCertPage(1); }, [certPageSize]);
+  const certTotalPages = Math.max(1, Math.ceil(savedCerts.length / certPageSize));
+  const paginatedCerts = useMemo(
+    () => savedCerts.slice((certPage - 1) * certPageSize, certPage * certPageSize),
+    [savedCerts, certPage, certPageSize]
+  );
 
   // ── Generate certificate ────────────────────────────────────────────────────
   const generateCert = async (order) => {
@@ -550,7 +570,7 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
   // ────────────────────────────────────────────────────────────────────────────
   return (
     <div className="h-full bg-slate-50 p-5 flex flex-col">
-      <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col min-h-0">
+      <div className="w-full flex-1 flex flex-col min-h-0">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6 shrink-0">
@@ -631,6 +651,7 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 sticky top-0">
                     <tr>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">S.No.</th>
                       <th className="text-left px-4 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Order #</th>
                       <th className="text-left px-4 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Customer</th>
                       <th className="text-left px-4 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Model / Serial</th>
@@ -640,8 +661,9 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredOrders.slice(0, 200).map(o => (
+                    {paginatedOrders.map((o, index) => (
                       <tr key={o.orderGuid} className="border-t border-slate-50 hover:bg-indigo-50 transition-colors group">
+                        <td className="px-4 py-3 text-xs font-semibold text-slate-400">{(orderPage - 1) * orderPageSize + index + 1}</td>
                         <td className="px-4 py-3"><span className="font-bold text-slate-800">#{o.orderNumber}</span></td>
                         <td className="px-4 py-3 max-w-[180px]">
                           <div className="font-medium text-slate-700 truncate text-xs">{o.customer || "—"}</div>
@@ -671,6 +693,15 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
                   </tbody>
                 </table>
               </div>
+            )}
+            {!ordersLoading && filteredOrders.length > 0 && (
+              <PaginationBar
+                page={orderPage}
+                totalPages={orderTotalPages}
+                onChange={setOrderPage}
+                pageSize={orderPageSize}
+                onPageSizeChange={setOrderPageSize}
+              />
             )}
           </div>
         )}
@@ -704,6 +735,7 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 sticky top-0">
                     <tr>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">S.No.</th>
                       <th className="text-left px-4 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Order #</th>
                       <th className="text-left px-4 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Customer</th>
                       <th className="text-left px-4 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Platform</th>
@@ -714,9 +746,10 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {savedCerts.map(c => (
+                    {paginatedCerts.map((c, index) => (
                       <tr key={c.guid} onClick={() => openSavedCert(c)}
                         className="border-t border-slate-50 hover:bg-slate-50 cursor-pointer transition-colors">
+                        <td className="px-4 py-3 text-xs font-semibold text-slate-400">{(certPage - 1) * certPageSize + index + 1}</td>
                         <td className="px-4 py-3 font-bold text-slate-800">#{c.orderNumber}</td>
                         <td className="px-4 py-3 text-slate-600 max-w-[160px] truncate text-xs">{c.customerName || "—"}</td>
                         <td className="px-4 py-3"><PlatformBadge platform={c.platform} gemOrderType={c.gemOrderType} /></td>
@@ -745,9 +778,57 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
                 </table>
               </div>
             )}
+            {!certsLoading && savedCerts.length > 0 && (
+              <PaginationBar
+                page={certPage}
+                totalPages={certTotalPages}
+                onChange={setCertPage}
+                pageSize={certPageSize}
+                onPageSizeChange={setCertPageSize}
+              />
+            )}
           </div>
         )}
 
+      </div>
+    </div>
+  );
+}
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+
+function PaginationBar({ page, totalPages, onChange, pageSize, onPageSizeChange }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 shrink-0">
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-slate-400 font-medium">Page {page} of {totalPages}</span>
+        {onPageSizeChange && (
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            className="text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-indigo-400 cursor-pointer"
+          >
+            {PAGE_SIZE_OPTIONS.map((val) => (
+              <option key={val} value={val}>{val} per page</option>
+            ))}
+          </select>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => onChange(page - 1)}
+          disabled={page === 1}
+          className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-indigo-600 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+        >
+          <ChevronLeft size={14} />
+        </button>
+        <button
+          onClick={() => onChange(page + 1)}
+          disabled={page === totalPages}
+          className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-indigo-600 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+        >
+          <ChevronRight size={14} />
+        </button>
       </div>
     </div>
   );

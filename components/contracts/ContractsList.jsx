@@ -50,10 +50,21 @@ const EDIT_FIELDS = [
   { key: "deliveryCompletedBy", label: "Delivery To Be Completed By", type: "date" },
 ];
 
+// MySQL DATE columns come back from the API as a full ISO datetime string
+// (e.g. "2026-06-23T18:30:00.000Z") — <input type="date"> needs "yyyy-MM-dd",
+// so trim it down for both the input's display and what gets saved back.
+const toDateInputValue = (val) => {
+  if (!val) return "";
+  return String(val).slice(0, 10);
+};
+
 function EditContractModal({ contract, onClose, onSaved }) {
   const [form, setForm] = useState(() => {
     const initial = {};
-    EDIT_FIELDS.forEach((f) => { initial[f.key] = contract[f.key] || ""; });
+    EDIT_FIELDS.forEach((f) => {
+      const raw = contract[f.key] || "";
+      initial[f.key] = f.type === "date" ? toDateInputValue(raw) : raw;
+    });
     return initial;
   });
   const [products, setProducts] = useState(() => parseProducts(contract.products).map((p) => ({ ...EMPTY_PRODUCT, ...p })));

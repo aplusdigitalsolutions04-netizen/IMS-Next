@@ -1,31 +1,36 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest } from "@/lib/auth";
+import { authenticateRequest, requireCompany } from "@/lib/auth";
 import { authorizeReports } from "@/lib/reportsAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
+  requireCompany(user);
   authorizeReports(user, "GET");
 
   const { searchParams } = new URL(request.url);
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
 
+  // s.landingPrice is unreliable (often left at 0 by the Stock-In finalize
+  // flow — see app/api/reports/route.js for the same issue) — fall back to
+  // the item's current purchasePrice from Item Master when that happens.
   let q = `
     SELECT o.dispatchDate, o.platform AS firmName, o.orderid as customer,
-           oi.sellingPrice, s.landingPrice, itv.variantName as modelName, bm.brandName as companyName,
+           oi.sellingPrice, COALESCE(NULLIF(s.landingPrice, 0), itv.purchasePrice, 0) as landingPrice,
+           itv.variantName as modelName, bm.brandName as companyName,
            s.serialNumber as serialNumber, ins.installationRequired, ins.installationCharges,
            o.packagingCost, o.commission, o.status
     FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid
     LEFT JOIN order_installations ins ON o.guid=ins.orderGuid
     LEFT JOIN inventorystockinserial s ON oi.serialNumberGuid=s.guid
-    LEFT JOIN inventoryitemvariant itv ON s.itemVariantId=itv.itemVariantId
+    LEFT JOIN inventoryitemvariant itv ON s.itemVariantId=itv.itemVariantId AND itv.isDeleted=0
     LEFT JOIN inventoryitemmaster im ON itv.itemId=im.itemId
     LEFT JOIN inventorybrandmaster bm ON im.brandId=bm.brandId
-    WHERE o.isDeleted=0
+    WHERE o.isDeleted=0 AND o.companyGuid=?
   `;
-  const sqlParams = [];
+  const sqlParams = [user.companyId];
   if (startDate && endDate) { q += " AND o.dispatchDate>=? AND o.dispatchDate<=?"; sqlParams.push(`${startDate.split("T")[0]} 00:00:00`, `${endDate.split("T")[0]} 23:59:59`); }
   q += " ORDER BY o.dispatchDate DESC";
   const [sales] = await mysqlPool.query(q, sqlParams);

@@ -28,9 +28,6 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
   const [stockTypeFilter, setStockTypeFilter] = useState("all"); // 'all', 'in', 'out'
 
 
-  const [showInvoicePreview, setShowInvoicePreview] = useState(false);
-  const [previewFileUrl, setPreviewFileUrl] = useState("");
-
   const platforms = [
     { id: "all", name: "All Platforms" },
     { id: "Amazon", name: "Amazon" },
@@ -753,11 +750,10 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
                         <td className="px-4 py-3 text-center">
                           <div className="flex flex-col items-center gap-1.5">
                             {t.invoiceFile && (
-                              <button 
+                              <button
                                 onClick={() => {
                                   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
-                                  setPreviewFileUrl(`${baseUrl}/uploads/${t.invoiceFile}`);
-                                  setShowInvoicePreview(true);
+                                  window.open(`${baseUrl}/uploads/${t.invoiceFile}`, "_blank", "noopener,noreferrer");
                                 }}
                                 className="w-full justify-center p-1 bg-indigo-50 text-indigo-600 rounded flex items-center gap-1 hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm"
                                 title="View Primary Invoice"
@@ -768,11 +764,10 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
                             )}
 
                             {t.ewayBillFile && (
-                              <button 
+                              <button
                                 onClick={() => {
                                   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
-                                  setPreviewFileUrl(`${baseUrl}/uploads/${t.ewayBillFile}`);
-                                  setShowInvoicePreview(true);
+                                  window.open(`${baseUrl}/uploads/${t.ewayBillFile}`, "_blank", "noopener,noreferrer");
                                 }}
                                 className="w-full justify-center p-1 bg-emerald-50 text-emerald-600 rounded flex items-center gap-1 hover:bg-emerald-100 transition-all border border-emerald-100 shadow-sm"
                                 title="View Secondary Invoice"
@@ -941,42 +936,6 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
           <Calendar size={48} className="mb-4 opacity-20" />
           <p>Select a date range.</p>
-        </div>
-      )}
-      
-      {/* Invoice Preview Modal */}
-      {showInvoicePreview && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm print:hidden">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <div className="flex items-center gap-3">
-                <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg shadow-indigo-100">
-                  <FileText size={20} />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-800 tracking-tight">Invoice Document</h3>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-0.5">Report Verification</p>
-                </div>
-              </div>
-              <button onClick={() => setShowInvoicePreview(false)} className="p-2.5 hover:bg-slate-200 rounded-xl text-slate-400 hover:text-slate-600 transition-all">
-                <X size={24} />
-              </button>
-            </div>
-            
-            <div className="flex-1 bg-slate-200 overflow-auto p-4 flex justify-center items-center">
-              {previewFileUrl.toLowerCase().endsWith('.pdf') ? (
-                <iframe src={`${previewFileUrl}#toolbar=0`} className="w-full h-full rounded-xl border shadow-lg bg-white" title="PDF Invoice" />
-              ) : (
-                <img src={previewFileUrl} alt="Invoice" className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" onError={(e) => { e.target.src = "https://placehold.co/600x400?text=Invoice+Preview+Not+Available"; }} />
-              )}
-            </div>
-            
-            <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50/50">
-              <button onClick={() => setShowInvoicePreview(false)} className="bg-slate-800 text-white px-8 py-3 rounded-xl font-black text-sm hover:bg-slate-900 transition-all shadow-lg shadow-slate-200">
-                Close Preview
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>

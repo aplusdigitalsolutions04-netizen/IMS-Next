@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, ApiError } from "@/lib/auth";
+import { authenticateRequest, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeSerials } from "@/lib/serialsAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
+  requireCompany(user);
   authorizeSerials(user, "GET");
   const { id: serialId } = await params;
 
@@ -16,8 +17,8 @@ export const GET = withErrorHandling(async (request, { params }) => {
     LEFT JOIN inventoryitemvariant fbiv ON s.itemVariantId=fbiv.itemVariantId
     LEFT JOIN inventoryitemmaster fbim ON fbiv.itemId=fbim.itemId
     LEFT JOIN inventorybrandmaster fbbm ON fbim.brandId=fbbm.brandId
-    WHERE s.guid=? AND s.isDeleted=0
-  `, [serialId]);
+    WHERE s.guid=? AND s.isDeleted=0 AND s.companyGuid=?
+  `, [serialId, user.companyId]);
   if (!serials.length) throw new ApiError(404, "Serial not found");
 
   const [history] = await mysqlPool.query(`
@@ -29,9 +30,9 @@ export const GET = withErrorHandling(async (request, { params }) => {
     LEFT JOIN orders o ON oi.orderGuid=o.guid
     LEFT JOIN order_logistics ol ON o.guid=ol.orderGuid
     LEFT JOIN order_installations ins ON o.guid=ins.orderGuid
-    WHERE sm.serialNumberId=?
+    WHERE sm.serialNumberId=? AND sm.companyGuid=?
     ORDER BY sm.createdAt DESC, sm.guid DESC
-  `, [serialId]);
+  `, [serialId, user.companyId]);
 
   return NextResponse.json({ serial: serials[0], history });
 });

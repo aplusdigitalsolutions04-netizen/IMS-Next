@@ -1,7 +1,8 @@
 "use client";
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, CheckCircle2, Loader2, Search, ChevronDown, Box } from "lucide-react";
+import { inventoryService } from "@/lib/services/inventoryService";
 
 // Searchable serial-number picker — a plain text input that filters the
 // available-serials list as you type, with a dropdown to click a match.
@@ -106,7 +107,26 @@ function SerialSearchSelect({ value, options, onChange, disabled }) {
 export default function ConfirmDraftModal({ batch, models, serials, onClose, onConfirm }) {
   const items = batch?.items || [];
 
-  const getModel = (modelGuid) => models.find((m) => String(m.id || m.guid) === String(modelGuid));
+  // `models` (from GET /api/models) only ever contains serialized/trackable
+  // items — non-serialized ones are filtered out server-side entirely — so
+  // looking a non-serialized item's modelGuid up in it always misses,
+  // isNonSerializedModel() always came back false, and every item (serial
+  // or not) got funneled into the "needs a serial number" path. Fetch the
+  // full Item Master catalog (both trackable and non-trackable) once here so
+  // non-serialized items resolve correctly.
+  const [fullCatalog, setFullCatalog] = useState([]);
+  useEffect(() => {
+    inventoryService.getCurrentStock({ limit: 2000 })
+      .then((res) => setFullCatalog(Array.isArray(res?.data) ? res.data : []))
+      .catch((err) => console.error("Failed to load item catalog:", err.message));
+  }, []);
+
+  const getModel = (modelGuid) => {
+    const fromModels = models.find((m) => String(m.id || m.guid) === String(modelGuid));
+    if (fromModels) return fromModels;
+    const fromCatalog = fullCatalog.find((v) => String(v.itemVariantId) === String(modelGuid));
+    return fromCatalog ? { id: fromCatalog.itemVariantId, guid: fromCatalog.itemVariantId, name: fromCatalog.variantName, isSerialized: !!fromCatalog.isTrackable } : undefined;
+  };
   const isNonSerializedModel = (modelGuid) => {
     const m = getModel(modelGuid);
     return !!m && (m.isSerialized === false || m.isSerialized === 0 || m.isSerialized === "0");
@@ -142,18 +162,31 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
     });
   };
 
+  // Live available stock for a non-serialized item — same source used to
+  // resolve model names, so this stays consistent with what the backend
+  // will actually check on confirm (app/api/orders/draft/[orderId]/confirm/route.js).
+  const getAvailableStock = (modelGuid) => {
+    const entry = fullCatalog.find((v) => String(v.itemVariantId) === String(modelGuid));
+    return entry ? Number(entry.availablePCS) || 0 : null;
+  };
+
   const isComplete = items.every((item) => {
     const itemKey = item.id || item.guid;
     const units = selections[itemKey] || [];
     if (units.length === 0) return false;
-    if (isNonSerializedModel(units[0].modelGuid)) return !!units[0].modelGuid;
+    if (isNonSerializedModel(units[0].modelGuid)) {
+      const modelGuid = units[0].modelGuid;
+      if (!modelGuid) return false;
+      const stock = getAvailableStock(modelGuid);
+      return stock !== null && stock >= units.length;
+    }
     return units.every((u) => u.modelGuid && u.serialGuid);
   });
 
   const handleSubmit = async () => {
     setError("");
     if (!isComplete) {
-      setError("Please select a model (and serial number, for serialized models) for every item.");
+      setError("Please select a model (and serial number, for serialized models) for every item — non-serialized items also need enough stock available.");
       return;
     }
     setSubmitting(true);
@@ -211,9 +244,22 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
                     <div className="border border-slate-200 bg-slate-50 rounded-lg px-3 py-2 text-sm text-slate-600 flex items-center truncate" title={getModel(units[0].modelGuid)?.name}>
                       {getModel(units[0].modelGuid)?.name || "Model"}
                     </div>
-                    <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      <Box size={13} /> Non-Serialized — Qty {units.length}
-                    </div>
+                    {(() => {
+                      const stock = getAvailableStock(units[0].modelGuid);
+                      const insufficient = stock !== null && stock < units.length;
+                      return (
+                        <div className={`inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg px-3 py-2 border ${
+                          insufficient ? "text-red-700 bg-red-50 border-red-200" : "text-amber-700 bg-amber-50 border-amber-200"
+                        }`}>
+                          <Box size={13} /> Non-Serialized — Qty {units.length}
+                          {stock !== null && (
+                            <span className="opacity-80">
+                              {insufficient ? ` — only ${stock} in stock` : ` (${stock} in stock)`}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="space-y-3">

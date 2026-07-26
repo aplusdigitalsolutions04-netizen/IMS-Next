@@ -124,10 +124,13 @@ export default function Billing({
             if (activeTab === "billing") {
                 return d.status === "Send for Billing" || d.status === "Send for Billing (Hold)";
             } else if (activeTab === "draft") {
-                // Once a draft order's bill has been uploaded/prepped, it drops
-                // off this list — it's done from Billing's side and just
-                // waits on Order Processing's Confirm step now.
-                return d.status === "Draft" && !d.invoiceFilename;
+                // Opt-in only — a draft order shows here only after someone
+                // explicitly clicks "Send for Billing" on it from Order
+                // Processing's Draft tab (draftSentToBilling flag), not the
+                // moment it's created. Once its bill has been uploaded/prepped,
+                // it drops off this list — it's done from Billing's side and
+                // just waits on Order Processing's Confirm step now.
+                return d.status === "Draft" && !!d.draftSentToBilling && !d.invoiceFilename;
             } else {
                 return d.status === "Payment Pending" || (d.logisticsStatus === "Delivered" && d.status !== "Completed");
             }
@@ -186,12 +189,13 @@ export default function Billing({
         }).length;
     }, [dispatches]);
 
-    // Draft tab — distinct Draft orders, and how many of those still have no invoice uploaded
+    // Draft tab — distinct Draft orders that were explicitly sent for
+    // billing, and how many of those still have no invoice uploaded
     const draftOrdersCount = useMemo(() => {
         if (!dispatches || !Array.isArray(dispatches)) return 0;
         const keys = new Set();
         dispatches.forEach(d => {
-            if (!d || d.isDeleted || d.status !== "Draft") return;
+            if (!d || d.isDeleted || d.status !== "Draft" || !d.draftSentToBilling) return;
             keys.add(getBatchKey(d));
         });
         return keys.size;
@@ -202,7 +206,7 @@ export default function Billing({
         const seen = new Set();
         let count = 0;
         dispatches.forEach(d => {
-            if (!d || d.isDeleted || d.status !== "Draft") return;
+            if (!d || d.isDeleted || d.status !== "Draft" || !d.draftSentToBilling) return;
             const key = getBatchKey(d);
             if (seen.has(key)) return;
             seen.add(key);

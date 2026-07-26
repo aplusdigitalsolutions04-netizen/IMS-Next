@@ -231,7 +231,8 @@ export default function Dispatch({
     podFile: null,
     existingPodName: "",
     includePackaging: "no",
-    packagingCost: ""
+    packagingCost: "",
+    shipmentMode: "B2C",
   });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [itemsToDelete, setItemsToDelete] = useState([]);
@@ -621,7 +622,8 @@ export default function Dispatch({
       dpodFile: null,
       sendBackRemark: "",
       removeInvoice: false,
-      removeEwayBill: false
+      removeEwayBill: false,
+      shipmentMode: "B2C",
     });
   };
 
@@ -692,7 +694,7 @@ export default function Dispatch({
 
     setIsCreatingShipment(true);
     try {
-      const result = await printerService.createShipment({
+      const payload = {
         orderId: rep.orderid || rep.id,
         consigneeName: shipName,
         consigneeAddress: shipAddress,
@@ -701,9 +703,12 @@ export default function Dispatch({
         paymentMode: "Prepaid",
         quantity: logisticsBatch.length,
         productDescription: rep.modelName || "Printer",
-      });
+      };
+      const result = logisticsForm.shipmentMode === "B2B"
+        ? await printerService.createB2BShipment(payload)
+        : await printerService.createShipment(payload);
       setLogisticsForm((prev) => ({ ...prev, trackingId: result.waybill }));
-      alert(`✅ Delhivery shipment created! Waybill: ${result.waybill}`);
+      alert(`✅ Delhivery ${logisticsForm.shipmentMode} shipment created! Waybill: ${result.waybill}`);
     } catch (error) {
       alert("Failed to create Delhivery shipment: " + (error.response?.data?.message || error.message));
     } finally {
@@ -1216,6 +1221,28 @@ export default function Dispatch({
                   />
                 </div>
               </div>
+              {isDelhiveryCourier && !logisticsForm.trackingId && !isDeliveredLogisticsLocked && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Shipment Type</label>
+                  <div className="inline-flex rounded-xl border border-slate-200 overflow-hidden">
+                    {["B2C", "B2B"].map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setLogisticsForm({ ...logisticsForm, shipmentMode: mode })}
+                        className={`px-4 py-1.5 text-xs font-bold transition ${
+                          logisticsForm.shipmentMode === mode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
+                        }`}
+                      >
+                        {mode === "B2C" ? "B2C (Express)" : "B2B (LTL Freight)"}
+                      </button>
+                    ))}
+                  </div>
+                  {logisticsForm.shipmentMode === "B2B" && (
+                    <p className="text-[11px] text-amber-600 mt-1">B2B shipment creation isn&apos;t connected yet — needs Delhivery&apos;s B2B waybill API details.</p>
+                  )}
+                </div>
+              )}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
                   Tracking ID {isPorterCourier && <span className="text-slate-400 normal-case font-medium">(Optional)</span>}
@@ -1229,7 +1256,7 @@ export default function Dispatch({
                       disabled={isCreatingShipment || isTrackingShipment || isDeliveredLogisticsLocked}
                       className="shrink-0 px-3 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap"
                     >
-                      {isCreatingShipment ? "Creating..." : isTrackingShipment ? "Tracking..." : logisticsForm.trackingId ? "Track" : "Create Shipment"}
+                      {isCreatingShipment ? "Creating..." : isTrackingShipment ? "Tracking..." : logisticsForm.trackingId ? "Track" : `Create ${logisticsForm.shipmentMode} Shipment`}
                     </button>
                   )}
                 </div>

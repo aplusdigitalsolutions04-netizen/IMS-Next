@@ -311,7 +311,7 @@ export default function Damaged({ returns = [], onRefresh, currentUser, initialD
                     }`}
                   >
                     {/* S.No. */}
-                    
+                    <td className="px-5 py-4 text-slate-400 font-semibold">{index + 1}</td>
 
                     {/* Serial */}
                     <td className="px-5 py-4">
@@ -423,7 +423,7 @@ export default function Damaged({ returns = [], onRefresh, currentUser, initialD
 
               {damagedItems.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="p-12 text-center">
+                  <td colSpan="9" className="p-12 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mb-2">
                         <AlertTriangle size={32} className="text-emerald-400" />

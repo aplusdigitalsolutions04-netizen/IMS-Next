@@ -112,7 +112,7 @@ export default function UserActivity() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="w-full space-y-6">
 
       {/* Premium Header */}
       <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 md:p-8 text-white shadow-lg shadow-slate-200">
@@ -198,6 +198,7 @@ export default function UserActivity() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 text-[11px] font-black tracking-wider text-slate-400 uppercase border-b border-slate-200">
+                <th className="px-6 py-4">S.No.</th>
                 <th className="px-6 py-4">User Details</th>
                 <th className="px-6 py-4">Role</th>
                 <th className="px-6 py-4">Action Taken</th>
@@ -209,7 +210,7 @@ export default function UserActivity() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-20 text-center">
+                  <td colSpan="7" className="px-6 py-20 text-center">
                     <div className="flex flex-col items-center gap-3 text-slate-400">
                       <Loader2 size={32} className="animate-spin text-indigo-500" />
                       <p className="text-sm font-semibold">Loading activity logs...</p>
@@ -218,7 +219,7 @@ export default function UserActivity() {
                 </tr>
               ) : filteredLogs.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-20 text-center">
+                  <td colSpan="7" className="px-6 py-20 text-center">
                     <div className="flex flex-col items-center gap-3 text-slate-400">
                       <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center border border-slate-100">
                         <History size={24} className="text-slate-300" />
@@ -231,6 +232,9 @@ export default function UserActivity() {
               ) : (
                 filteredLogs.map((log, index) => (
                   <tr key={log.id || index} className="hover:bg-slate-50/80 transition-colors group">
+                    <td className="px-6 py-4 align-top text-slate-400 font-semibold">
+                      {(currentPage - 1) * pageSize + index + 1}
+                    </td>
                     <td className="px-6 py-4 align-top">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 border border-slate-200 shrink-0">
@@ -308,8 +312,16 @@ export default function UserActivity() {
               </button>
 
               <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(5, Math.ceil(totalRecords / pageSize)) }, (_, i) => {
-                  const pageNum = i + 1;
+                {(() => {
+                  const totalPages = Math.ceil(totalRecords / pageSize);
+                  const windowSize = Math.min(5, totalPages);
+                  // Slides the 5-button window so it's centered on the
+                  // current page instead of always starting at 1.
+                  let start = Math.max(1, currentPage - Math.floor(windowSize / 2));
+                  const end = Math.min(totalPages, start + windowSize - 1);
+                  start = Math.max(1, end - windowSize + 1);
+                  return Array.from({ length: windowSize }, (_, i) => start + i);
+                })().map((pageNum) => {
                   const isActive = currentPage === pageNum;
                   return (
                     <button

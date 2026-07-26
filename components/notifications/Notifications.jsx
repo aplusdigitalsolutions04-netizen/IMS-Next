@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Bell, Clock, Package, Receipt, Truck, CheckCheck, RefreshCw, BellOff, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useRouter } from 'next/navigation';
+import Swal from 'sweetalert2';
 import api from '@/lib/services/api';
 
 const getIcon = (title) => {
@@ -82,14 +83,28 @@ const Notifications = ({ onOpenOrder }) => {
   };
 
   const clearAllNotifications = async () => {
-    if (!window.confirm("Are you sure you want to delete all notifications?")) return;
+    const result = await Swal.fire({
+      title: "Clear all notifications?",
+      text: "This will permanently delete every notification. This action cannot be undone.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#EF4444",
+      cancelButtonColor: "#64748b",
+      confirmButtonText: "Yes, clear all",
+      cancelButtonText: "Cancel",
+      customClass: { popup: 'rounded-2xl', confirmButton: 'rounded-xl font-semibold', cancelButton: 'rounded-xl font-semibold' },
+    });
+    if (!result.isConfirmed) return;
+
     try {
       await api.delete('/notifications/clear-all');
       setNotifications([]);
       setUnreadCount(0);
       window.dispatchEvent(new Event('notificationsUpdated'));
+      Swal.fire({ title: "Cleared!", text: "All notifications have been deleted.", icon: "success", confirmButtonColor: "#6366F1", customClass: { popup: 'rounded-2xl', confirmButton: 'rounded-xl font-semibold' } });
     } catch (err) {
       console.error('Failed to clear notifications:', err);
+      Swal.fire({ title: "Error", text: "Failed to clear notifications.", icon: "error", confirmButtonColor: "#6366F1", customClass: { popup: 'rounded-2xl', confirmButton: 'rounded-xl font-semibold' } });
     }
   };
 
@@ -114,7 +129,7 @@ const Notifications = ({ onOpenOrder }) => {
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-6">
+    <div className="w-full space-y-6">
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-white rounded-2xl border border-slate-200/60 shadow-sm">
         <div className="flex items-center gap-4">

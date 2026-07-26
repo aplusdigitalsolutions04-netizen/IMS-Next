@@ -33,7 +33,7 @@ export const GET = withErrorHandling(async (request) => {
         o.shippingAddress, o.address, o.buyerAddress, o.gstNumber, o.contactNumber, o.altContactNumber, o.invoiceNumber,
         o.invoiceDate, o.warrantyStartDate, o.invoiceFilename, o.ewayBillNumber, o.ewayBillFilename, o.gemBillUploaded, o.freightCharges,
         o.packagingCost, o.commission, o.orderVerified, oi.remarks AS remarks, o.remarks AS orderRemarks, o.cancellationReason as cancelReason,
-        o.cancelledBy, o.cancelledAt, o.isDeleted, o.rowColor, o.tags,
+        o.cancelledBy, o.cancelledAt, o.isDeleted, o.rowColor, o.tags, o.draftSentToBilling,
         ol.courierPartner, ol.trackingId, ol.logisticsStatus, ol.logisticsDispatchDate, ol.podFilename, ol.lastDeliveryDate,
         ins.installationRequired, ins.installationStatus, ins.technicianName, ins.technicianContact,
         ins.installationCharges, ins.installationRemarks, ins.scheduledDate, ins.installationDate,

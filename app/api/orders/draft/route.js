@@ -39,6 +39,44 @@ export const POST = withErrorHandling(async (request) => {
     throw new ApiError(400, "At least one product is required to create an order draft.");
   }
 
+  // Try to match each contract product against an existing catalog model (by
+  // name) so the Confirm-Order step can pre-select it instead of forcing the
+  // user to pick it manually every time.
+  const [catalogModels] = await mysqlPool.query(
+    "SELECT itemVariantId as guid, variantName as name FROM inventoryitemvariant WHERE companyGuid = ? AND isDeleted = 0",
+    [user.companyId]
+  );
+  // Contract text is free-form ("HP LaserJet Pro3004dw Printer with 1 year
+  // Warranty") while catalog model names are short ("HP 3004dw"), so an
+  // exact-string match almost never hits. Instead, require every
+  // alphanumeric "word" of the catalog model name to appear somewhere in
+  // the product's combined text (as a substring, so "3004dw" still matches
+  // inside "pro3004dw").
+  const alnum = (v) => String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const matchModelGuid = (product) => {
+    const blob = alnum([product.productName, product.brand, product.model].filter(Boolean).join(" "));
+    if (!blob) return null;
+    const found = catalogModels.find((m) => {
+      const words = String(m.name || "").toLowerCase().split(/\s+/).map(alnum).filter(Boolean);
+      return words.length > 0 && words.every((w) => blob.includes(w));
+    });
+    return found ? found.guid : null;
+  };
+
+  // Every product must resolve to a real Item Master catalog entry before
+  // any draft is created — an unmatched product means the item hasn't been
+  // added to Item Master yet, and confirming a draft later requires a real
+  // model, so better to fail fast here (and tell the admin exactly what's
+  // missing) than create a draft item that can never be confirmed.
+  const productLabel = (product) => [product.productName, product.brand, product.model].filter(Boolean).join(" — ") || "Unnamed product";
+  const unmatched = products.filter((p) => !matchModelGuid(p)).map(productLabel);
+  if (unmatched.length > 0) {
+    throw new ApiError(
+      400,
+      `These products aren't in Item Master yet — add them there first, then create the draft again: ${unmatched.join(", ")}`
+    );
+  }
+
   const conn = await mysqlPool.getConnection();
   try {
     await conn.beginTransaction();
@@ -69,30 +107,6 @@ export const POST = withErrorHandling(async (request) => {
       [orderId, user.companyId, "No"]
     );
 
-    // Try to match each contract product against an existing catalog model
-    // (by name) so the Confirm-Order step can pre-select it instead of
-    // forcing the user to pick it manually every time.
-    const [catalogModels] = await conn.query(
-      "SELECT itemVariantId as guid, variantName as name FROM inventoryitemvariant WHERE companyGuid = ? AND isDeleted = 0",
-      [user.companyId]
-    );
-    // Contract text is free-form ("HP LaserJet Pro3004dw Printer with 1 year
-    // Warranty") while catalog model names are short ("HP 3004dw"), so an
-    // exact-string match almost never hits. Instead, require every
-    // alphanumeric "word" of the catalog model name to appear somewhere in
-    // the product's combined text (as a substring, so "3004dw" still matches
-    // inside "pro3004dw").
-    const alnum = (v) => String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    const matchModelGuid = (product) => {
-      const blob = alnum([product.productName, product.brand, product.model].filter(Boolean).join(" "));
-      if (!blob) return null;
-      const found = catalogModels.find((m) => {
-        const words = String(m.name || "").toLowerCase().split(/\s+/).map(alnum).filter(Boolean);
-        return words.length > 0 && words.every((w) => blob.includes(w));
-      });
-      return found ? found.guid : null;
-    };
-
     // Contract text often carries the warranty period alongside the model
     // name ("...Pro3004dw Printer with 1 year Warranty") — pull it out so it
     // doesn't have to be re-entered by hand.
@@ -107,7 +121,7 @@ export const POST = withErrorHandling(async (request) => {
     };
 
     for (const product of products) {
-      const label = [product.productName, product.brand, product.model].filter(Boolean).join(" — ");
+      const label = productLabel(product);
       const modelGuid = matchModelGuid(product);
       const warranty = extractWarranty(product);
       await conn.query(

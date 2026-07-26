@@ -16,8 +16,16 @@ export const GET = withErrorHandling(async (request) => {
     return NextResponse.json({ message: "itemVariantId is required" }, { status: 400 });
   }
 
+  // s.landingPrice is unreliable (often left at 0 by the Stock-In finalize
+  // flow — see app/api/reports/route.js for the same issue) — fall back to
+  // the item's current purchasePrice from Item Master when that happens.
   const [rows] = await mysqlPool.query(
-    "SELECT guid, serialNumber as value, serialStatus as status, landingPrice, createdAt FROM inventorystockinserial WHERE itemVariantId = ? AND isDeleted = 0 AND companyGuid = ? ORDER BY createdAt DESC",
+    `SELECT s.guid, s.serialNumber as value, s.serialStatus as status,
+       COALESCE(NULLIF(s.landingPrice, 0), iv.purchasePrice, 0) as landingPrice, s.createdAt
+     FROM inventorystockinserial s
+     LEFT JOIN inventoryitemvariant iv ON s.itemVariantId = iv.itemVariantId AND iv.isDeleted = 0
+     WHERE s.itemVariantId = ? AND s.isDeleted = 0 AND s.companyGuid = ?
+     ORDER BY s.createdAt DESC`,
     [itemVariantId, user.companyId]
   );
 

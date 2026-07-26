@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, ApiError } from "@/lib/auth";
+import { authenticateRequest, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeReturns } from "@/lib/returnsAuth";
 import { mapDispatchRow } from "@/lib/helpers";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
+  requireCompany(user);
   authorizeReturns(user, "GET");
 
   const { searchParams } = new URL(request.url);
@@ -26,8 +27,8 @@ export const GET = withErrorHandling(async (request) => {
       JOIN (SELECT serialNumberGuid, MAX(returnDate) as maxDate, MAX(guid) as maxId FROM returns WHERE isDeleted=0 GROUP BY serialNumberGuid) r2
       ON r1.serialNumberGuid=r2.serialNumberGuid AND r1.returnDate=r2.maxDate AND r1.guid=r2.maxId
     ) lr ON s.guid=lr.serialNumberGuid
-    WHERE s.serialNumber=? AND s.isDeleted=0
-  `, [normalized]);
+    WHERE s.serialNumber=? AND s.isDeleted=0 AND s.companyGuid=?
+  `, [normalized, user.companyId]);
 
   if (!serials.length) throw new ApiError(404, "Serial not found");
   const serial = serials[0];
@@ -48,14 +49,14 @@ export const GET = withErrorHandling(async (request) => {
     JOIN inventorystockinserial s ON oi.serialNumberGuid=s.guid
     LEFT JOIN inventoryitemvariant fbiv2 ON s.itemVariantId=fbiv2.itemVariantId
     LEFT JOIN order_logistics ol ON o.guid=ol.orderGuid LEFT JOIN order_installations ins ON o.guid=ins.orderGuid
-    WHERE oi.serialNumberGuid=? AND o.isDeleted=0
+    WHERE oi.serialNumberGuid=? AND o.isDeleted=0 AND o.companyGuid=?
     ORDER BY o.dispatchDate DESC, oi.guid DESC LIMIT 1
-  `, [serial.guid]);
+  `, [serial.guid, user.companyId]);
 
   const linkedOrder = dispatches[0] || null;
   let existingReturn = null;
   if (linkedOrder) {
-    const [ret] = await mysqlPool.query("SELECT * FROM returns WHERE serialNumberGuid=? AND dispatchGuid=? AND isDeleted=0 ORDER BY returnDate DESC, guid DESC LIMIT 1", [serial.guid, linkedOrder.guid]);
+    const [ret] = await mysqlPool.query("SELECT * FROM returns WHERE serialNumberGuid=? AND dispatchGuid=? AND isDeleted=0 AND companyGuid=? ORDER BY returnDate DESC, guid DESC LIMIT 1", [serial.guid, linkedOrder.guid, user.companyId]);
     existingReturn = ret[0] || null;
   }
 

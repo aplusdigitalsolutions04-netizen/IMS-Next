@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest } from "@/lib/auth";
+import { authenticateRequest, requireCompany } from "@/lib/auth";
 import { authorizeInstallations } from "@/lib/installationsAuth";
 import { INSTALL_REQUIRED_CONDITION } from "@/lib/installationsQuery";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
+  requireCompany(user);
   authorizeInstallations(user, "GET");
 
   const [rows] = await mysqlPool.query(`
@@ -19,7 +20,7 @@ export const GET = withErrorHandling(async (request) => {
       SUM(IFNULL(ins.installationCharges,0)) as totalCharges
     FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid
     JOIN order_installations ins ON o.guid=ins.orderGuid
-    WHERE ${INSTALL_REQUIRED_CONDITION} AND o.isDeleted=0
-  `);
+    WHERE ${INSTALL_REQUIRED_CONDITION} AND o.isDeleted=0 AND oi.companyGuid=?
+  `, [user.companyId]);
   return NextResponse.json(rows[0]);
 });

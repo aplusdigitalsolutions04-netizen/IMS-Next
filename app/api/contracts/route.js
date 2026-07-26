@@ -4,6 +4,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeReadWrite, requireCompany, resolveScopedCompanyGuid, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
+import { createNotification } from "@/lib/notifications";
 
 const authorize = (user, method) =>
   authorizeReadWrite(user, method, {
@@ -52,6 +53,19 @@ export const POST = withErrorHandling(async (request) => {
   );
   if (dup.length > 0) throw new ApiError(400, "A contract with this Contract Number already exists");
 
+  // Contracts link to their order only by orderid == contractNumber (set in
+  // app/api/orders/draft/route.js when the draft is created — see
+  // findLinkedOrder in app/api/contracts/[id]/route.js). If that order
+  // already exists, this contract number has already been processed — don't
+  // let it be uploaded again.
+  const [existingOrder] = await mysqlPool.query(
+    "SELECT guid, status FROM orders WHERE orderid=? AND companyGuid=? AND isDeleted=0 LIMIT 1",
+    [contractNumber.trim(), user.companyId]
+  );
+  if (existingOrder.length > 0) {
+    throw new ApiError(400, `An order already exists in Order Processing for Contract #${contractNumber.trim()} (status: ${existingOrder[0].status}) — this contract can't be uploaded again.`);
+  }
+
   const guid = randomUUID();
   try {
     await mysqlPool.query(
@@ -77,5 +91,16 @@ export const POST = withErrorHandling(async (request) => {
   }
 
   broadcastRealtimeEvent(user.companyId, "contracts");
+
+  await createNotification(mysqlPool, {
+    targetRole: "Admin",
+    title: "Contract Uploaded",
+    message: `Contract #${contractNumber.trim()} was uploaded${organisation ? ` for ${organisation}` : ""} and is ready to create an order draft.`,
+    type: "contract-upload",
+    priority: "low",
+    link: guid,
+    companyGuid: user.companyId,
+  });
+
   return NextResponse.json({ message: "Contract saved", guid });
 });

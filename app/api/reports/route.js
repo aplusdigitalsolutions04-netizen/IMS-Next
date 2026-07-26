@@ -42,7 +42,8 @@ export const GET = withErrorHandling(async (request) => {
   const s2 = buildWhere(" WHERE o.isDeleted=0", "o.dispatchDate", true);
   const [printerRows] = await mysqlPool.query(`
     SELECT oi.guid as _id, o.invoiceNumber as orderId, o.dispatchDate,
-           o.status, ol.logisticsStatus, oi.sellingPrice, s.landingPrice,
+           o.status, ol.logisticsStatus, oi.sellingPrice,
+           COALESCE(NULLIF(s.landingPrice,0), itv.purchasePrice, 0) as landingPrice,
            o.platform AS firmName, o.orderid AS customerName, itv.variantName as modelName, s.serialNumber as serialValue,
            'Printers' as category, o.invoiceFilename as invoiceFile, o.ewayBillFilename as ewayBillFile
     FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid
@@ -56,7 +57,8 @@ export const GET = withErrorHandling(async (request) => {
   const [stockInRows] = await mysqlPool.query(`
     SELECT s.guid as _id, IFNULL(st.invoiceNo,'Stock In') as orderId, s.createdAt as dispatchDate,
            'Stock In' as status, 'Finalized' as logisticsStatus,
-           0 as sellingPrice, s.landingPrice, IFNULL(v.vendorFirmName,'Internal') as firmName,
+           0 as sellingPrice, COALESCE(NULLIF(s.landingPrice,0), itv.purchasePrice, 0) as landingPrice,
+           IFNULL(v.vendorFirmName,'Internal') as firmName,
            'Inventory Inward' as customerName, itv.variantName as modelName, s.serialNumber as serialValue,
            'Printers' as category, MAX(st.invoiceFile) as invoiceFile
     FROM inventorystockinserial s
@@ -64,7 +66,7 @@ export const GET = withErrorHandling(async (request) => {
     LEFT JOIN inventorystockindetail st_d ON s.stockInDetailId=st_d.stockInDetailId
     LEFT JOIN inventorystockin st ON st_d.stockInId=st.stockInId
     LEFT JOIN inventoryvendor v ON st.vendorId=v.vendorId
-    ${s3.w} GROUP BY s.guid,s.createdAt,s.landingPrice,itv.variantName,s.serialNumber,st.invoiceNo,v.vendorFirmName
+    ${s3.w} GROUP BY s.guid,s.createdAt,s.landingPrice,itv.variantName,itv.purchasePrice,s.serialNumber,st.invoiceNo,v.vendorFirmName
   `, s3.params);
 
   const s4 = buildWhere(" WHERE o.isDeleted=0", "o.issueDate", true);
@@ -86,7 +88,16 @@ export const GET = withErrorHandling(async (request) => {
   const [statStock] = await mysqlPool.query(
     "SELECT SUM(availablePCS*IFNULL(NULLIF(lastPurchaseRate,0),IFNULL(avgPurchaseRate,0))) as total FROM inventoryvariantstock ivs JOIN inventoryitemvariant iv ON ivs.itemVariantId=iv.itemVariantId WHERE iv.isDeleted=0"
   );
-  const [printStock] = await mysqlPool.query("SELECT SUM(IFNULL(landingPrice,0)) as total FROM inventorystockinserial WHERE serialStatus='Available' AND isDeleted=0");
+  // inventorystockinserial.landingPrice is unreliable (often left at 0 by the
+  // Stock-In finalize flow) — inventoryitemvariant.purchasePrice is the
+  // item's actual, maintained purchase price, so value each Available
+  // serial at its item's current purchasePrice instead.
+  const [printStock] = await mysqlPool.query(
+    `SELECT SUM(iv.purchasePrice) as total
+     FROM inventorystockinserial s
+     JOIN inventoryitemvariant iv ON s.itemVariantId = iv.itemVariantId AND iv.isDeleted = 0
+     WHERE s.serialStatus = 'Available' AND s.isDeleted = 0`
+  );
 
   const transactions = [...stationeryRows, ...printerRows, ...stockInRows, ...stockOutRows].sort((a, b) => new Date(b.dispatchDate) - new Date(a.dispatchDate));
   return NextResponse.json({

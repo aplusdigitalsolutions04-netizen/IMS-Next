@@ -24,7 +24,7 @@ function openHpWarrantyBridge(serial) {
 // Single document tile used throughout the Documents tab — either shows a
 // "View" button once `filename` is set, or a custom `action` button (e.g.
 // Gate Pass, which generates on demand rather than checking for a filename).
-function DocCard({ label, filename, onView, accentBg, accentText, buttonClass, action }) {
+function DocCard({ label, filename, onView, accentBg, accentText, buttonClass, action, onReplace, canReplace }) {
   return (
     <div className="bg-slate-50 rounded-xl border border-slate-200 p-3.5 hover:border-slate-300 hover:shadow-sm transition-all">
       <div className="flex items-center gap-2.5 mb-3">
@@ -43,11 +43,98 @@ function DocCard({ label, filename, onView, accentBg, accentText, buttonClass, a
         </div>
       </div>
       {action !== undefined ? action : filename ? (
-        <button onClick={onView} className={`w-full text-xs font-bold ${buttonClass} text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 active:scale-95`}>
-          <Eye size={12} /> View
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button onClick={onView} className={`flex-1 text-xs font-bold ${buttonClass} text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 active:scale-95`}>
+            <Eye size={12} /> View
+          </button>
+          {canReplace && onReplace && (
+            <label className="cursor-pointer p-2 rounded-lg bg-white border border-slate-200 hover:bg-blue-50 hover:border-blue-200 transition-colors shrink-0" title="Replace document">
+              <RefreshCw size={13} className="text-blue-500" />
+              <input
+                type="file"
+                className="hidden"
+                accept=".pdf,.jpg,.jpeg,.png,.webp"
+                onChange={(e) => {
+                  const f = e.target.files[0];
+                  if (f) onReplace(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          )}
+        </div>
+      ) : canReplace && onReplace ? (
+        <label className="cursor-pointer w-full text-xs font-bold text-slate-500 py-2 rounded-lg border border-dashed border-slate-300 bg-white hover:bg-slate-50 flex items-center justify-center gap-1.5 transition-colors">
+          <UploadCloud size={12} /> Upload
+          <input
+            type="file"
+            className="hidden"
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            onChange={(e) => {
+              const f = e.target.files[0];
+              if (f) onReplace(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
       ) : (
         <div className="text-xs text-slate-300 italic text-center py-2 bg-white rounded-lg border border-dashed border-slate-200">Pending</div>
+      )}
+    </div>
+  );
+}
+
+// Dark-theme equivalent of DocCard, used by the expanded/full-detail layout
+// further down in this file — same view/replace behavior, different skin.
+function DarkDocSlot({ label, filename, onView, onReplace, canReplace, viewClass, viewLabel }) {
+  return (
+    <div className="bg-white/5 rounded-xl p-3 border border-white/10 hover:bg-white/10 transition-colors group">
+      <p className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-2">{label}</p>
+      {filename ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onView}
+              className={`flex-1 inline-flex items-center justify-center gap-2 text-xs font-black ${viewClass} text-white px-3 py-2 rounded-lg transition-all shadow-lg active:scale-95`}
+            >
+              <FileText size={12} /> {viewLabel}
+            </button>
+            {canReplace && onReplace && (
+              <label className="cursor-pointer p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors shrink-0" title="Replace document">
+                <RefreshCw size={13} className="text-blue-300" />
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                  onChange={(e) => {
+                    const f = e.target.files[0];
+                    if (f) onReplace(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+          </div>
+          <span className="text-[10px] text-emerald-400 flex items-center justify-center gap-1 font-bold">
+            <CheckCircle size={10} /> Document Verified
+          </span>
+        </div>
+      ) : canReplace && onReplace ? (
+        <label className="w-full cursor-pointer inline-flex items-center justify-center gap-1.5 text-xs font-bold text-white/50 py-2 rounded-lg border border-dashed border-white/20 bg-white/5 hover:bg-white/10 transition-colors">
+          <UploadCloud size={12} /> Upload
+          <input
+            type="file"
+            className="hidden"
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            onChange={(e) => {
+              const f = e.target.files[0];
+              if (f) onReplace(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      ) : (
+        <p className="text-white/30 text-xs font-bold italic py-1.5 text-center bg-white/5 rounded-lg border border-white/5">Not uploaded</p>
       )}
     </div>
   );
@@ -57,7 +144,7 @@ export default function OrderDetailModal({
   activeTab, canEditOrder, canEditPayment, cancellationReason, closeModal,
   currentUser, editFormData, editItems, extraDocCustomLabel, extraDocFile,
   extraDocInputRef, extraDocType, handleDeleteExtraDoc, handleRemoveSerial,
-  handleReplaceExtraDoc, handleReplaceSerial, handleRestoreBatch, handleSaveEdits,
+  handleReplaceExtraDoc, handleReplaceStandardDoc, handleReplaceSerial, handleRestoreBatch, handleSaveEdits,
   handleSavePaymentEdit, handleSaveItemWarrantyDate, handleToggleInstallation, handleToggleGemUpload, handleUpdateStatus,
   handleUploadExtraDoc, handleViewDocument, isAdmin, isEditMode, isEditingPayment,
   isSupervisor, isUpdating, localSerials, localModels, modalDetailTab, newStatus, paymentEditForm,
@@ -277,53 +364,18 @@ export default function OrderDetailModal({
                 ))
                 .sort((a, b) => new Date(b.returnDate || 0) - new Date(a.returnDate || 0));
 
-              // 🆕 Extract ALL historical and merged documents directly from items + history
-              const allDocsMap = new Map();
-              if (selectedBatch.documents) {
-                selectedBatch.documents.forEach(doc => {
-                  allDocsMap.set(doc.filename, doc.docType);
-                });
-              }
-              selectedBatch.items.forEach(item => {
-                if (item.contractFilename && !allDocsMap.has(item.contractFilename)) allDocsMap.set(item.contractFilename, 'gemContract');
-                if (item.invoiceFilename && !allDocsMap.has(item.invoiceFilename)) allDocsMap.set(item.invoiceFilename, 'invoice');
-                if (item.ewayBillFilename && !allDocsMap.has(item.ewayBillFilename)) allDocsMap.set(item.ewayBillFilename, 'ewayBill');
-                if (item.podFilename && !allDocsMap.has(item.podFilename)) allDocsMap.set(item.podFilename, 'pod');
-              });
-
-              const activeDocs = [
-                selectedBatch.contractFilename,
-                selectedBatch.invoiceFilename,
-                selectedBatchEwayBillFilename,
-                selectedBatch.podFilename
-              ].filter(Boolean);
-
-              const STANDARD_DOC_TYPES = ["invoice", "ewayBill", "pod", "gemContract"];
-              const oldDocs = [];
-              allDocsMap.forEach((docType, filename) => {
-                if (!activeDocs.includes(filename) && STANDARD_DOC_TYPES.includes(docType)) {
-                  oldDocs.push({ filename, docType });
-                }
-              });
-
               // Custom/"Additional" doc types have no single authoritative
               // filename column (unlike gemContract/invoice/ewayBill/pod) —
               // every upload, including a "replace", just appends a new row
-              // to orderdocuments. Without this, a replaced doc shows up as
-              // a second, separate entry instead of overwriting the first.
-              // Pick the newest upload per docType as current; anything
-              // older with the same docType is superseded.
+              // to orderdocuments. Pick the newest upload per docType as
+              // current so a replace overwrites rather than duplicating.
+              const STANDARD_DOC_TYPES = ["invoice", "ewayBill", "pod", "gemContract"];
               const customDocsInAudit = (selectedBatch.documents || []).filter(d => !STANDARD_DOC_TYPES.includes(d.docType));
               const latestCustomDocByType = new Map();
               customDocsInAudit.forEach(d => {
                 const existing = latestCustomDocByType.get(d.docType);
                 if (!existing || new Date(d.createdAt || 0) >= new Date(existing.createdAt || 0)) {
                   latestCustomDocByType.set(d.docType, d);
-                }
-              });
-              customDocsInAudit.forEach(d => {
-                if (latestCustomDocByType.get(d.docType) !== d) {
-                  oldDocs.push({ filename: d.filename, docType: d.docType });
                 }
               });
 
@@ -1396,12 +1448,16 @@ export default function OrderDetailModal({
                                       label="Tax Invoice (Custom)"
                                       filename={selectedBatch.invoiceFilename}
                                       onView={() => handleViewDocument(selectedBatch.invoiceFilename)}
+                                      onReplace={(f) => handleReplaceStandardDoc("invoice", f)}
+                                      canReplace={canEditOrder && !isCancelledOrder}
                                       accentBg="bg-indigo-50" accentText="text-indigo-600" buttonClass="bg-indigo-600 hover:bg-indigo-700"
                                     />
                                     <DocCard
                                       label="Optional Doc / Challan"
                                       filename={selectedBatchEwayBillFilename}
                                       onView={() => handleViewDocument(selectedBatchEwayBillFilename)}
+                                      onReplace={(f) => handleReplaceStandardDoc("ewayBill", f)}
+                                      canReplace={canEditOrder && !isCancelledOrder}
                                       accentBg="bg-amber-50" accentText="text-amber-600" buttonClass="bg-amber-600 hover:bg-amber-700"
                                     />
                                     <DocCard label="Gate Pass" accentBg="bg-teal-50" accentText="text-teal-600" action={gatePassAction} />
@@ -1414,18 +1470,24 @@ export default function OrderDetailModal({
                                     label="GeM Contract"
                                     filename={selectedBatch.contractFilename}
                                     onView={() => handleViewDocument(selectedBatch.contractFilename)}
+                                    onReplace={(f) => handleReplaceStandardDoc("gemContract", f)}
+                                    canReplace={canEditOrder && !isCancelledOrder}
                                     accentBg="bg-indigo-50" accentText="text-indigo-600" buttonClass="bg-indigo-600 hover:bg-indigo-700"
                                   />
                                   <DocCard
                                     label="Invoice"
                                     filename={selectedBatch.invoiceFilename}
                                     onView={() => handleViewDocument(selectedBatch.invoiceFilename)}
+                                    onReplace={(f) => handleReplaceStandardDoc("invoice", f)}
+                                    canReplace={canEditOrder && !isCancelledOrder}
                                     accentBg="bg-indigo-50" accentText="text-indigo-600" buttonClass="bg-indigo-600 hover:bg-indigo-700"
                                   />
                                   <DocCard
                                     label="Challan"
                                     filename={selectedBatchChallanFilename}
                                     onView={() => handleViewDocument(selectedBatchChallanFilename)}
+                                    onReplace={(f) => handleReplaceExtraDoc(selectedBatchChallanFilename, "challan", f)}
+                                    canReplace={canEditOrder && !isCancelledOrder}
                                     accentBg="bg-amber-50" accentText="text-amber-600" buttonClass="bg-amber-600 hover:bg-amber-700"
                                   />
                                   {shouldShowEwayBillDocument && (
@@ -1433,6 +1495,8 @@ export default function OrderDetailModal({
                                       label={isEwayBillRequired ? "E-Way Bill (Required)" : "E-Way Bill"}
                                       filename={selectedBatchEwayBillFilename}
                                       onView={() => handleViewDocument(selectedBatchEwayBillFilename)}
+                                      onReplace={(f) => handleReplaceStandardDoc("ewayBill", f)}
+                                      canReplace={canEditOrder && !isCancelledOrder}
                                       accentBg="bg-amber-50" accentText="text-amber-600" buttonClass="bg-amber-600 hover:bg-amber-700"
                                     />
                                   )}
@@ -1440,6 +1504,8 @@ export default function OrderDetailModal({
                                     label="POD"
                                     filename={selectedBatch.podFilename}
                                     onView={() => handleViewDocument(selectedBatch.podFilename)}
+                                    onReplace={(f) => handleReplaceStandardDoc("pod", f)}
+                                    canReplace={canEditOrder && !isCancelledOrder}
                                     accentBg="bg-emerald-50" accentText="text-emerald-600" buttonClass="bg-emerald-600 hover:bg-emerald-700"
                                   />
                                   <DocCard label="Gate Pass" accentBg="bg-teal-50" accentText="text-teal-600" action={gatePassAction} />
@@ -1501,26 +1567,6 @@ export default function OrderDetailModal({
                               </div>
                             );
                           })()}
-                          {oldDocs.length > 0 && (
-                            <div className="px-4 pb-4">
-                              <h4 className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 pt-3 border-t border-slate-100">Older / Replaced Documents</h4>
-                              <div className="space-y-1.5">
-                                {oldDocs.map((doc, idx) => {
-                                  let label = doc.docType;
-                                  if (label === 'gemContract') label = "GeM Contract";
-                                  if (label === 'invoice') label = "Tax Invoice";
-                                  if (label === 'ewayBill') label = "E-Way Bill";
-                                  if (label === 'pod') label = "Proof of Delivery";
-                                  return (
-                                    <button key={idx} onClick={() => handleViewDocument(doc.filename)} className="w-full flex items-center justify-between bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-500 px-3 py-2 rounded-lg text-xs transition-colors">
-                                      <span className="flex items-center gap-2"><FileText size={12} className="text-slate-300" /> {`[Old] ${label}`}</span>
-                                      <span className="text-[10px] text-slate-400 font-bold">View</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
                         </div>
 
                         {/* Additional Documents (GeM & Other only) */}
@@ -2051,44 +2097,22 @@ export default function OrderDetailModal({
                                     return (
                                       <>
                                         {/* Tax Invoice (Mandatory) */}
-                                        <div className="bg-white/5 rounded-xl p-3 border border-white/10 hover:bg-white/10 transition-colors group">
-                                          <p className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-2">Tax Invoice (Custom)</p>
-                                          {selectedBatch.invoiceFilename ? (
-                                            <div className="flex flex-col gap-2">
-                                              <button
-                                                onClick={() => handleViewDocument(selectedBatch.invoiceFilename)}
-                                                className="w-full inline-flex items-center justify-center gap-2 text-xs font-black bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg transition-all shadow-lg shadow-indigo-900/20 active:scale-95"
-                                              >
-                                                <FileText size={12} /> View Invoice
-                                              </button>
-                                              <span className="text-[10px] text-emerald-400 flex items-center justify-center gap-1 font-bold">
-                                                <CheckCircle size={10} /> Document Verified
-                                              </span>
-                                            </div>
-                                          ) : (
-                                            <p className="text-white/30 text-xs font-bold italic py-1.5 text-center bg-white/5 rounded-lg border border-white/5">Not uploaded</p>
-                                          )}
-                                        </div>
+                                        <DarkDocSlot
+                                          label="Tax Invoice (Custom)" filename={selectedBatch.invoiceFilename}
+                                          onView={() => handleViewDocument(selectedBatch.invoiceFilename)}
+                                          onReplace={(f) => handleReplaceStandardDoc("invoice", f)}
+                                          canReplace={canEditOrder && !isCancelledOrder}
+                                          viewClass="bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/20" viewLabel="View Invoice"
+                                        />
 
                                         {/* Optional Invoice / Challan */}
-                                        <div className="bg-white/5 rounded-xl p-3 border border-white/10 hover:bg-white/10 transition-colors group">
-                                          <p className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-2">Optional Doc / Challan</p>
-                                          {selectedBatchEwayBillFilename ? (
-                                            <div className="flex flex-col gap-2">
-                                              <button
-                                                onClick={() => handleViewDocument(selectedBatchEwayBillFilename)}
-                                                className="w-full inline-flex items-center justify-center gap-2 text-xs font-black bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 rounded-lg transition-all shadow-lg shadow-amber-900/20 active:scale-95"
-                                              >
-                                                <FileText size={12} /> View Document
-                                              </button>
-                                              <span className="text-[10px] text-emerald-400 flex items-center justify-center gap-1 font-bold">
-                                                <CheckCircle size={10} /> Document Verified
-                                              </span>
-                                            </div>
-                                          ) : (
-                                            <p className="text-white/30 text-xs font-bold italic py-1.5 text-center bg-white/5 rounded-lg border border-white/5">Not uploaded</p>
-                                          )}
-                                        </div>
+                                        <DarkDocSlot
+                                          label="Optional Doc / Challan" filename={selectedBatchEwayBillFilename}
+                                          onView={() => handleViewDocument(selectedBatchEwayBillFilename)}
+                                          onReplace={(f) => handleReplaceStandardDoc("ewayBill", f)}
+                                          canReplace={canEditOrder && !isCancelledOrder}
+                                          viewClass="bg-amber-600 hover:bg-amber-500 shadow-amber-900/20" viewLabel="View Document"
+                                        />
                                       </>
                                     );
                                   }
@@ -2096,115 +2120,46 @@ export default function OrderDetailModal({
                                   return (
                                     <>
                                       {/* GeM Contract */}
-                                      <div className="bg-white/5 rounded-xl p-3 border border-white/10 hover:bg-white/10 transition-colors group">
-                                        <p className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-2">GeM Contract</p>
-                                        {selectedBatch.contractFilename ? (
-                                          <div className="flex flex-col gap-2">
-                                            <button
-                                              onClick={() => handleViewDocument(selectedBatch.contractFilename)}
-                                              className="w-full inline-flex items-center justify-center gap-2 text-xs font-black bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg transition-all shadow-lg shadow-indigo-900/20 active:scale-95"
-                                            >
-                                              <FileText size={12} /> View Contract
-                                            </button>
-                                            <span className="text-[10px] text-emerald-400 flex items-center justify-center gap-1 font-bold">
-                                              <CheckCircle size={10} /> Document Verified
-                                            </span>
-                                          </div>
-                                        ) : (
-                                          <p className="text-white/30 text-xs font-bold italic py-1.5 text-center bg-white/5 rounded-lg border border-white/5">Not uploaded</p>
-                                        )}
-                                      </div>
+                                      <DarkDocSlot
+                                        label="GeM Contract" filename={selectedBatch.contractFilename}
+                                        onView={() => handleViewDocument(selectedBatch.contractFilename)}
+                                        onReplace={(f) => handleReplaceStandardDoc("gemContract", f)}
+                                        canReplace={canEditOrder && !isCancelledOrder}
+                                        viewClass="bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/20" viewLabel="View Contract"
+                                      />
 
                                       {/* Tax Invoice */}
-                                      <div className="bg-white/5 rounded-xl p-3 border border-white/10 hover:bg-white/10 transition-colors group">
-                                        <p className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-2">Invoice</p>
-                                        {selectedBatch.invoiceFilename ? (
-                                          <div className="flex flex-col gap-2">
-                                            <button
-                                              onClick={() => handleViewDocument(selectedBatch.invoiceFilename)}
-                                              className="w-full inline-flex items-center justify-center gap-2 text-xs font-black bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg transition-all shadow-lg shadow-indigo-900/20 active:scale-95"
-                                            >
-                                              <FileText size={12} /> View Invoice
-                                            </button>
-                                            <span className="text-[10px] text-emerald-400 flex items-center justify-center gap-1 font-bold">
-                                              <CheckCircle size={10} /> Document Verified
-                                            </span>
-                                          </div>
-                                        ) : (
-                                          <p className="text-white/30 text-xs font-bold italic py-1.5 text-center bg-white/5 rounded-lg border border-white/5">Not uploaded</p>
-                                        )}
-                                      </div>
+                                      <DarkDocSlot
+                                        label="Invoice" filename={selectedBatch.invoiceFilename}
+                                        onView={() => handleViewDocument(selectedBatch.invoiceFilename)}
+                                        onReplace={(f) => handleReplaceStandardDoc("invoice", f)}
+                                        canReplace={canEditOrder && !isCancelledOrder}
+                                        viewClass="bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/20" viewLabel="View Invoice"
+                                      />
 
                                       {/* E-Way Bill */}
                                       {shouldShowEwayBillDocument && (
-                                        <div className="bg-white/5 rounded-xl p-3 border border-white/10 hover:bg-white/10 transition-colors group">
-                                          <p className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-2">{isEwayBillRequired ? "E-Way Bill (Req)" : "E-Way Bill"}</p>
-                                          {selectedBatchEwayBillFilename ? (
-                                            <div className="flex flex-col gap-2">
-                                              <button
-                                                onClick={() => handleViewDocument(selectedBatchEwayBillFilename)}
-                                                className="w-full inline-flex items-center justify-center gap-2 text-xs font-black bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 rounded-lg transition-all shadow-lg shadow-amber-900/20 active:scale-95"
-                                              >
-                                                <FileText size={12} /> View E-Way Bill
-                                              </button>
-                                              <span className="text-[10px] text-emerald-400 flex items-center justify-center gap-1 font-bold">
-                                                <CheckCircle size={10} /> Document Verified
-                                              </span>
-                                            </div>
-                                          ) : (
-                                            <p className="text-white/30 text-xs font-bold italic py-1.5 text-center bg-white/5 rounded-lg border border-white/5">Not uploaded</p>
-                                          )}
-                                        </div>
+                                        <DarkDocSlot
+                                          label={isEwayBillRequired ? "E-Way Bill (Req)" : "E-Way Bill"} filename={selectedBatchEwayBillFilename}
+                                          onView={() => handleViewDocument(selectedBatchEwayBillFilename)}
+                                          onReplace={(f) => handleReplaceStandardDoc("ewayBill", f)}
+                                          canReplace={canEditOrder && !isCancelledOrder}
+                                          viewClass="bg-amber-600 hover:bg-amber-500 shadow-amber-900/20" viewLabel="View E-Way Bill"
+                                        />
                                       )}
 
                                       {/* Proof of Delivery */}
-                                      <div className="bg-white/5 rounded-xl p-3 border border-white/10 hover:bg-white/10 transition-colors group">
-                                        <p className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-2">POD</p>
-                                        {selectedBatch.podFilename ? (
-                                          <div className="flex flex-col gap-2">
-                                            <button
-                                              onClick={() => handleViewDocument(selectedBatch.podFilename)}
-                                              className="w-full inline-flex items-center justify-center gap-2 text-xs font-black bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg transition-all shadow-lg shadow-emerald-900/20 active:scale-95"
-                                            >
-                                              <FileText size={12} /> View POD
-                                            </button>
-                                            <span className="text-[10px] text-emerald-400 flex items-center justify-center gap-1 font-bold">
-                                              <CheckCircle size={10} /> Document Verified
-                                            </span>
-                                          </div>
-                                        ) : (
-                                          <p className="text-white/30 text-xs font-bold italic py-1.5 text-center bg-white/5 rounded-lg border border-white/5">Not uploaded</p>
-                                        )}
-                                      </div>
+                                      <DarkDocSlot
+                                        label="POD" filename={selectedBatch.podFilename}
+                                        onView={() => handleViewDocument(selectedBatch.podFilename)}
+                                        onReplace={(f) => handleReplaceStandardDoc("pod", f)}
+                                        canReplace={canEditOrder && !isCancelledOrder}
+                                        viewClass="bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20" viewLabel="View POD"
+                                      />
                                     </>
                                   );
                                 })()}
                               </div>
-
-                              {oldDocs.length > 0 && (
-                                <div className="mt-4 pt-3 border-t border-white/10">
-                                  <h4 className="text-[10px] uppercase font-bold text-white/40 mb-2">Older / Replaced Documents</h4>
-                                  <div className="space-y-1.5">
-                                    {oldDocs.map((doc, idx) => {
-                                      let label = doc.docType;
-                                      if (label === 'gemContract') label = "GeM Contract";
-                                      if (label === 'invoice') label = "Tax Invoice";
-                                      if (label === 'ewayBill') label = "E-Way Bill";
-                                      if (label === 'pod') label = "Proof of Delivery";
-                                      return (
-                                        <button
-                                          key={idx}
-                                          onClick={() => handleViewDocument(doc.filename)}
-                                          className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 text-white px-3 py-2 rounded-lg text-xs transition-colors"
-                                        >
-                                          <span className="flex items-center gap-2"><FileText size={12} className="text-white/40" /> {`[Old] ${label}`}</span>
-                                          <span className="text-[10px] text-white/40">View</span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
                             </div>
 
                             {/* ── Additional / Custom Documents (GeM & Other only, not marketplaces) */}

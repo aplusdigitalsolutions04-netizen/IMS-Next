@@ -10,6 +10,10 @@ import GlobalSearchModal from "@/components/common/GlobalSearchModal";
 import { CompanyProvider, useCompany } from "@/lib/client/CompanyContext";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const UPLOADS_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
+const getPhotoUrl = (filename) => (filename ? `${UPLOADS_BASE_URL}/uploads/${encodeURIComponent(filename)}` : null);
+
 // Minimal authenticated shell, ported from Frontend4/src/components/AdminLayout.jsx's
 // auth-guard + top-level chrome. The full sidebar (35 nav items across
 // Masters/Inventory/Order Processing/Returns groups) is being ported
@@ -35,7 +39,7 @@ function AppLayoutInner({ children, currentUser, handleLogout, router, pathname,
         <Sidebar currentUser={currentUser} isAdmin={isAdmin} />
       </div>
 
-      <main className="flex-1 overflow-auto flex flex-col">
+      <main className="flex-1 flex flex-col min-h-0">
         <div className="hidden md:flex items-center justify-between gap-3 px-6 py-2 bg-white border-b border-slate-100 shrink-0">
           <div className="relative w-72 group">
             <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl blur opacity-20 group-hover:opacity-30 transition-opacity" />
@@ -69,9 +73,17 @@ function AppLayoutInner({ children, currentUser, handleLogout, router, pathname,
           )}
           <ThemeToggle />
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl">
-            <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center">
-              <User size={14} className="text-indigo-600" />
-            </div>
+            {currentUser.profilePhoto ? (
+              <img
+                src={getPhotoUrl(currentUser.profilePhoto)}
+                alt=""
+                className="w-7 h-7 rounded-full object-cover border border-indigo-100"
+              />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center">
+                <User size={14} className="text-indigo-600" />
+              </div>
+            )}
             <span className="text-sm font-semibold text-slate-700">{currentUser.fullName || currentUser.username || "User"}</span>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isAdmin ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-500"}`}>
               {currentUser.role || "User"}
@@ -85,7 +97,9 @@ function AppLayoutInner({ children, currentUser, handleLogout, router, pathname,
           </button>
           </div>
         </div>
-        <div className="max-w-full mx-auto p-4 md:p-6 w-full flex-1 flex flex-col min-h-0">{children}</div>
+        <div className="flex-1 overflow-auto min-h-0">
+          <div className="max-w-full mx-auto p-4 md:p-6 w-full flex flex-col min-h-full">{children}</div>
+        </div>
       </main>
       <GlobalSearchModal showFinancials={currentUser.role === "Admin" || !!currentUser.permissions?.includes("billing")} />
     </div>
@@ -113,6 +127,14 @@ export default function AppLayout({ children }) {
     }
     setChecked(true);
   }, [router]);
+
+  useEffect(() => {
+    const onSessionUpdated = (e) => {
+      if (e.detail?.user) setCurrentUser(e.detail.user);
+    };
+    window.addEventListener("pt-session-updated", onSessionUpdated);
+    return () => window.removeEventListener("pt-session-updated", onSessionUpdated);
+  }, []);
 
   const handleLogout = () => {
     clearSession();

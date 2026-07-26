@@ -1,10 +1,15 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { printerService } from '@/lib/services/api';
-import { 
-  User, KeyRound, Save, Loader2, AlertCircle, CheckCircle, 
-  Mail, Phone, ShieldCheck, Lock, Eye, EyeOff 
+import { setSession, getStoredToken } from '@/lib/client/auth';
+import {
+  User, KeyRound, Save, Loader2, AlertCircle, CheckCircle,
+  Mail, Phone, ShieldCheck, Lock, Eye, EyeOff, Bell, BellOff, Camera, Trash2
 } from 'lucide-react';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const UPLOADS_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
+const getPhotoUrl = (filename) => (filename ? `${UPLOADS_BASE_URL}/uploads/${encodeURIComponent(filename)}` : null);
 
 // Custom CSS for animations
 const styleSheet = `
@@ -53,11 +58,17 @@ const Toast = ({ message, type, onClose }) => {
 export default function ProfilePage({ currentUser }) {
   const [profile, setProfile] = useState({ fullName: '', email: '', phone: '' });
   const [passwordForm, setPasswordForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
-  
+
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [notification, setNotification] = useState(null);
+
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [savingNotifPref, setSavingNotifPref] = useState(false);
+
+  const [profilePhoto, setProfilePhoto] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   
   // UI State for Password Visibility
   const [showPassword, setShowPassword] = useState({ old: false, new: false, confirm: false });
@@ -71,6 +82,8 @@ export default function ProfilePage({ currentUser }) {
           email: data.email || '',
           phone: data.phone || '',
         });
+        setNotificationsEnabled(data.notificationsEnabled !== false);
+        setProfilePhoto(data.profilePhoto || null);
       } catch {
         setNotification({ type: 'error', message: 'Failed to load profile.' });
       } finally {
@@ -97,12 +110,73 @@ export default function ProfilePage({ currentUser }) {
     setSavingProfile(true);
     setNotification(null);
     try {
-      await printerService.updateProfile(profile);
+      const result = await printerService.updateProfile(profile);
+      syncStoredUser(result.user);
       setNotification({ type: 'success', message: 'Profile updated successfully.' });
     } catch (error) {
       setNotification({ type: 'error', message: error.response?.data?.message || 'Failed to update profile.' });
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const syncStoredUser = (updatedUser) => {
+    if (!updatedUser) return;
+    setSession({ user: updatedUser, token: getStoredToken() });
+  };
+
+  const handlePhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowed.includes(file.type)) {
+      setNotification({ type: 'error', message: 'Only JPG, PNG, WEBP, or GIF images are allowed.' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setNotification({ type: 'error', message: 'Image must be smaller than 5MB.' });
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const result = await printerService.uploadProfilePhoto(file);
+      setProfilePhoto(result.user?.profilePhoto || null);
+      syncStoredUser(result.user);
+      setNotification({ type: 'success', message: 'Profile photo updated.' });
+    } catch (error) {
+      setNotification({ type: 'error', message: error.response?.data?.message || 'Failed to upload photo.' });
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    setUploadingPhoto(true);
+    try {
+      const result = await printerService.removeProfilePhoto();
+      setProfilePhoto(null);
+      syncStoredUser(result.user);
+      setNotification({ type: 'success', message: 'Profile photo removed.' });
+    } catch (error) {
+      setNotification({ type: 'error', message: error.response?.data?.message || 'Failed to remove photo.' });
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleToggleNotifications = async () => {
+    const next = !notificationsEnabled;
+    setSavingNotifPref(true);
+    try {
+      const result = await printerService.updateProfile({ ...profile, notificationsEnabled: next });
+      setNotificationsEnabled(next);
+      syncStoredUser(result.user);
+      setNotification({ type: 'success', message: next ? 'Notifications turned on.' : 'Notifications turned off.' });
+    } catch (error) {
+      setNotification({ type: 'error', message: error.response?.data?.message || 'Failed to update notification preference.' });
+    } finally {
+      setSavingNotifPref(false);
     }
   };
 
@@ -180,6 +254,57 @@ export default function ProfilePage({ currentUser }) {
               <p className="text-slate-500 text-sm ml-1">Update your personal information and contact details.</p>
             </div>
 
+            {/* Avatar */}
+            <div className="flex items-center gap-5 mb-8">
+              <div className="relative w-20 h-20 shrink-0">
+                {profilePhoto ? (
+                  <img
+                    src={getPhotoUrl(profilePhoto)}
+                    alt="Profile"
+                    className="w-20 h-20 rounded-full object-cover border-2 border-indigo-100 shadow-sm"
+                  />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-indigo-100 flex items-center justify-center border-2 border-indigo-100 shadow-sm">
+                    <User size={32} className="text-indigo-500" />
+                  </div>
+                )}
+                {uploadingPhoto && (
+                  <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
+                    <Loader2 size={20} className="animate-spin text-white" />
+                  </div>
+                )}
+                <label
+                  htmlFor="profile-photo-input"
+                  className="absolute -bottom-1 -right-1 p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-md cursor-pointer transition-colors"
+                  title="Change photo"
+                >
+                  <Camera size={13} />
+                  <input
+                    id="profile-photo-input"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={handlePhotoChange}
+                    disabled={uploadingPhoto}
+                  />
+                </label>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Profile Photo</p>
+                <p className="text-xs text-slate-400 mb-2">JPG, PNG, WEBP or GIF — up to 5MB.</p>
+                {profilePhoto && (
+                  <button
+                    type="button"
+                    onClick={handleRemovePhoto}
+                    disabled={uploadingPhoto}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:text-red-700 disabled:opacity-50 transition-colors"
+                  >
+                    <Trash2 size={12} /> Remove photo
+                  </button>
+                )}
+              </div>
+            </div>
+
             <form onSubmit={handleProfileSubmit} className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
@@ -252,6 +377,39 @@ export default function ProfilePage({ currentUser }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+
+        {/* Notification Preferences Section */}
+        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden animate-fade-in-up">
+          <div className="relative z-10">
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-slate-800 mb-2 flex items-center gap-3">
+                <div className="p-2.5 bg-amber-50 rounded-xl text-amber-600 shadow-sm border border-amber-100/50">
+                  <Bell size={22} />
+                </div>
+                Notification Preferences
+              </h2>
+              <p className="text-slate-500 text-sm ml-1">Control whether you receive in-app notifications (order updates, contract uploads, etc.).</p>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50/60 border border-slate-100">
+              <div className="flex items-center gap-3">
+                {notificationsEnabled ? <Bell size={18} className="text-indigo-500" /> : <BellOff size={18} className="text-slate-400" />}
+                <div>
+                  <p className="text-sm font-semibold text-slate-700">{notificationsEnabled ? 'Notifications are on' : 'Notifications are off'}</p>
+                  <p className="text-xs text-slate-400">{notificationsEnabled ? "You'll receive new notifications as they happen." : "You won't receive any new notifications until turned back on."}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleNotifications}
+                disabled={savingNotifPref}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 transition-colors duration-200 focus:outline-none disabled:opacity-60 ${notificationsEnabled ? 'bg-indigo-600 border-indigo-600' : 'bg-slate-200 border-slate-200'}`}
+              >
+                <span className={`inline-block h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${notificationsEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
           </div>
         </div>
 
