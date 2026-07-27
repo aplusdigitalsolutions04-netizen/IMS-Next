@@ -1,6 +1,5 @@
-import "@/lib/pdfPolyfills";
 import { NextResponse } from "next/server";
-import { PDFParse } from "pdf-parse";
+import { getDocumentProxy, extractText } from "unpdf";
 import { authenticateRequest, requireAuth, ApiError } from "@/lib/auth";
 import { callOpenAI, callOpenAIVision, checkOpenAIKey } from "@/lib/aiParse";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
@@ -18,10 +17,9 @@ export const POST = withErrorHandling(async (request) => {
     if (mimeType === "application/pdf") {
       const buffer = Buffer.from(fileBase64, "base64");
       if (buffer.length > 15 * 1024 * 1024) throw new ApiError(413, "File too large (max 15 MB)");
-      const parser = new PDFParse({ data: buffer });
-      const pdfData = await parser.getText();
-      await parser.destroy();
-      const text = (pdfData.text || "").trim();
+      const pdf = await getDocumentProxy(new Uint8Array(buffer));
+      const { text: rawText } = await extractText(pdf, { mergePages: true });
+      const text = (rawText || "").trim();
       if (!text) throw new ApiError(422, "Could not extract text from PDF — it may be a scanned image PDF. Try uploading as JPG/PNG.");
       result = await callOpenAI(text);
     } else if (mimeType.startsWith("image/")) {

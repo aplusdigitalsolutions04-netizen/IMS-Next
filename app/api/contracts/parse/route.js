@@ -1,6 +1,5 @@
-import "@/lib/pdfPolyfills";
 import { NextResponse } from "next/server";
-import { PDFParse } from "pdf-parse";
+import { getDocumentProxy, extractText } from "unpdf";
 import { authenticateRequest, requireAuth, ApiError } from "@/lib/auth";
 import { callOpenAIContract, callOpenAIVisionContract, checkOpenAIKey } from "@/lib/aiParse";
 import { saveUploadedFile } from "@/lib/upload";
@@ -23,10 +22,9 @@ export const POST = withErrorHandling(async (request) => {
   let extracted;
   try {
     if (mimeType === "application/pdf") {
-      const parser = new PDFParse({ data: buffer });
-      const pdfData = await parser.getText();
-      await parser.destroy();
-      const text = (pdfData.text || "").trim();
+      const pdf = await getDocumentProxy(new Uint8Array(buffer));
+      const { text: rawText } = await extractText(pdf, { mergePages: true });
+      const text = (rawText || "").trim();
       if (!text) throw new ApiError(422, "Could not extract text from PDF — it may be a scanned image PDF. Try uploading as JPG/PNG.");
       extracted = await callOpenAIContract(text);
     } else if (mimeType.startsWith("image/")) {
