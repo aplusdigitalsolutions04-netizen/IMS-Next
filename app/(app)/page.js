@@ -118,34 +118,31 @@ function getDayFilterRange(key, customStart, customEnd) {
 export default function DashboardPage() {
   const router = useRouter();
   const { models: ownModels, serials: ownSerials, dispatches: ownDispatches, returns: ownReturns } = useAppData();
-  const { availableCompanies } = useCompany();
+  // dashboardFilter is driven by the topbar Company Switcher's "All Companies"
+  // option next to the date/time pill — selecting a specific company there
+  // also switches the session (see CompanySwitcher in layout.jsx), so this
+  // filter and the active session company stay in sync.
+  const { dashboardFilter } = useCompany();
   const currentUser = typeof window !== "undefined" ? getStoredUser() : null;
   const userRole = currentUser?.role || "User";
   const isAdmin = userRole === "Admin";
 
-  // This inline dashboard filter is Admin only — deliberately narrower than
-  // lib/auth.js's hasAllCompaniesAccess() (which also grants
-  // allCompaniesAccess-flagged users cross-company data access). Those users
-  // still get the topbar Company Switcher next to the date/time pill; they
-  // just don't get this second filter on the dashboard itself.
   const canSeeAllCompanies = userRole === "Admin";
-  const [companyFilter, setCompanyFilter] = useState("all");
   const [filteredData, setFilteredData] = useState(null);
   const [filterLoading, setFilterLoading] = useState(false);
 
   useEffect(() => {
-    if (!canSeeAllCompanies || companyFilter === "own") {
+    if (!canSeeAllCompanies || dashboardFilter !== "all") {
       setFilteredData(null);
       return;
     }
     let cancelled = false;
     setFilterLoading(true);
-    const cg = companyFilter; // "all" or a specific company guid
     Promise.all([
-      printerService.getModels(cg),
-      printerService.getSerials(cg),
-      printerService.getDispatches(true, cg),
-      printerService.getReturns(cg),
+      printerService.getModels("all"),
+      printerService.getSerials("all"),
+      printerService.getDispatches(true, "all"),
+      printerService.getReturns("all"),
     ]).then(([m, s, d, r]) => {
       if (cancelled) return;
       setFilteredData({
@@ -156,7 +153,7 @@ export default function DashboardPage() {
       });
     }).finally(() => { if (!cancelled) setFilterLoading(false); });
     return () => { cancelled = true; };
-  }, [companyFilter, canSeeAllCompanies]);
+  }, [dashboardFilter, canSeeAllCompanies]);
 
   const models = filteredData ? filteredData.models : ownModels;
   const serials = filteredData ? filteredData.serials : ownSerials;
@@ -408,7 +405,10 @@ export default function DashboardPage() {
         <div className="absolute -top-4 -left-4 w-48 h-48 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 rounded-full blur-3xl -z-10" />
 
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-          <h1 className="text-lg font-extrabold text-slate-800 tracking-tight">Inventory Dashboard</h1>
+          <h1 className="text-lg font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
+            Inventory Dashboard
+            {filterLoading && <Loader2 size={14} className="animate-spin text-indigo-400" />}
+          </h1>
           <div className="flex flex-wrap items-center gap-2 justify-end">
             <select
               value={platformFilter}
@@ -454,19 +454,6 @@ export default function DashboardPage() {
                 <option key={opt.key} value={opt.key}>{opt.label}</option>
               ))}
             </select>
-            {canSeeAllCompanies && (
-              <select
-                value={companyFilter}
-                onChange={(e) => setCompanyFilter(e.target.value)}
-                className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 shadow-sm rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-200 cursor-pointer w-fit"
-              >
-                <option value="all">All Companies</option>
-                {availableCompanies.map((c) => (
-                  <option key={c.guid} value={c.guid}>{c.name}</option>
-                ))}
-              </select>
-            )}
-            {filterLoading && <Loader2 size={14} className="animate-spin text-indigo-400" />}
             {modelCategories.length > 0 && (
               <select
                 value={categoryFilter}

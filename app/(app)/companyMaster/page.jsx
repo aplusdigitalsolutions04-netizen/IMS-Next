@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Plus, Pencil, Check, X, Trash2, Loader2, Building2, Search,
   CheckCircle, Globe, ShieldCheck, Ban, Store, Landmark, ShoppingBag, Link2,
+  ImageUp,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import api from "@/lib/client/apiClient";
@@ -40,8 +41,11 @@ export default function CompanyMasterPage() {
   // null = modal closed; { guid: null } = creating; { guid: "..." } = editing
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ name: "", allowedPlatforms: [], isActive: true });
+  const [uploadingLogoGuid, setUploadingLogoGuid] = useState(null);
   const nameInputRef = useRef(null);
-  const { setAvailableCompanies } = useCompany();
+  const logoInputRef = useRef(null);
+  const logoTargetGuid = useRef(null);
+  const { setAvailableCompanies, syncActiveCompany } = useCompany();
 
   useEffect(() => { fetchCompanies(); }, []);
   useEffect(() => { if (modal && nameInputRef.current) nameInputRef.current.focus(); }, [modal]);
@@ -58,8 +62,9 @@ export default function CompanyMasterPage() {
         // login returns: only active companies, {guid, name, allowedPlatforms}.
         const active = res.data
           .filter((c) => c.isActive === 1 || c.isActive === true)
-          .map((c) => ({ guid: c.guid, name: c.name, allowedPlatforms: c.allowedPlatforms }));
+          .map((c) => ({ guid: c.guid, name: c.name, allowedPlatforms: c.allowedPlatforms, logoFilename: c.logoFilename }));
         setAvailableCompanies(active);
+        syncActiveCompany(active);
         window.sessionStorage.setItem("pt_companies", JSON.stringify(active));
       }
     } catch (err) {
@@ -127,6 +132,29 @@ export default function CompanyMasterPage() {
     }
   };
 
+  const openLogoPicker = (company) => {
+    logoTargetGuid.current = company.guid;
+    if (logoInputRef.current) logoInputRef.current.click();
+  };
+
+  const handleLogoChange = async (e) => {
+    const file = e.target.files?.[0];
+    const guid = logoTargetGuid.current;
+    e.target.value = "";
+    if (!file || !guid) return;
+    setUploadingLogoGuid(guid);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.post(`/companies/${guid}/logo`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      await fetchCompanies();
+    } catch (err) {
+      Swal.fire({ title: "Couldn't upload logo", text: err.response?.data?.message || err.message, icon: "error", customClass: { popup: "rounded-2xl", confirmButton: "rounded-xl font-semibold" } });
+    } finally {
+      setUploadingLogoGuid(null);
+    }
+  };
+
   const handleDelete = async (company) => {
     const result = await Swal.fire({
       title: `Deactivate "${company.name}"?`,
@@ -150,6 +178,13 @@ export default function CompanyMasterPage() {
 
   return (
     <div className="w-full space-y-6">
+      <input
+        ref={logoInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={handleLogoChange}
+      />
 
       {/* ── Hero header ── */}
       <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 rounded-3xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden">
@@ -288,9 +323,24 @@ export default function CompanyMasterPage() {
 
                     {/* Avatar + name */}
                     <div className="flex flex-col items-center text-center mb-4">
-                      <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${accent} flex items-center justify-center text-white text-xl font-black shadow-md mb-3`}>
-                        {String(c.name || "?").trim().charAt(0).toUpperCase()}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openLogoPicker(c)}
+                        title="Change company logo"
+                        className={`relative w-14 h-14 rounded-2xl overflow-hidden flex items-center justify-center text-white text-xl font-black shadow-md mb-3 group/logo ${c.logoFilename ? "bg-white border border-slate-200" : `bg-gradient-to-br ${accent}`}`}
+                      >
+                        {uploadingLogoGuid === c.guid ? (
+                          <Loader2 size={18} className="animate-spin text-slate-400" />
+                        ) : c.logoFilename ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={`/uploads/${c.logoFilename}`} alt={c.name} className="w-full h-full object-contain p-1" />
+                        ) : (
+                          String(c.name || "?").trim().charAt(0).toUpperCase()
+                        )}
+                        <span className="absolute inset-0 bg-black/50 opacity-0 group-hover/logo:opacity-100 transition-opacity flex items-center justify-center">
+                          <ImageUp size={16} className="text-white" />
+                        </span>
+                      </button>
                       <h3 className="font-extrabold text-slate-900 text-base leading-tight truncate max-w-full" title={c.name}>
                         {c.name}
                       </h3>

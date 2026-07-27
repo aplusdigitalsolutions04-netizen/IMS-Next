@@ -62,7 +62,7 @@ function AppLayoutInner({ children, currentUser, handleLogout, router, pathname,
             </div>
           </div>
           <div className="flex items-center gap-3 ml-auto">
-            <CompanySwitcher />
+            <CompanySwitcher isAdmin={isAdmin} />
           {now && (
             <span className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 px-3 py-1.5 rounded-full shadow-sm">
               <Clock size={13} className="text-indigo-500" />
@@ -168,21 +168,43 @@ export default function AppLayout({ children }) {
   );
 }
 
-function CompanySwitcher() {
-  const { activeCompany, availableCompanies, switchCompany } = useCompany();
+function CompanySwitcher({ isAdmin }) {
+  const { activeCompany, availableCompanies, switchCompany, dashboardFilter, setDashboardFilter, isSwitchingCompany } = useCompany();
   if (!availableCompanies || availableCompanies.length <= 1) return null;
 
+  const handleChange = (value) => {
+    if (value === "all") {
+      setDashboardFilter("all");
+      return;
+    }
+    setDashboardFilter(value);
+    if (value !== activeCompany?.guid) switchCompany(value);
+  };
+
   return (
-    <select
-      value={activeCompany?.guid || ""}
-      onChange={(e) => switchCompany(e.target.value)}
-      className="text-sm font-semibold bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-    >
-      {availableCompanies.map((c) => (
-        <option key={c.guid} value={c.guid}>
-          {c.name}
-        </option>
-      ))}
-    </select>
+    <div className="relative">
+      <select
+        value={isAdmin && dashboardFilter === "all" ? "all" : activeCompany?.guid || ""}
+        onChange={(e) => handleChange(e.target.value)}
+        disabled={isSwitchingCompany}
+        className="text-sm font-semibold bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-wait"
+      >
+        {isAdmin && <option value="all">All Companies</option>}
+        {availableCompanies.map((c) => (
+          <option key={c.guid} value={c.guid}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+      {isSwitchingCompany && (
+        <span
+          className="absolute -top-1 -right-1 flex h-3 w-3"
+          title="Switching company…"
+        >
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-indigo-500" />
+        </span>
+      )}
+    </div>
   );
 }

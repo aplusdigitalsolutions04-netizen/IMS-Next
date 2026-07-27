@@ -23,9 +23,9 @@ export const POST = withErrorHandling(async (request) => {
   // Admin (and allCompaniesAccess-flagged users) see every active company,
   // present and future, without needing a row per company in user_companies.
   const [userCompanies] = hasAllCompaniesAccess(user)
-    ? await mysqlPool.query(`SELECT guid, name, allowedPlatforms FROM companies WHERE isActive = 1`)
+    ? await mysqlPool.query(`SELECT guid, name, allowedPlatforms, logoFilename FROM companies WHERE isActive = 1`)
     : await mysqlPool.query(
-        `SELECT c.guid, c.name, c.allowedPlatforms
+        `SELECT c.guid, c.name, c.allowedPlatforms, c.logoFilename
          FROM user_companies uc
          JOIN companies c ON uc.companyGuid = c.guid
          WHERE uc.userGuid = ? AND c.isActive = 1`,

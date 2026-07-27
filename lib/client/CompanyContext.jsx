@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import Swal from "sweetalert2";
 import { useAppData } from "./AppDataContext";
 import { setSession } from "./auth";
 import api from "./apiClient";
@@ -10,6 +11,11 @@ const CompanyContext = createContext(null);
 export function CompanyProvider({ children }) {
   const [activeCompany, setActiveCompany] = useState(null);
   const [availableCompanies, setAvailableCompanies] = useState([]);
+  // Read-only lens the Dashboard uses to view aggregated data across every
+  // company ("all") or one specific company, independent of which company the
+  // session is actually scoped to for write operations (activeCompany).
+  const [dashboardFilter, setDashboardFilter] = useState("all");
+  const [isSwitchingCompany, setIsSwitchingCompany] = useState(false);
   const { loadCoreData } = useAppData();
 
   useEffect(() => {
@@ -27,7 +33,18 @@ export function CompanyProvider({ children }) {
     }
   }, []);
 
+  // Called after availableCompanies is refreshed elsewhere (e.g. Company Master
+  // updates a logo) so the sidebar picks it up without a logout/login.
+  const syncActiveCompany = (companies) => {
+    setActiveCompany((prev) => {
+      if (!prev) return prev;
+      const updated = companies.find((c) => c.guid === prev.guid);
+      return updated || prev;
+    });
+  };
+
   const switchCompany = async (companyGuid) => {
+    setIsSwitchingCompany(true);
     try {
       const res = await api.post("/auth/switch-company", { companyGuid });
       const data = res.data;
@@ -40,15 +57,26 @@ export function CompanyProvider({ children }) {
       if (newActive) setActiveCompany(newActive);
 
       // Refresh global app data for the new company scope
-      loadCoreData();
+      await loadCoreData();
+
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: newActive ? `Switched to ${newActive.name}` : "Company switched",
+        timer: 1800,
+        showConfirmButton: false,
+      });
     } catch (err) {
       console.error("Error switching company:", err);
       alert(err.response?.data?.message || err.message);
+    } finally {
+      setIsSwitchingCompany(false);
     }
   };
 
   return (
-    <CompanyContext.Provider value={{ activeCompany, availableCompanies, switchCompany, setAvailableCompanies }}>
+    <CompanyContext.Provider value={{ activeCompany, availableCompanies, switchCompany, setAvailableCompanies, syncActiveCompany, dashboardFilter, setDashboardFilter, isSwitchingCompany }}>
       {children}
     </CompanyContext.Provider>
   );
