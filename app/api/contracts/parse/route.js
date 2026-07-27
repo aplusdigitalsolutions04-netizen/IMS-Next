@@ -1,3 +1,4 @@
+import "@/lib/pdfPolyfills";
 import { NextResponse } from "next/server";
 import { PDFParse } from "pdf-parse";
 import { authenticateRequest, requireAuth, ApiError } from "@/lib/auth";
