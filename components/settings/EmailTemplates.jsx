@@ -11,6 +11,8 @@ const EMPTY_FORM = {
   templateName: "",
   emailSubject: "",
   emailBody: "",
+  emailCc: "",
+  emailBcc: "",
   isActive: true,
 };
 
@@ -61,6 +63,8 @@ export default function EmailTemplates() {
       templateName: tpl.templateName,
       emailSubject: tpl.emailSubject,
       emailBody: tpl.emailBody,
+      emailCc: tpl.emailCc || "",
+      emailBcc: tpl.emailBcc || "",
       isActive: !!tpl.isActive,
     });
     setPreview(false);
@@ -267,6 +271,27 @@ export default function EmailTemplates() {
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
                   />
                 )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">CC <span className="normal-case font-medium text-slate-400">(optional)</span></label>
+                  <input
+                    value={form.emailCc}
+                    onChange={(e) => handleField("emailCc", e.target.value)}
+                    placeholder="cc@example.com, another@example.com"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">BCC <span className="normal-case font-medium text-slate-400">(optional)</span></label>
+                  <input
+                    value={form.emailBcc}
+                    onChange={(e) => handleField("emailBcc", e.target.value)}
+                    placeholder="bcc@example.com"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
               </div>
 
               <div>

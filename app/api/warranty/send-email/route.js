@@ -12,7 +12,7 @@ export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   authorizeWarranty(user, "POST");
 
-  const { to, cc, bcc, subject, body: emailBody, attachments } = body;
+  const { to, cc, bcc, subject, body: emailBody, attachments, accountGuid, purpose } = body;
   if (!to) throw new ApiError(400, '"To" email is required');
   if (!subject) throw new ApiError(400, "Subject is required");
   const validEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s).trim());
@@ -21,7 +21,10 @@ export const POST = withErrorHandling(async (request) => {
   if (bcc && !bcc.split(",").every((e) => validEmail(e.trim()))) throw new ApiError(400, "Invalid BCC email address");
 
   try {
-    await sendWarrantyEmail({ companyGuid: user.companyId, to, cc, bcc, subject, body: emailBody, attachments });
+    // `purpose` comes from whichever template the user picked in the compose
+    // flow — that decides which connected email account the send resolves
+    // to (falls back to "warranty" for older callers that don't send it).
+    await sendWarrantyEmail({ companyGuid: user.companyId, purpose: purpose || "warranty", accountGuid, to, cc, bcc, subject, body: emailBody, attachments });
   } catch (err) {
     console.error("[warranty] POST /send-email:", err);
     throw new ApiError(500, err.message || "Failed to send email");

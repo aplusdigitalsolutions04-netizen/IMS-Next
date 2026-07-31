@@ -27,7 +27,7 @@ export const POST = withErrorHandling(async (request) => {
   requireRoles(user, ["Admin"], "Only Admin can manage email templates.");
 
   const body = await parseJsonBody(request);
-  const { companyGuid, purpose, templateName, emailSubject, emailBody, isActive } = body;
+  const { companyGuid, purpose, templateName, emailSubject, emailBody, isActive, emailCc, emailBcc } = body;
 
   await validatePurpose(purpose);
   if (!templateName?.trim()) throw new ApiError(400, "Template name is required");
@@ -36,9 +36,9 @@ export const POST = withErrorHandling(async (request) => {
 
   const guid = randomUUID();
   await mysqlPool.query(
-    `INSERT INTO email_templates (guid, companyGuid, purpose, templateName, emailSubject, emailBody, isActive)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [guid, companyGuid || null, purpose, templateName.trim(), emailSubject.trim(), emailBody, isActive === false ? 0 : 1]
+    `INSERT INTO email_templates (guid, companyGuid, purpose, templateName, emailSubject, emailBody, isActive, emailCc, emailBcc)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [guid, companyGuid || null, purpose, templateName.trim(), emailSubject.trim(), emailBody, isActive === false ? 0 : 1, emailCc?.trim() || null, emailBcc?.trim() || null]
   );
 
   return NextResponse.json({ message: "Template created", guid });

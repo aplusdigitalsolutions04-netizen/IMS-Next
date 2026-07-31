@@ -14,7 +14,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   const { id } = await params;
 
   const body = await parseJsonBody(request);
-  const { companyGuid, purpose, templateName, emailSubject, emailBody, isActive } = body;
+  const { companyGuid, purpose, templateName, emailSubject, emailBody, isActive, emailCc, emailBcc } = body;
 
   await validatePurpose(purpose);
   if (!templateName?.trim()) throw new ApiError(400, "Template name is required");
@@ -22,9 +22,9 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   if (!emailBody?.trim()) throw new ApiError(400, "Email body is required");
 
   const [result] = await mysqlPool.query(
-    `UPDATE email_templates SET companyGuid = ?, purpose = ?, templateName = ?, emailSubject = ?, emailBody = ?, isActive = ?
+    `UPDATE email_templates SET companyGuid = ?, purpose = ?, templateName = ?, emailSubject = ?, emailBody = ?, isActive = ?, emailCc = ?, emailBcc = ?
      WHERE guid = ?`,
-    [companyGuid || null, purpose, templateName.trim(), emailSubject.trim(), emailBody, isActive === false ? 0 : 1, id]
+    [companyGuid || null, purpose, templateName.trim(), emailSubject.trim(), emailBody, isActive === false ? 0 : 1, emailCc?.trim() || null, emailBcc?.trim() || null, id]
   );
   if (result.affectedRows === 0) throw new ApiError(404, "Template not found");
 

@@ -10,6 +10,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
   requireCompany(user);
   authorizeWarranty(user, "GET");
   const { orderGuid } = await params;
+  const templateGuid = new URL(request.url).searchParams.get("templateGuid");
 
   const [orderRows] = await mysqlPool.query(`
     SELECT
@@ -17,6 +18,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
       o.orderDate, o.dispatchDate,
       o.platform, o.gemOrderType, o.bidNumber,
       o.customerName AS customer, o.consigneeName,
+      o.buyerEmail, o.consigneeEmail, o.paymentAuthorityEmail,
       o.shippingAddress, o.address, o.buyerAddress,
       o.contactNumber, o.altContactNumber,
       o.invoiceNumber, o.gstNumber,
@@ -45,7 +47,32 @@ export const GET = withErrorHandling(async (request, { params }) => {
   order.serialCount = allSerialRows.length || order.quantity || 1;
 
   const [tplRows] = await mysqlPool.query("SELECT * FROM warranty_template WHERE companyGuid=? LIMIT 1", [user.companyId]);
-  const template = tplRows[0] || {};
+  const defaultTemplate = tplRows[0] || {};
+
+  // A specific chosen template (from the "Choose Template" picker, any
+  // purpose) overrides subject/body AND its own CC/BCC when it has them set
+  // — only falls back to the warranty template master's CC/BCC if the
+  // chosen template didn't specify any.
+  let template = defaultTemplate;
+  let chosenPurpose = null;
+  if (templateGuid) {
+    const [chosenRows] = await mysqlPool.query(
+      `SELECT emailSubject, emailBody, emailCc, emailBcc, purpose FROM email_templates
+       WHERE guid = ? AND isActive = 1 AND (companyGuid = ? OR companyGuid IS NULL)`,
+      [templateGuid, user.companyId]
+    );
+    if (chosenRows.length > 0) {
+      const chosen = chosenRows[0];
+      chosenPurpose = chosen.purpose;
+      template = {
+        ...defaultTemplate,
+        emailSubject: chosen.emailSubject,
+        emailBody: chosen.emailBody,
+        emailCc: chosen.emailCc || defaultTemplate.emailCc,
+        emailBcc: chosen.emailBcc || defaultTemplate.emailBcc,
+      };
+    }
+  }
 
   const wp = order.warranty || "1 Year";
   const fmt = (d) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
@@ -79,6 +106,12 @@ export const GET = withErrorHandling(async (request, { params }) => {
     "{{WARRANTY_EXPIRY}}": expiry,
     "{{GST_NUMBER}}": order.gstNumber || "",
     "{{CERT_NUMBER}}": "WC-" + String(order.orderNumber || "").padStart(6, "0"),
+    // Aliases for the more generic placeholder names used by non-warranty
+    // templates (Dispatch/Payment/etc.) — same underlying order data, just a
+    // different name so those templates fill in too, not just warranty ones.
+    "{{ORDER_ID}}": String(order.orderNumber || ""),
+    "{{PRODUCT_NAME}}": order.modelName || "",
+    "{{AMOUNT}}": order.sellingPrice != null ? Number(order.sellingPrice).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "",
   };
 
   const fillText = (text) => {
@@ -90,8 +123,14 @@ export const GET = withErrorHandling(async (request, { params }) => {
     return out;
   };
 
+  // For a "payment" purpose template, the natural recipient is whoever
+  // handles payment on the buyer's side, not the delivery consignee.
+  const to = chosenPurpose === "payment"
+    ? (order.paymentAuthorityEmail || order.consigneeEmail || order.buyerEmail || template.emailTo || "")
+    : (order.consigneeEmail || order.buyerEmail || template.emailTo || "");
+
   return NextResponse.json({
-    to: template.emailTo || "",
+    to,
     cc: template.emailCc || "",
     bcc: template.emailBcc || "",
     subject: fillText(template.emailSubject || ""),
