@@ -9,6 +9,7 @@ import Sidebar from "@/components/common/Sidebar";
 import GlobalSearchModal from "@/components/common/GlobalSearchModal";
 import { CompanyProvider, useCompany } from "@/lib/client/CompanyContext";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
+import NotificationPanel from "@/components/common/NotificationPanel";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const UPLOADS_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
@@ -20,6 +21,7 @@ const getPhotoUrl = (filename) => (filename ? `${UPLOADS_BASE_URL}/uploads/${enc
 // incrementally as each corresponding page lands — see [[ims-next-migration]].
 function AppLayoutInner({ children, currentUser, handleLogout, router, pathname, isAdmin }) {
   const { loadCoreData, globalSearch, setGlobalSearch } = useAppData();
+  const { isSwitchingCompany } = useCompany();
   const [now, setNow] = useState(null);
 
   useEffect(() => {
@@ -34,12 +36,18 @@ function AppLayoutInner({ children, currentUser, handleLogout, router, pathname,
   }, []);
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen bg-slate-50 overflow-hidden">
+      {isSwitchingCompany && (
+        <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center gap-3 bg-white/80 backdrop-blur-sm">
+          <Loader2 className="animate-spin text-indigo-600" size={40} />
+          <p className="text-sm font-semibold text-slate-600">Switching company…</p>
+        </div>
+      )}
       <div className="hidden md:flex shrink-0">
         <Sidebar currentUser={currentUser} isAdmin={isAdmin} />
       </div>
 
-      <main className="flex-1 flex flex-col min-h-0">
+      <main className="flex-1 flex flex-col min-h-0 min-w-0">
         <div className="hidden md:flex items-center justify-between gap-3 px-6 py-2 bg-white border-b border-slate-100 shrink-0">
           <div className="relative w-72 group">
             <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl blur opacity-20 group-hover:opacity-30 transition-opacity" />
@@ -71,6 +79,7 @@ function AppLayoutInner({ children, currentUser, handleLogout, router, pathname,
               {now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
           )}
+          <NotificationPanel />
           <ThemeToggle />
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl">
             {currentUser.profilePhoto ? (
@@ -97,7 +106,7 @@ function AppLayoutInner({ children, currentUser, handleLogout, router, pathname,
           </button>
           </div>
         </div>
-        <div className="flex-1 overflow-auto min-h-0">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
           <div className="max-w-full mx-auto p-4 md:p-6 w-full flex flex-col min-h-full">{children}</div>
         </div>
       </main>

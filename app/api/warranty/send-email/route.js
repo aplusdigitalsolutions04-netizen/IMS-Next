@@ -21,7 +21,7 @@ export const POST = withErrorHandling(async (request) => {
   if (bcc && !bcc.split(",").every((e) => validEmail(e.trim()))) throw new ApiError(400, "Invalid BCC email address");
 
   try {
-    await sendWarrantyEmail({ to, cc, bcc, subject, body: emailBody, attachments });
+    await sendWarrantyEmail({ companyGuid: user.companyId, to, cc, bcc, subject, body: emailBody, attachments });
   } catch (err) {
     console.error("[warranty] POST /send-email:", err);
     throw new ApiError(500, err.message || "Failed to send email");

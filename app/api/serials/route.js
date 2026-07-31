@@ -27,6 +27,7 @@ export const GET = withErrorHandling(async (request) => {
       lr.reason as latestReturnReason, lr.returnDate as latestReturnDate, lr.condition as latestReturnCondition,
       COALESCE(NULLIF(s.landingPrice, 0), itv.purchasePrice, 0) as landingPrice
     FROM inventorystockinserial s
+    JOIN companies co ON s.companyGuid=co.guid AND co.isActive=1
     LEFT JOIN inventoryitemvariant itv ON s.itemVariantId=itv.itemVariantId AND itv.isDeleted=0 ${c("itv")}
     LEFT JOIN inventoryitemmaster i ON itv.itemId=i.itemId AND i.isDeleted=0 ${c("i")}
     LEFT JOIN inventorybrandmaster b ON i.brandId=b.brandId AND b.isDeleted=0 ${c("b")}
@@ -63,7 +64,8 @@ export const POST = withErrorHandling(async (request) => {
     "INSERT INTO inventorystockinserial (serialId,guid,companyGuid,itemVariantId,godownGuid,serialNumber,serialStatus,landingPrice,landingPriceReason,isUsed,isDeleted,createdAt) VALUES (?,?,?,?,?,?,?,?,?,0,0,NOW())",
     [newGuid, newGuid, user.companyId, modelId, godownGuid, value, status || "Available", landingPrice || 0, landingPriceReason || null]
   );
-  await logUserActivity(mysqlPool, user, "Add Serial", [{ field: "serialNumber", newValue: value }, { field: "modelId", newValue: modelId }], request.headers.get("x-forwarded-for") || null);
+  const [[variant]] = await mysqlPool.query("SELECT variantName FROM inventoryitemvariant WHERE itemVariantId=?", [modelId]);
+  await logUserActivity(mysqlPool, user, "Add Serial", [{ field: "serialNumber", newValue: value }, { field: "model", newValue: variant?.variantName || modelId }], request.headers.get("x-forwarded-for") || null);
   broadcastRealtimeEvent(user.companyId, "serials");
   return NextResponse.json({ message: "Serial added" });
 });

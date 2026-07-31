@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requireRoles, ApiError, invalidateCompanyActiveCache } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
@@ -17,6 +17,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
     "UPDATE companies SET name = ?, allowedPlatforms = ?, isActive = ? WHERE guid = ?",
     [name, platformsJson, isActive === false ? 0 : 1, id]
   );
+  invalidateCompanyActiveCache(id);
   return NextResponse.json({ message: "Company updated successfully." });
 });
 
@@ -28,5 +29,6 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
 
   const { id } = await params;
   await mysqlPool.query("UPDATE companies SET isActive = 0 WHERE guid = ?", [id]);
+  invalidateCompanyActiveCache(id);
   return NextResponse.json({ message: "Company deactivated." });
 });

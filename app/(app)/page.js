@@ -27,7 +27,7 @@ import { buildDayFilterQuery } from "@/lib/client/dayFilter";
 
 const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 
-const PLATFORM_OPTIONS = ["Overall", "GeM", "Flipkart", "Amazon", "Other"];
+const ALL_PLATFORM_OPTIONS = ["Overall", "GeM", "Flipkart", "Amazon", "Other"];
 
 function normalizePlatform(firmName) {
   const val = String(firmName || "").trim().toLowerCase();
@@ -122,7 +122,7 @@ export default function DashboardPage() {
   // option next to the date/time pill — selecting a specific company there
   // also switches the session (see CompanySwitcher in layout.jsx), so this
   // filter and the active session company stay in sync.
-  const { dashboardFilter } = useCompany();
+  const { dashboardFilter, activeCompany } = useCompany();
   const currentUser = typeof window !== "undefined" ? getStoredUser() : null;
   const userRole = currentUser?.role || "User";
   const isAdmin = userRole === "Admin";
@@ -177,6 +177,7 @@ export default function DashboardPage() {
   const [loadingStationery, setLoadingStationery] = useState(true);
   const [todayStockIn, setTodayStockIn] = useState(0);
   const [fyFilter, setFyFilter] = useState(String(getCurrentFYStartYear()));
+  const [selectedSalesMonth, setSelectedSalesMonth] = useState(null); // {year, monthIndex, label} — drill-down for the Sales chart
 
   const fyOptions = buildFYOptions();
   const { start: fyStart, end: fyEnd } = getFYRange(fyFilter);
@@ -184,6 +185,11 @@ export default function DashboardPage() {
 
   const { start: periodStart, end: periodEnd } = getDayFilterRange(dayFilter, customStart, customEnd);
   const periodLabel = DAY_FILTER_OPTIONS.find((o) => o.key === dayFilter)?.label || "Today";
+
+  useEffect(() => {
+    if (allowedPlatforms && !PLATFORM_OPTIONS.includes(platformFilter)) setPlatformFilter("Overall");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCompany?.guid]);
 
   useEffect(() => {
     const fetchStationeryValue = async () => {
@@ -197,12 +203,17 @@ export default function DashboardPage() {
       }
     };
     fetchStationeryValue();
+  }, []);
 
+  // Re-fetch whenever the active company changes — this list is scoped
+  // server-side to the session's companyGuid, so switching companies must
+  // refetch it or a previous company's categories linger in the filter.
+  useEffect(() => {
     legacyApi
       .get("/Inventory/GetCategoryList", { params: { page: 1, limit: 1000 } })
       .then((res) => setCategoryMasterList(res.data?.data || []))
       .catch((error) => console.error("Failed to load categories:", error));
-  }, []);
+  }, [activeCompany?.guid]);
 
   useEffect(() => {
     if (dayFilter === "custom" && (!customStart || !customEnd)) return;
@@ -229,6 +240,11 @@ export default function DashboardPage() {
   const totalInventoryValue = printerStockValue + stationeryStockValue;
 
   const modelCategories = Array.from(new Set(categoryMasterList.map((c) => c.categoryName).filter(Boolean)));
+
+  const allowedPlatforms = activeCompany?.allowedPlatforms;
+  const PLATFORM_OPTIONS = allowedPlatforms
+    ? ["Overall", ...ALL_PLATFORM_OPTIONS.slice(1).filter((p) => allowedPlatforms.includes(p))]
+    : ALL_PLATFORM_OPTIONS;
 
   const categoryFilteredModels =
     categoryFilter === "All" ? models : models.filter((m) => m.mainCategory === categoryFilter || m.category === categoryFilter);
@@ -357,7 +373,9 @@ export default function DashboardPage() {
   });
 
   // Sales (revenue) bar graph — one bar per month of the selected Financial Year,
-  // respecting the same Category filter used by Stock Distribution.
+  // respecting the same Category filter used by Stock Distribution. Each bar
+  // also carries its year/monthIndex so clicking it can drill into day-wise
+  // sales for that specific month (see salesByDay + selectedSalesMonth below).
   const salesByMonth = Array.from({ length: 12 }, (_, i) => {
     const d = new Date(fyStart.getFullYear(), fyStart.getMonth() + i, 1);
     const label = d.toLocaleString("en-IN", { month: "short" }) + " '" + String(d.getFullYear()).slice(2);
@@ -371,8 +389,28 @@ export default function DashboardPage() {
         );
       })
       .reduce((sum, x) => sum + (Number(x.sellingPrice) || 0), 0);
-    return { month: label, sales: total };
+    return { month: label, sales: total, year: d.getFullYear(), monthIndex: d.getMonth() };
   });
+
+  // Day-wise breakdown for whichever month bar was clicked (null = no
+  // drill-down active, monthly view shows as usual).
+  const salesByDay = selectedSalesMonth
+    ? Array.from({ length: new Date(selectedSalesMonth.year, selectedSalesMonth.monthIndex + 1, 0).getDate() }, (_, i) => {
+        const day = i + 1;
+        const total = activeDispatches
+          .filter((x) => {
+            const xd = new Date(x.dispatchDate || x.createdAt);
+            return (
+              xd.getFullYear() === selectedSalesMonth.year &&
+              xd.getMonth() === selectedSalesMonth.monthIndex &&
+              xd.getDate() === day &&
+              modelCategoryMatches(x.serialGuid || x.serialNumberId)
+            );
+          })
+          .reduce((sum, x) => sum + (Number(x.sellingPrice) || 0), 0);
+        return { day: String(day), sales: total };
+      })
+    : [];
 
   const godownMap = {};
   serials
@@ -688,34 +726,68 @@ export default function DashboardPage() {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-800">Sales</h3>
-                <p className="text-[10px] text-slate-400">Revenue by month · {fyLabel}{categoryFilter !== "All" ? ` · ${categoryFilter}` : ""}</p>
+                <p className="text-[10px] text-slate-400">
+                  {selectedSalesMonth
+                    ? `Day-wise sales · ${selectedSalesMonth.label}`
+                    : `Revenue by month · ${fyLabel}${categoryFilter !== "All" ? ` · ${categoryFilter}` : ""}`}
+                </p>
               </div>
             </div>
-            {modelCategories.length > 0 && (
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 shadow-sm rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-200 cursor-pointer"
+            {selectedSalesMonth ? (
+              <button
+                onClick={() => setSelectedSalesMonth(null)}
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl transition-colors"
               >
-                <option value="All">All Categories</option>
-                {modelCategories.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
+                ← Back to months
+              </button>
+            ) : (
+              modelCategories.length > 0 && (
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 shadow-sm rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-200 cursor-pointer"
+                >
+                  <option value="All">All Categories</option>
+                  {modelCategories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              )
             )}
           </div>
           <div className="p-4" style={{ height: 320 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={salesByMonth} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
-                <Tooltip
-                  formatter={(value) => [`₹${Number(value).toLocaleString("en-IN")}`, "Sales"]}
-                  contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e2e8f0" }}
-                />
-                <Bar dataKey="sales" fill="#10b981" radius={[6, 6, 0, 0]} barSize={24} />
-              </BarChart>
+              {selectedSalesMonth ? (
+                <BarChart data={salesByDay} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="day" tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip
+                    formatter={(value) => [`₹${Number(value).toLocaleString("en-IN")}`, "Sales"]}
+                    labelFormatter={(day) => `Day ${day}`}
+                    contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                  />
+                  <Bar dataKey="sales" fill="#10b981" radius={[6, 6, 0, 0]} barSize={18} />
+                </BarChart>
+              ) : (
+                <BarChart data={salesByMonth} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip
+                    formatter={(value) => [`₹${Number(value).toLocaleString("en-IN")}`, "Sales"]}
+                    contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                  />
+                  <Bar
+                    dataKey="sales"
+                    fill="#10b981"
+                    radius={[6, 6, 0, 0]}
+                    barSize={24}
+                    cursor="pointer"
+                    onClick={(data) => setSelectedSalesMonth({ year: data.year, monthIndex: data.monthIndex, label: data.month })}
+                  />
+                </BarChart>
+              )}
             </ResponsiveContainer>
           </div>
         </div>

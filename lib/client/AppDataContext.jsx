@@ -244,7 +244,10 @@ export function AppDataProvider({ children }) {
     }
 
     if (foundSerial) {
-      const model = models.find((m) => (m.guid || m.id) === foundSerial.modelGuid);
+      // serialsService attaches `modelId` (not `modelGuid`) to each serial —
+      // matching on the wrong field name here always missed, so model/company
+      // silently fell back to "Unknown" in the search result below.
+      const model = models.find((m) => (m.guid || m.id) === foundSerial.modelId) || foundSerial.model;
 
       const dispatchInfo = dispatches
         .filter((d) => (d.serialGuid || d.serialNumberId) === (foundSerial.guid || foundSerial.id) && !d.isDeleted)

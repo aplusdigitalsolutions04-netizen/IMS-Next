@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { FileText, Loader2, Sparkles, Save, Plus, Trash2, UploadCloud, Hash, CheckCircle2 } from "lucide-react";
 import Swal from "sweetalert2";
 import { contractsService } from "@/lib/services/contractsService";
+import AddProductWizard from "./AddProductWizard";
 
 const SECTIONS = [
   {
@@ -58,6 +59,14 @@ const toNum = (v) => {
   return Number.isNaN(n) ? 0 : n;
 };
 
+// GeM contracts sometimes come through with a placeholder instead of a real
+// HSN code (e.g. "HSN not specified by seller") — that's not usable for
+// billing/GST, so block saving until it's manually corrected.
+const isInvalidHsn = (val) => {
+  const v = String(val || "").trim();
+  return !v || /not specified/i.test(v);
+};
+
 function SectionHeaderRow({ title }) {
   return (
     <tr>
@@ -100,6 +109,8 @@ export default function ContractUpload() {
   const [checkingNumber, setCheckingNumber] = useState(false);
   const [numberExists, setNumberExists] = useState(false);
   const [pdfContractNumber, setPdfContractNumber] = useState(null);
+  const [wizardProduct, setWizardProduct] = useState(null);
+  const wizardResolveRef = React.useRef(null);
 
   let rowIndex = 0;
 
@@ -190,6 +201,62 @@ export default function ContractUpload() {
 
   const totalOrderValue = products.reduce((sum, p) => sum + toNum(p.totalValue), 0);
 
+  // Waits for the user to either finish the AddProductWizard (resolves with
+  // the new itemVariantId) or dismiss it without linking (resolves null).
+  const promptAddProduct = (product) =>
+    new Promise((resolve) => {
+      wizardResolveRef.current = resolve;
+      setWizardProduct(product);
+    });
+
+  const handleWizardLinked = (itemVariantId) => {
+    wizardResolveRef.current?.(itemVariantId);
+    wizardResolveRef.current = null;
+    setWizardProduct(null);
+  };
+
+  const handleWizardClose = () => {
+    wizardResolveRef.current?.(null);
+    wizardResolveRef.current = null;
+    setWizardProduct(null);
+  };
+
+  // Runs right after a contract is saved — checks every product against
+  // Item Master and, for anything missing, asks whether to add it now via
+  // the wizard. Returns the product list with itemVariantId filled in for
+  // whatever got linked, so the contract can be updated with the links.
+  const runInventoryValidation = async (savedProducts) => {
+    const names = savedProducts.map((p) => p.productName).filter(Boolean);
+    if (names.length === 0) return savedProducts;
+    let results = [];
+    try {
+      results = await contractsService.checkProductsInInventory(names);
+    } catch (err) {
+      console.error("Inventory check failed:", err);
+      return savedProducts;
+    }
+
+    let updated = [...savedProducts];
+    for (const r of results) {
+      if (r.exists) continue;
+      const confirm = await Swal.fire({
+        title: "Product not in inventory",
+        text: `This product ("${r.productName}") is not available in your inventory. Would you like to add it now?`,
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Add Product",
+        cancelButtonText: "Cancel",
+      });
+      if (!confirm.isConfirmed) continue;
+      const product = updated.find((p) => p.productName === r.productName);
+      const itemVariantId = await promptAddProduct(product);
+      if (itemVariantId) {
+        updated = updated.map((p) => (p.productName === r.productName ? { ...p, itemVariantId } : p));
+      }
+    }
+    return updated;
+  };
+
   const handleSave = async () => {
     if (!pdfFilename) {
       Swal.fire("Extract first", "Please upload and extract a contract before saving.", "warning");
@@ -203,9 +270,24 @@ export default function ContractUpload() {
       Swal.fire("Already exists", "A contract with this Contract Number already exists.", "error");
       return;
     }
+    const invalidProducts = products.filter((p) => isInvalidHsn(p.hsnCode));
+    if (invalidProducts.length > 0) {
+      Swal.fire(
+        "HSN Code required",
+        `Please enter a valid HSN Code for: ${invalidProducts.map((p) => p.productName || "Unnamed product").join(", ")}. "HSN not specified by seller" is not a usable code.`,
+        "warning"
+      );
+      return;
+    }
     setSaving(true);
     try {
-      await contractsService.saveContract({ ...form, products: JSON.stringify(products), pdfFilename });
+      const saveRes = await contractsService.saveContract({ ...form, products: JSON.stringify(products), pdfFilename });
+
+      const linkedProducts = await runInventoryValidation(products);
+      if (saveRes?.guid && linkedProducts.some((p, i) => p.itemVariantId && p.itemVariantId !== products[i]?.itemVariantId)) {
+        await contractsService.updateContract(saveRes.guid, { products: JSON.stringify(linkedProducts) });
+      }
+
       Swal.fire("Saved", "Contract saved successfully.", "success");
       setForm(EMPTY_FORM);
       setProducts([]);
@@ -376,8 +458,12 @@ export default function ContractUpload() {
                                     <input
                                       value={p[key] || ""}
                                       onChange={(e) => handleProductChange(idx, key, e.target.value)}
-                                      title={p[key] || ""}
-                                      className="w-full bg-white border border-slate-200 rounded-lg px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+                                      title={key === "hsnCode" && isInvalidHsn(p[key]) ? "Enter a valid HSN Code before saving" : p[key] || ""}
+                                      className={`w-full bg-white border rounded-lg px-1.5 py-1 text-xs outline-none focus:ring-2 transition-all ${
+                                        key === "hsnCode" && isInvalidHsn(p[key])
+                                          ? "border-rose-400 focus:ring-rose-100 bg-rose-50"
+                                          : "border-slate-200 focus:ring-indigo-100"
+                                      }`}
                                     />
                                   </td>
                                 ))}
@@ -435,6 +521,10 @@ export default function ContractUpload() {
             </button>
           </div>
         </div>
+      )}
+
+      {wizardProduct && (
+        <AddProductWizard product={wizardProduct} onClose={handleWizardClose} onLinked={handleWizardLinked} />
       )}
     </div>
   );

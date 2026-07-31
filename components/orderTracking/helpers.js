@@ -205,6 +205,25 @@ export function resolveDisplayStatus(status) {
   return status;
 }
 
+// Same rule the Warranty Certificate uses (lib/warrantyTemplate.js) — warranty
+// period ("1 Year", "6 Months", etc.) counted from the dispatch/order date.
+// Returns null if there's no period or no base date to count from.
+export function getWarrantyExpiryDate(warrantyPeriod, baseDateValue) {
+  if (!warrantyPeriod || !baseDateValue) return null;
+  const num = parseInt(warrantyPeriod, 10);
+  if (!num) return null;
+  try {
+    const base = new Date(baseDateValue);
+    if (isNaN(base.getTime())) return null;
+    const expiry = new Date(base);
+    if (/month/i.test(warrantyPeriod)) expiry.setMonth(expiry.getMonth() + num);
+    else expiry.setFullYear(expiry.getFullYear() + num);
+    return expiry;
+  } catch {
+    return null;
+  }
+}
+
 export function safeFormatDate(dateValue, formatStr = "dd MMM yyyy") {
   if (!dateValue) return null;
   try {

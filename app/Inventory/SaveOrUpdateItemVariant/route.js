@@ -20,6 +20,7 @@ export const POST = withErrorHandling(async (request) => {
   } = body;
   const safeMrp = Mrp !== undefined && Mrp !== null && Mrp !== "" ? Number(Mrp) : null;
   const safeNum = (v) => (v !== undefined && v !== null && v !== "" ? Number(v) : null);
+  let finalItemVariantId = ItemVariantId;
 
   if (ItemVariantId && ItemVariantId !== "0" && ItemVariantId !== "") {
     await mysqlPool.execute(
@@ -41,6 +42,7 @@ export const POST = withErrorHandling(async (request) => {
       ]
     );
   } else {
+    finalItemVariantId = uuidv4();
     await mysqlPool.execute(
       `INSERT INTO inventoryitemvariant
          (itemVariantId, companyGuid, itemId, variantName, sellingPrice,
@@ -48,7 +50,7 @@ export const POST = withErrorHandling(async (request) => {
           packagingCost, packageLength, packageWidth, packageHeight, packageWeight)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        uuidv4(), user.companyId, ItemId, VariantCode, safeMrp || 0,
+        finalItemVariantId, user.companyId, ItemId, VariantCode, safeMrp || 0,
         ColorType || null, PrinterType || null, Cpu || null, Ram || null, SsdHdd || null,
         ScreenSize || null, Resolution || null, PanelType || null, RefreshRate || null,
         safeNum(PackagingCost) || 0, safeNum(PackageLength), safeNum(PackageWidth), safeNum(PackageHeight), safeNum(PackageWeight),
@@ -56,5 +58,5 @@ export const POST = withErrorHandling(async (request) => {
     );
   }
 
-  return NextResponse.json({ message: "Success" });
+  return NextResponse.json({ message: "Success", itemVariantId: finalItemVariantId });
 });

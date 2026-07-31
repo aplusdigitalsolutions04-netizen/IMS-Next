@@ -27,6 +27,8 @@ import {
   Mail,
   Box,
   Building2,
+  Inbox,
+  Send,
   UploadCloud,
   Ban,
   ArrowRightLeft,
@@ -56,7 +58,6 @@ export default function Sidebar({ currentUser, isAdmin }) {
     { id: "contracts-cancelled", label: "Cancelled Contracts", icon: Ban, group: "contracts", path: "/contracts/cancelled" },
 
     // Masters
-    { id: "companyMaster", label: "Company Master", icon: Building2, group: "masters" },
     { id: "categoryMaster", label: "Category Master", icon: Tags, group: "masters" },
     { id: "brandMaster", label: "Brand Master", icon: Barcode, group: "masters" },
     { id: "vendorMaster", label: "Vendor Master", icon: UsersIcon, group: "masters" },
@@ -73,7 +74,6 @@ export default function Sidebar({ currentUser, isAdmin }) {
     { id: "currentStock", label: "Current Stock", icon: Package, group: "inventory" },
     { id: "stockIn", label: "Stock In", icon: Truck, group: "inventory" }, // Using ShieldAlert for ShieldCheck as fallback
     { id: "fbfFbaManagement", label: "FBF / FBA Stock", icon: Package, group: "inventory" },
-    { id: "companyTransfer", label: "Company Transfer", icon: Building2, group: "inventory" },
     { id: "godownTransfer", label: "Godown Transfer", icon: ArrowRightLeft, group: "inventory" },
    
 
@@ -93,11 +93,11 @@ export default function Sidebar({ currentUser, isAdmin }) {
   ];
 
   if (!isSidebarVisible) {
-    const mastersGroup = ["companyMaster","categoryMaster","brandMaster","vendorMaster","categoryBrandMapping","unitMaster","colorTypeMaster","printerTypeMaster","itemMaster","comboMaster","godownMaster","fbfFbaMaster"];
-    const inventoryGroup = ["currentStock","stockIn","fbfFbaManagement","companyTransfer","godownTransfer"];
+    const mastersGroup = ["categoryMaster","brandMaster","vendorMaster","categoryBrandMapping","unitMaster","colorTypeMaster","printerTypeMaster","itemMaster","comboMaster","godownMaster","fbfFbaMaster"];
+    const inventoryGroup = ["currentStock","stockIn","fbfFbaManagement","godownTransfer"];
     const ordersGroup = ["orderTracking","dispatch","stockOut"];
     const operationsGroup = ["returns","damaged"];
-    const settingsGroup = ["users","roles","userActivity","reports","profile","settings","notifications","warrantyEmail","apiLogs"];
+    const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","emailInbox","sentEmails","apiLogs"];
 
     const expandTo = (group) => {
       setIsSidebarVisible(true);
@@ -192,7 +192,7 @@ export default function Sidebar({ currentUser, isAdmin }) {
   }
 
   // Settings mode
-  if (['users','roles','userActivity','reports','profile','settings','notifications','warrantyEmail','apiLogs'].includes(activeTab)) {
+  if (['companyMaster','users','roles','userActivity','reports','profile','settings','notifications','warrantyEmail','emailAccounts','emailTemplates','emailInbox','sentEmails','apiLogs'].includes(activeTab)) {
     return (
       <aside className="bg-white border-r flex flex-col w-64 h-full shrink-0 animate-sidebar-in transition-all">
         <div className="p-4 flex items-center justify-between border-b border-slate-100">
@@ -214,6 +214,9 @@ export default function Sidebar({ currentUser, isAdmin }) {
           <button onClick={() => router.push('/profile')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'profile' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <User size={18} /> <span>My Profile</span>
           </button>
+          <button onClick={() => router.push('/companyMaster')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'companyMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <Building2 size={18} /> <span>Company Master</span>
+          </button>
           <button onClick={() => router.push('/users')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <UsersIcon size={18} /> <span>User Management</span>
           </button>
@@ -229,6 +232,30 @@ export default function Sidebar({ currentUser, isAdmin }) {
           <button onClick={() => router.push('/notifications')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'notifications' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <Bell size={18} /> <span>Notifications</span>
           </button>
+          {isAdmin && (
+            <div className="space-y-1">
+              <button onClick={() => toggleSubmenu('email')} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+                <div className="flex items-center gap-3"><Mail size={18} /><span>Email</span></div>
+                {expandedMenus.email ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {expandedMenus.email && (
+                <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
+                  <button onClick={() => router.push('/emailAccounts')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailAccounts' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Mail size={14} className="flex-shrink-0" /> <span className="truncate">Email Accounts</span>
+                  </button>
+                  <button onClick={() => router.push('/emailTemplates')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailTemplates' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <FileText size={14} className="flex-shrink-0" /> <span className="truncate">Email Templates</span>
+                  </button>
+                  <button onClick={() => router.push('/sentEmails')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'sentEmails' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Send size={14} className="flex-shrink-0" /> <span className="truncate">Sent Emails</span>
+                  </button>
+                  <button onClick={() => router.push('/emailInbox')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailInbox' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Inbox size={14} className="flex-shrink-0" /> <span className="truncate">Email Inbox</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {isAdmin && (
             <button onClick={() => router.push('/apiLogs')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'apiLogs' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
               <ShieldAlert size={18} /> <span>API Logs</span>

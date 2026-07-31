@@ -15,11 +15,13 @@ export const POST = withErrorHandling(async (request) => {
 
   const { BrandId, BrandName, ShowInModels } = body;
   const showInModels = ShowInModels ? 1 : 0;
+  let finalBrandId = BrandId;
   if (BrandId && BrandId !== "0" && BrandId !== "") {
     await mysqlPool.execute("UPDATE inventorybrandmaster SET brandName = ?, showInModels = ? WHERE brandId = ? AND companyGuid = ?", [BrandName, showInModels, BrandId, user.companyId]);
   } else {
-    await mysqlPool.execute("INSERT INTO inventorybrandmaster (brandId, companyGuid, brandName, showInModels) VALUES (?, ?, ?, ?)", [uuidv4(), user.companyId, BrandName, showInModels]);
+    finalBrandId = uuidv4();
+    await mysqlPool.execute("INSERT INTO inventorybrandmaster (brandId, companyGuid, brandName, showInModels) VALUES (?, ?, ?, ?)", [finalBrandId, user.companyId, BrandName, showInModels]);
   }
   await syncBrandInCompanyDropdown(mysqlPool, BrandName, !!showInModels);
-  return NextResponse.json({ message: "Success" });
+  return NextResponse.json({ message: "Success", brandId: finalBrandId });
 });

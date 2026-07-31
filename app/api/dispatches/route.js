@@ -42,6 +42,7 @@ export const GET = withErrorHandling(async (request) => {
         p.paymentDate as paymentReceivedDate, p.amount as paymentReceivedAmount, p.utrId
     FROM order_items oi
     JOIN orders o ON oi.orderGuid = o.guid ${c("o")}
+    JOIN companies co ON oi.companyGuid = co.guid AND co.isActive = 1
     LEFT JOIN order_logistics ol ON o.guid = ol.orderGuid ${c("ol")}
     LEFT JOIN order_installations ins ON o.guid = ins.orderGuid ${c("ins")}
     LEFT JOIN inventorystockinserial s ON oi.serialNumberGuid = s.guid ${c("s")}

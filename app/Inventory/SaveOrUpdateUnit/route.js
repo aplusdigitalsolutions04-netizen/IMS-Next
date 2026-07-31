@@ -12,10 +12,12 @@ export const POST = withErrorHandling(async (request) => {
   requireAuth(user);
 
   const { UnitId, UnitName, UnitDesc, BaseUnitQty } = body;
+  let finalUnitId = UnitId;
   if (UnitId && UnitId !== "0" && UnitId !== "") {
     await mysqlPool.execute("UPDATE inventoryunitmaster SET unitName = ?, unitDesc = ?, baseUnitQty = ? WHERE unitId = ?", [UnitName, UnitDesc, BaseUnitQty, UnitId]);
   } else {
-    await mysqlPool.execute("INSERT INTO inventoryunitmaster (unitId, unitName, unitDesc, baseUnitQty) VALUES (?, ?, ?, ?)", [uuidv4(), UnitName, UnitDesc, BaseUnitQty]);
+    finalUnitId = uuidv4();
+    await mysqlPool.execute("INSERT INTO inventoryunitmaster (unitId, unitName, unitDesc, baseUnitQty) VALUES (?, ?, ?, ?)", [finalUnitId, UnitName, UnitDesc, BaseUnitQty]);
   }
-  return NextResponse.json({ message: "Success" });
+  return NextResponse.json({ message: "Success", unitId: finalUnitId });
 });

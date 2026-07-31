@@ -4,7 +4,7 @@ import Swal from "sweetalert2";
 import axios from "axios";
 import {
   PackagePlus, Search, Store, FileText, Trash2, Edit2, Edit,
-  Settings, Save, Loader2, ListOrdered, CheckCircle2, Upload, FileDown, Filter, X
+  Settings, Save, Loader2, ListOrdered, CheckCircle2, Upload, FileDown, Filter, X, Lock
 } from "lucide-react";
 import * as XLSX from 'xlsx';
 import StockInModals from "./StockInModals";
@@ -596,9 +596,11 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
       let list = [...prev];
       let item = list[index];
 
-      // Block logic
-      if (item.hasSerialNumber && item.serialCount > 0 && newQty < item.serialCount) {
-        Swal.fire("Not Allowed", "Serial numbers already exist. Delete serials first to reduce quantity.", "warning");
+      // Block logic — once serial numbers are entered against the current
+      // quantity, the quantity is locked (both up and down) until those
+      // serials are deleted, so the qty always matches the serial count.
+      if (item.hasSerialNumber && item.serialCount > 0 && newQty !== item.qty) {
+        Swal.fire("Not Allowed", "Serial numbers already exist for this quantity. Delete serials first to change quantity.", "warning");
         return list; // Break early, no change
       }
 
@@ -1211,8 +1213,15 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
                       <td className="py-2 px-2 text-center">
                          {isFinalized ? (
                             <span className="text-sm font-bold text-slate-800">{item.qty}</span>
+                         ) : item.hasSerialNumber && item.serialCount > 0 ? (
+                            <span
+                              className="inline-flex items-center justify-center gap-1 text-sm font-bold text-slate-500 cursor-not-allowed"
+                              title="Serial numbers already entered — delete them first to change quantity"
+                            >
+                              {item.qty} <Lock size={12} />
+                            </span>
                          ) : (
-                            <input 
+                            <input
                               type="number"
                               min="1"
                               className="w-full text-center border border-slate-200 rounded-lg py-1.5 focus:border-indigo-400 outline-none text-slate-800 font-bold"

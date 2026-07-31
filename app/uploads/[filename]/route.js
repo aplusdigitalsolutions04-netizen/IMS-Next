@@ -31,6 +31,10 @@ export async function GET(request, { params }) {
     headers: {
       "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
       "Cache-Control": "public, max-age=3600",
+      // Without this, some browsers force-download instead of previewing
+      // (e.g. clicking "View" on a saved contract PDF) — inline tells the
+      // browser to render it in the tab when it's a viewable type.
+      "Content-Disposition": `inline; filename="${safeName.replace(/"/g, "")}"`,
     },
   });
 }

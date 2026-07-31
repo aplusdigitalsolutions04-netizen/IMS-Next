@@ -39,7 +39,7 @@ export const POST = withErrorHandling(async (request) => {
     mysqlPool,
     user,
     "Switch Company",
-    [{ field: "companyGuid", newValue: user.companyId }],
+    [{ field: "company", newValue: rows[0].name }],
     request.headers.get("x-forwarded-for") || null
   );
 

@@ -21,6 +21,7 @@ import {
   normalizeSerial, getBatchKey, getItemSerial,
   isItemReturned, calculateBatchFinancials,
   resolveDisplayStatus, safeFormatDate, isInstallationRequired, isHoldStatus,
+  getWarrantyExpiryDate,
 } from "./helpers";
 import { Toast, StatusBadge, StatusTimeline } from "./parts";
 import OrderDetailModal from "./OrderDetailModal";
@@ -1558,6 +1559,7 @@ export default function OrderTracking({
                 <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Items</th>
                 <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Order Date</th>
                 <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Last Delivery</th>
+                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Warranty Till</th>
                 <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Upload on GeM</th>
                 <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Contact No.</th>
                 <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Order Value</th>
@@ -1594,6 +1596,9 @@ export default function OrderTracking({
                   const isBulk = batch.displayItems.length > 1;
                   const orderDateFormatted = safeFormatDate(batch.orderDate);
                   const lastDeliveryFormatted = safeFormatDate(batch.lastDeliveryDate);
+                  const warrantyExpiryDate = getWarrantyExpiryDate(batch.warranty, batch.dispatchDate || batch.orderDate);
+                  const warrantyExpiryFormatted = safeFormatDate(warrantyExpiryDate);
+                  const isWarrantyExpired = warrantyExpiryDate && warrantyExpiryDate.getTime() < Date.now();
 
                   // GeM bill upload pending + Last Delivery within 3 days → highlight row red
                   const isGemUploadDone = batch.gemBillUploaded === "Yes";
@@ -1724,6 +1729,21 @@ export default function OrderTracking({
 
                       <td className="p-4 text-center text-xs text-slate-600 font-mono">
                         {lastDeliveryFormatted || <span className="text-slate-300">—</span>}
+                      </td>
+
+                      <td className="p-4 text-center text-xs">
+                        {warrantyExpiryFormatted ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="font-mono text-slate-600">{warrantyExpiryFormatted}</span>
+                            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
+                              isWarrantyExpired ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-700"
+                            }`}>
+                              {isWarrantyExpired ? "EXPIRED" : "ACTIVE"}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
 
                       <td className="p-4 text-center">
@@ -1904,7 +1924,7 @@ export default function OrderTracking({
                 })
               ) : (
                 <tr>
-                  <td colSpan="12" className="p-12 text-center">
+                  <td colSpan="13" className="p-12 text-center">
                     <Package size={48} className={`mx-auto mb-3 ${activeTab === "completed" ? "text-emerald-200" :
                         activeTab === "cancelled" ? "text-red-200" :
                           activeTab === "returned" ? "text-orange-200" :

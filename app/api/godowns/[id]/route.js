@@ -24,8 +24,9 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
   authorizeGodowns(user, "DELETE");
   const { id } = await params;
 
+  const [[godown]] = await mysqlPool.query("SELECT godownName FROM godowns WHERE guid=?", [id]);
   await mysqlPool.query("UPDATE inventorystockinserial SET godownGuid=NULL WHERE godownGuid=?", [id]);
   await mysqlPool.query("UPDATE godowns SET isDeleted=1 WHERE guid=?", [id]);
-  await logUserActivity(mysqlPool, user, "Delete Godown", [{ field: "id", oldValue: id, newValue: "Deleted" }], request.headers.get("x-forwarded-for") || null);
+  await logUserActivity(mysqlPool, user, "Delete Godown", [{ field: "name", oldValue: godown?.godownName || id, newValue: "Deleted" }], request.headers.get("x-forwarded-for") || null);
   return NextResponse.json({ message: "Godown deleted" });
 });

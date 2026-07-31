@@ -14,13 +14,15 @@ export const POST = withErrorHandling(async (request) => {
   const { MappingId, CategoryId, BrandId } = body;
   if (!CategoryId || !BrandId) throw new ApiError(400, "CategoryId and BrandId are required");
 
+  let finalMappingId = MappingId;
   if (MappingId && MappingId !== "0" && MappingId !== "") {
     await mysqlPool.execute("UPDATE inventorycategorybrandmapping SET categoryId = ?, brandId = ? WHERE mappingId = ?", [CategoryId, BrandId, MappingId]);
   } else {
     const [existing] = await mysqlPool.query("SELECT mappingId FROM inventorycategorybrandmapping WHERE categoryId = ? AND brandId = ? AND isDeleted = 0", [CategoryId, BrandId]);
     if (existing.length > 0) throw new ApiError(400, "This category-brand mapping already exists");
-    await mysqlPool.execute("INSERT INTO inventorycategorybrandmapping (mappingId, categoryId, brandId) VALUES (?, ?, ?)", [uuidv4(), CategoryId, BrandId]);
+    finalMappingId = uuidv4();
+    await mysqlPool.execute("INSERT INTO inventorycategorybrandmapping (mappingId, categoryId, brandId) VALUES (?, ?, ?)", [finalMappingId, CategoryId, BrandId]);
   }
 
-  return NextResponse.json({ message: "Success" });
+  return NextResponse.json({ message: "Success", mappingId: finalMappingId });
 });

@@ -294,6 +294,12 @@ const StockOut = () => {
     }
 
     if (data.isSerialItem) {
+      // This opens the serial picker straight off a barcode scan, before the
+      // user has typed a quantity — issueQty is still "" at this point, and
+      // Number("") is 0, which made every checkbox's disabled condition
+      // (selectedSerials.length >= Number(issueQty)) true from the start.
+      // Serialized items are scanned/issued one at a time, so default to 1.
+      setIssueQty(1);
       await loadSerials(data.itemVariantId);
       setShowSerialModal(true);
       return;

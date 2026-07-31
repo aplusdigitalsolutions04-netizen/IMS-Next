@@ -14,16 +14,18 @@ export const POST = withErrorHandling(async (request) => {
 
   const { ItemId, CategoryId, BrandId, ItemName, ItemCode, HsnCode, HSNCode, UnitId, IsTrackable, UseSerialTab } = body;
   const finalHsnCode = HsnCode || HSNCode || "";
+  let finalItemId = ItemId;
   if (ItemId && ItemId !== "0" && ItemId !== "") {
     await mysqlPool.execute(
       "UPDATE inventoryitemmaster SET categoryId=?, brandId=?, itemName=?, itemCode=?, hsnCode=?, unitId=?, isTrackable=?, useSerialTab=? WHERE itemId=? AND companyGuid=?",
       [CategoryId, BrandId, ItemName, ItemCode, finalHsnCode, UnitId, IsTrackable ? 1 : 0, UseSerialTab ? 1 : 0, ItemId, user.companyId]
     );
   } else {
+    finalItemId = uuidv4();
     await mysqlPool.execute(
       "INSERT INTO inventoryitemmaster (itemId, companyGuid, categoryId, brandId, itemName, itemCode, hsnCode, unitId, isTrackable, useSerialTab) VALUES (?,?,?,?,?,?,?,?,?,?)",
-      [uuidv4(), user.companyId, CategoryId, BrandId, ItemName, ItemCode, finalHsnCode, UnitId, IsTrackable ? 1 : 0, UseSerialTab ? 1 : 0]
+      [finalItemId, user.companyId, CategoryId, BrandId, ItemName, ItemCode, finalHsnCode, UnitId, IsTrackable ? 1 : 0, UseSerialTab ? 1 : 0]
     );
   }
-  return NextResponse.json({ message: "Success" });
+  return NextResponse.json({ message: "Success", itemId: finalItemId });
 });

@@ -30,7 +30,7 @@ export const POST = withErrorHandling(async (request) => {
     );
     response = { message: "Certificate created", guid: newGuid };
   }
-  await logUserActivity(mysqlPool, user, "Save Warranty Certificate", [{ field: "orderGuid", newValue: orderGuid }], request.headers.get("x-forwarded-for") || null);
+  await logUserActivity(mysqlPool, user, "Save Warranty Certificate", [{ field: "order", newValue: orderNumber || orderGuid }], request.headers.get("x-forwarded-for") || null);
 
   return NextResponse.json(response);
 });

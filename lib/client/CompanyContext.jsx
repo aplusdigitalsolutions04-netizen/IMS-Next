@@ -45,6 +45,12 @@ export function CompanyProvider({ children }) {
 
   const switchCompany = async (companyGuid) => {
     setIsSwitchingCompany(true);
+    // Keep the loader up for at least this long — even though the actual
+    // switch (re-issue token + reload core data) often finishes in under a
+    // second, a near-instant flash reads as broken/unfinished to users, so
+    // we deliberately hold the overlay for a visible, predictable window.
+    const MIN_LOADER_MS = 7000;
+    const minWait = new Promise((resolve) => setTimeout(resolve, MIN_LOADER_MS));
     try {
       const res = await api.post("/auth/switch-company", { companyGuid });
       const data = res.data;
@@ -58,6 +64,7 @@ export function CompanyProvider({ children }) {
 
       // Refresh global app data for the new company scope
       await loadCoreData();
+      await minWait;
 
       Swal.fire({
         toast: true,

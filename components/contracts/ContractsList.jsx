@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { FileText, Loader2, Trash2, Eye, X, ListOrdered, Pencil, Ban, Plus, Save, PackagePlus } from "lucide-react";
+import { FileText, Loader2, Trash2, X, ListOrdered, Pencil, Ban, Plus, Save, PackagePlus, Search, ArrowUpDown, Columns3 } from "lucide-react";
 import Swal from "sweetalert2";
 import { contractsService } from "@/lib/services/contractsService";
 import { printerService } from "@/lib/services/api";
@@ -200,6 +200,91 @@ function EditContractModal({ contract, onClose, onSaved }) {
   );
 }
 
+// Sr No, Actions, Bid Number and Contract Number are always shown; everything
+// else is toggleable via the "Columns" picker. Order here drives both the
+// header and each row's cells.
+const TOGGLABLE_COLUMNS = [
+  { key: "status", label: "Status" },
+  { key: "generatedDate", label: "Generated Date" },
+  { key: "buyerContact", label: "Buyer Contact" },
+  { key: "products", label: "Products" },
+  { key: "buyerEmail", label: "Buyer Email" },
+  { key: "buyerGstin", label: "Buyer GSTIN" },
+  { key: "buyerAddress", label: "Buyer Address" },
+  { key: "deliveryStartAfter", label: "Delivery Start After" },
+  { key: "deliveryCompletedBy", label: "Delivery To Be Completed By" },
+  { key: "ministry", label: "Ministry" },
+  { key: "department", label: "Department" },
+  { key: "organisation", label: "Organisation" },
+  { key: "officeZone", label: "Office Zone" },
+  { key: "sellerCompany", label: "Seller Company" },
+  { key: "sellerContact", label: "Seller Contact" },
+  { key: "sellerGstin", label: "Seller GSTIN" },
+  { key: "consigneeDesignation", label: "Consignee Designation" },
+  { key: "consigneeEmail", label: "Consignee Email" },
+  { key: "consigneeContact", label: "Consignee Contact" },
+  { key: "consigneeAddress", label: "Consignee Address" },
+  { key: "createdAt", label: "Created Date" },
+  { key: "createdBy", label: "Created By" },
+  { key: "modifiedAt", label: "Modified Date" },
+  { key: "modifiedBy", label: "Modified By" },
+];
+
+const CANCEL_COLUMNS = [
+  { key: "cancelReason", label: "Cancel Reason" },
+  { key: "cancelRemarks", label: "Cancel Remarks" },
+];
+
+function ColumnPicker({ columns, visibleCols, onToggle, onSelectAll, onClearAll }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="shrink-0">
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+      >
+        <Columns3 size={15} />
+        Columns ({visibleCols.size})
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
+              <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                <Columns3 size={18} className="text-indigo-600" /> Choose Columns
+              </h3>
+              <button onClick={() => setOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 shrink-0 text-xs font-bold">
+              <button onClick={onSelectAll} className="text-indigo-600 hover:text-indigo-800">Select All</button>
+              <span className="text-slate-300">|</span>
+              <button onClick={onClearAll} className="text-rose-500 hover:text-rose-700">Clear All</button>
+            </div>
+            <div className="p-4 overflow-y-auto grid grid-cols-1 sm:grid-cols-3 gap-1">
+              {columns.map((col) => (
+                <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 text-sm text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={visibleCols.has(col.key)} onChange={() => onToggle(col.key)} className="rounded accent-indigo-600" />
+                  {col.label}
+                </label>
+              ))}
+            </div>
+            <div className="p-4 border-t border-slate-200 flex justify-end shrink-0">
+              <button
+                onClick={() => setOpen(false)}
+                className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const CANCEL_REASONS = ["Mutual Cancellation", "Buyer not accepting", "Other reason"];
 
 function CancelContractModal({ contract, onClose, onCancelled }) {
@@ -287,6 +372,17 @@ export default function ContractsList({ statusFilter = "Active" }) {
   const [expandedContractId, setExpandedContractId] = useState(null);
   const [editingContract, setEditingContract] = useState(null);
   const [cancellingContract, setCancellingContract] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortOrder, setSortOrder] = useState("desc"); // by Generated Date
+  const [visibleCols, setVisibleCols] = useState(() => new Set(TOGGLABLE_COLUMNS.map((c) => c.key)));
+  const toggleCol = (key) =>
+    setVisibleCols((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  const selectAllCols = () => setVisibleCols(new Set([...TOGGLABLE_COLUMNS, ...CANCEL_COLUMNS].map((c) => c.key)));
+  const clearAllCols = () => setVisibleCols(new Set());
 
   const loadContracts = async () => {
     setLoading(true);
@@ -351,7 +447,24 @@ export default function ContractsList({ statusFilter = "Active" }) {
   };
 
   const showingCancelled = statusFilter === "Cancelled";
-  const visibleContracts = contracts.filter((c) => (showingCancelled ? c.status === "Cancelled" : c.status !== "Cancelled"));
+  const visibleContracts = contracts
+    .filter((c) => (showingCancelled ? c.status === "Cancelled" : c.status !== "Cancelled"))
+    .filter((c) => {
+      const q = searchTerm.trim().toLowerCase();
+      if (!q) return true;
+      return [c.bidNumber, c.contractNumber, c.buyerContact, c.buyerEmail, c.organisation, c.ministry, c.department, c.sellerCompany]
+        .some((field) => String(field || "").toLowerCase().includes(q));
+    })
+    .sort((a, b) => {
+      const dateA = new Date(a.generatedDate).getTime() || 0;
+      const dateB = new Date(b.generatedDate).getTime() || 0;
+      return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
+    });
+
+  const totalCols =
+    4 +
+    TOGGLABLE_COLUMNS.filter((c) => visibleCols.has(c.key)).length +
+    (showingCancelled ? CANCEL_COLUMNS.filter((c) => visibleCols.has(c.key)).length : 0);
 
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6">
@@ -360,57 +473,59 @@ export default function ContractsList({ statusFilter = "Active" }) {
         {showingCancelled ? "Cancelled Contracts" : "Saved Contracts"} ({visibleContracts.length})
       </h2>
 
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by Bid No, Contract No, Buyer, Ministry..."
+            className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
+          />
+        </div>
+        <button
+          onClick={() => setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"))}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors shrink-0"
+          title="Sort by Generated Date"
+        >
+          <ArrowUpDown size={15} />
+          Generated Date: {sortOrder === "desc" ? "Newest first" : "Oldest first"}
+        </button>
+        <ColumnPicker
+          columns={showingCancelled ? [...TOGGLABLE_COLUMNS, ...CANCEL_COLUMNS] : TOGGLABLE_COLUMNS}
+          visibleCols={visibleCols}
+          onToggle={toggleCol}
+          onSelectAll={selectAllCols}
+          onClearAll={clearAllCols}
+        />
+      </div>
+
       <div className="overflow-x-auto rounded-2xl border border-slate-200">
         <table className="w-full text-left border-collapse text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Sr No</th>
               <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Actions</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Status</th>
               <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Bid Number</th>
               <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Contract Number</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Generated Date</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Buyer Contact</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Products</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Buyer Email</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Buyer GSTIN</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Buyer Address</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Delivery Start After</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Delivery To Be Completed By</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Ministry</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Department</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Organisation</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Office Zone</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Seller Company</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Seller Contact</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Seller GSTIN</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Consignee Designation</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Consignee Email</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Consignee Contact</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Consignee Address</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Created Date</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Created By</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Modified Date</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Modified By</th>
-              <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">View PDF</th>
-              {showingCancelled && (
-                <>
-                  <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Cancel Reason</th>
-                  <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Cancel Remarks</th>
-                </>
-              )}
+              {TOGGLABLE_COLUMNS.map((col) => visibleCols.has(col.key) && (
+                <th key={col.key} className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">{col.label}</th>
+              ))}
+              {showingCancelled && CANCEL_COLUMNS.map((col) => visibleCols.has(col.key) && (
+                <th key={col.key} className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">{col.label}</th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td colSpan={showingCancelled ? 30 : 28} className="p-8 text-center">
+                <td colSpan={totalCols} className="p-8 text-center">
                   <Loader2 className="animate-spin mx-auto text-indigo-600" size={24} />
                 </td>
               </tr>
             ) : visibleContracts.length === 0 ? (
               <tr>
-                <td colSpan={showingCancelled ? 30 : 28} className="p-8 text-center text-slate-400">
+                <td colSpan={totalCols} className="p-8 text-center text-slate-400">
                   {showingCancelled ? "No cancelled contracts" : "No contracts saved yet"}
                 </td>
               </tr>
@@ -442,74 +557,76 @@ export default function ContractsList({ statusFilter = "Active" }) {
                       </div>
                     </td>
                     <td className="p-3 whitespace-nowrap">
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                        isCancelled ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
-                      }`}>
-                        {c.status || "Active"}
-                      </span>
-                    </td>
-                    <td className="p-3 whitespace-nowrap">{c.bidNumber || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{c.contractNumber || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{formatDate(c.generatedDate)}</td>
-                    <td className="p-3 whitespace-nowrap">{c.buyerContact || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">
-                      {parseProducts(c.products).length > 0 ? (
-                        <button
-                          onClick={() => setExpandedContractId((prev) => (prev === c.guid ? null : c.guid))}
-                          className="text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-semibold"
-                        >
-                          <ListOrdered size={14} /> View ({parseProducts(c.products).length})
-                        </button>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-                    <td className="p-3 whitespace-nowrap">{c.buyerEmail || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{c.buyerGstin || "-"}</td>
-                    <td className="p-3 max-w-[200px] truncate" title={c.buyerAddress}>{c.buyerAddress || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{formatDate(c.deliveryStartAfter)}</td>
-                    <td className="p-3 whitespace-nowrap">{formatDate(c.deliveryCompletedBy)}</td>
-                    <td className="p-3 whitespace-nowrap">{c.ministry || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{c.department || "-"}</td>
-                    <td className="p-3 max-w-[180px] truncate" title={c.organisation}>{c.organisation || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{c.officeZone || "-"}</td>
-                    <td className="p-3 max-w-[180px] truncate" title={c.sellerCompany}>{c.sellerCompany || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{c.sellerContact || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{c.sellerGstin || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{c.consigneeDesignation || "-"}</td>
-                    <td className="p-3 max-w-[180px] truncate" title={c.consigneeEmail}>{c.consigneeEmail || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{c.consigneeContact || "-"}</td>
-                    <td className="p-3 max-w-[200px] truncate" title={c.consigneeAddress}>{c.consigneeAddress || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{formatDate(c.createdAt)}</td>
-                    <td className="p-3 whitespace-nowrap">{c.createdBy || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">{formatDate(c.modifiedAt)}</td>
-                    <td className="p-3 whitespace-nowrap">{c.modifiedBy || "-"}</td>
-                    <td className="p-3 whitespace-nowrap">
                       {c.pdfFilename ? (
-                        <a
-                          href={`/uploads/${c.pdfFilename}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-semibold"
-                        >
-                          <Eye size={14} /> View
+                        <a href={`/uploads/${c.pdfFilename}`} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 hover:underline font-semibold" title="Open contract PDF">
+                          {c.bidNumber || "-"}
                         </a>
                       ) : (
-                        "-"
+                        c.bidNumber || "-"
                       )}
                     </td>
-                    {showingCancelled && (
-                      <>
-                        <td className="p-3 whitespace-nowrap">{c.cancelReason || "-"}</td>
-                        <td className="p-3 max-w-[220px] truncate" title={c.cancelRemarks}>{c.cancelRemarks || "-"}</td>
-                      </>
+                    <td className="p-3 whitespace-nowrap">
+                      {c.pdfFilename ? (
+                        <a href={`/uploads/${c.pdfFilename}`} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 hover:underline font-semibold" title="Open contract PDF">
+                          {c.contractNumber || "-"}
+                        </a>
+                      ) : (
+                        c.contractNumber || "-"
+                      )}
+                    </td>
+                    {visibleCols.has("status") && (
+                      <td className="p-3 whitespace-nowrap">
+                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                          isCancelled ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
+                        }`}>
+                          {c.status || "Active"}
+                        </span>
+                      </td>
                     )}
+                    {visibleCols.has("generatedDate") && <td className="p-3 whitespace-nowrap">{formatDate(c.generatedDate)}</td>}
+                    {visibleCols.has("buyerContact") && <td className="p-3 whitespace-nowrap">{c.buyerContact || "-"}</td>}
+                    {visibleCols.has("products") && (
+                      <td className="p-3 whitespace-nowrap">
+                        {parseProducts(c.products).length > 0 ? (
+                          <button
+                            onClick={() => setExpandedContractId((prev) => (prev === c.guid ? null : c.guid))}
+                            className="text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-semibold"
+                          >
+                            <ListOrdered size={14} /> View ({parseProducts(c.products).length})
+                          </button>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    )}
+                    {visibleCols.has("buyerEmail") && <td className="p-3 whitespace-nowrap">{c.buyerEmail || "-"}</td>}
+                    {visibleCols.has("buyerGstin") && <td className="p-3 whitespace-nowrap">{c.buyerGstin || "-"}</td>}
+                    {visibleCols.has("buyerAddress") && <td className="p-3 max-w-[200px] truncate" title={c.buyerAddress}>{c.buyerAddress || "-"}</td>}
+                    {visibleCols.has("deliveryStartAfter") && <td className="p-3 whitespace-nowrap">{formatDate(c.deliveryStartAfter)}</td>}
+                    {visibleCols.has("deliveryCompletedBy") && <td className="p-3 whitespace-nowrap">{formatDate(c.deliveryCompletedBy)}</td>}
+                    {visibleCols.has("ministry") && <td className="p-3 whitespace-nowrap">{c.ministry || "-"}</td>}
+                    {visibleCols.has("department") && <td className="p-3 whitespace-nowrap">{c.department || "-"}</td>}
+                    {visibleCols.has("organisation") && <td className="p-3 max-w-[180px] truncate" title={c.organisation}>{c.organisation || "-"}</td>}
+                    {visibleCols.has("officeZone") && <td className="p-3 whitespace-nowrap">{c.officeZone || "-"}</td>}
+                    {visibleCols.has("sellerCompany") && <td className="p-3 max-w-[180px] truncate" title={c.sellerCompany}>{c.sellerCompany || "-"}</td>}
+                    {visibleCols.has("sellerContact") && <td className="p-3 whitespace-nowrap">{c.sellerContact || "-"}</td>}
+                    {visibleCols.has("sellerGstin") && <td className="p-3 whitespace-nowrap">{c.sellerGstin || "-"}</td>}
+                    {visibleCols.has("consigneeDesignation") && <td className="p-3 whitespace-nowrap">{c.consigneeDesignation || "-"}</td>}
+                    {visibleCols.has("consigneeEmail") && <td className="p-3 max-w-[180px] truncate" title={c.consigneeEmail}>{c.consigneeEmail || "-"}</td>}
+                    {visibleCols.has("consigneeContact") && <td className="p-3 whitespace-nowrap">{c.consigneeContact || "-"}</td>}
+                    {visibleCols.has("consigneeAddress") && <td className="p-3 max-w-[200px] truncate" title={c.consigneeAddress}>{c.consigneeAddress || "-"}</td>}
+                    {visibleCols.has("createdAt") && <td className="p-3 whitespace-nowrap">{formatDate(c.createdAt)}</td>}
+                    {visibleCols.has("createdBy") && <td className="p-3 whitespace-nowrap">{c.createdBy || "-"}</td>}
+                    {visibleCols.has("modifiedAt") && <td className="p-3 whitespace-nowrap">{formatDate(c.modifiedAt)}</td>}
+                    {visibleCols.has("modifiedBy") && <td className="p-3 whitespace-nowrap">{c.modifiedBy || "-"}</td>}
+                    {showingCancelled && visibleCols.has("cancelReason") && <td className="p-3 whitespace-nowrap">{c.cancelReason || "-"}</td>}
+                    {showingCancelled && visibleCols.has("cancelRemarks") && <td className="p-3 max-w-[220px] truncate" title={c.cancelRemarks}>{c.cancelRemarks || "-"}</td>}
                   </tr>
                   {expandedContractId === c.guid && (() => {
                     const contractProducts = parseProducts(c.products);
                     return (
                       <tr key={`${c.guid}-products`} className="bg-slate-50">
-                        <td colSpan={showingCancelled ? 30 : 28} className="p-0">
+                        <td colSpan={totalCols} className="p-0">
                           <div className="sticky left-0 w-[calc(100vw-4rem)] max-w-[1100px] p-4">
                             <table className="w-full text-left border-collapse text-xs border border-slate-200 rounded-xl overflow-hidden bg-white table-fixed">
                               <thead>

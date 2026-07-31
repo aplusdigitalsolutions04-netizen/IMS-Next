@@ -17,7 +17,7 @@ export const GET = withErrorHandling(async (request) => {
   const search = searchParams.get("search");
   const offset = (page - 1) * limit;
 
-  let whereClause = "WHERE v.isDeleted = 0 AND v.companyGuid = ? AND i.itemName != 'SYSTEM_COMBOS' AND v.itemVariantId NOT IN (SELECT parentVariantId FROM inventorycombomapping WHERE isDeleted = 0)";
+  let whereClause = "WHERE v.isDeleted = 0 AND v.companyGuid = ? AND EXISTS (SELECT 1 FROM companies WHERE guid = v.companyGuid AND isActive = 1) AND i.itemName != 'SYSTEM_COMBOS' AND v.itemVariantId NOT IN (SELECT parentVariantId FROM inventorycombomapping WHERE isDeleted = 0)";
   const params = [user.companyId];
 
   if (brandId && brandId !== "all") {

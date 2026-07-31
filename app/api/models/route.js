@@ -34,6 +34,7 @@ export const GET = withErrorHandling(async (request) => {
       s.lastPurchaseRate as lastLandingPrice
     FROM inventoryitemvariant itv
     JOIN inventoryitemmaster i ON itv.itemId=i.itemId AND i.isDeleted=0 AND i.isTrackable=1
+    JOIN companies co ON itv.companyGuid=co.guid AND co.isActive=1
     LEFT JOIN inventorybrandmaster b ON i.brandId=b.brandId
     LEFT JOIN inventoryvariantstock s ON itv.itemVariantId=s.itemVariantId
     LEFT JOIN (

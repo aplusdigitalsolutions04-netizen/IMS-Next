@@ -22,7 +22,9 @@ export const GET = withErrorHandling(async (request) => {
            r.condition, r.returnDate, r.returnedBy, r.platform AS firmName, r.orderid AS customerName,
            r.reason, r.repairCost, r.returnCount, r.dispatchGuid, itv.variantName as modelName,
            0 as refundAmount, r.rowColor, r.tags
-    FROM returns r LEFT JOIN inventorystockinserial s ON r.serialNumberGuid=s.guid ${c("s")} LEFT JOIN inventoryitemvariant itv ON s.itemVariantId=itv.itemVariantId ${c("itv")}
+    FROM returns r
+    JOIN companies co ON r.companyGuid=co.guid AND co.isActive=1
+    LEFT JOIN inventorystockinserial s ON r.serialNumberGuid=s.guid ${c("s")} LEFT JOIN inventoryitemvariant itv ON s.itemVariantId=itv.itemVariantId ${c("itv")}
     WHERE r.isDeleted=0 ${w("r")}
   `, cid ? [cid, cid, cid] : []);
   const [stationeryRows] = await mysqlPool.query(`
@@ -32,7 +34,9 @@ export const GET = withErrorHandling(async (request) => {
            o.platformId as firmName, COALESCE(o.orderId,o.issuedBy,'Unknown') as customerName,
            r.compensationAmount as refundAmount, r.remarks as reason,
            'Stationery' as modelName, 0 as repairCost, 1 as returnCount, r.rowColor, r.tags
-    FROM inventorystationeryreturns r LEFT JOIN inventorystockout o ON r.stockOutId=o.stockOutId ${c("o")}
+    FROM inventorystationeryreturns r
+    JOIN companies co ON r.companyGuid=co.guid AND co.isActive=1
+    LEFT JOIN inventorystockout o ON r.stockOutId=o.stockOutId ${c("o")}
     WHERE r.isDeleted=0 ${w("r")}
   `, cid ? [cid, cid] : []);
   const all = [...printerRows, ...stationeryRows].sort((a, b) => new Date(b.returnDate) - new Date(a.returnDate));

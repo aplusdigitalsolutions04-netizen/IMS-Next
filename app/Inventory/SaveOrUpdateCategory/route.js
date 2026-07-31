@@ -14,10 +14,12 @@ export const POST = withErrorHandling(async (request) => {
 
   const { CategoryId, CategoryName, ShowMrp } = body;
   const showMrpBit = ShowMrp ? 1 : 0;
+  let finalCategoryId = CategoryId;
   if (CategoryId && CategoryId !== "0" && CategoryId !== 0 && CategoryId !== "") {
     await mysqlPool.execute("UPDATE inventorycategorymaster SET categoryName = ?, showMrp = ? WHERE categoryId = ? AND companyGuid = ?", [CategoryName, showMrpBit, CategoryId, user.companyId]);
   } else {
-    await mysqlPool.execute("INSERT INTO inventorycategorymaster (categoryId, companyGuid, categoryName, showMrp) VALUES (?, ?, ?, ?)", [uuidv4(), user.companyId, CategoryName, showMrpBit]);
+    finalCategoryId = uuidv4();
+    await mysqlPool.execute("INSERT INTO inventorycategorymaster (categoryId, companyGuid, categoryName, showMrp) VALUES (?, ?, ?, ?)", [finalCategoryId, user.companyId, CategoryName, showMrpBit]);
   }
-  return NextResponse.json({ message: "Success" });
+  return NextResponse.json({ message: "Success", categoryId: finalCategoryId });
 });
