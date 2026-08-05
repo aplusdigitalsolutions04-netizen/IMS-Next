@@ -2,8 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { printerService } from "@/lib/services/api";
-import { API_URL } from "@/lib/client/apiClient";
+import api, { API_URL } from "@/lib/client/apiClient";
 import { getStoredToken } from "@/lib/client/auth";
+
+// Fallback used until the real value loads (and if the request ever fails)
+// — matches the value every call site used to have hardcoded, so behavior
+// is unchanged for anyone who hasn't opened Settings > Business Rules yet.
+const DEFAULT_SETTINGS = { eway_bill_threshold: 50000 };
 
 // Mirrors the core-data slice of Frontend4/src/components/AdminLayout.jsx's
 // loadCoreData/loadOrdersData/loadInstallationData — kept in a context so any

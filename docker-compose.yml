@@ -1,0 +1,53 @@
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme_root}
+      MYSQL_DATABASE: ${DB_NAME:-newdb}
+      MYSQL_USER: ${DB_USER:-ims_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-changeme}
+    # Matches the app's own charset/collation assumption (lib/db.js,
+    # and every table this app creates uses utf8mb4_unicode_ci) — a
+    # server-level mismatch here causes "Illegal mix of collations"
+    # errors the first time a query joins two tables.
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-changeme_root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    # `image:` lets the production server do `docker compose pull app` to
+    # grab the image the Deploy workflow just built and pushed to GHCR
+    # (.github/workflows/deploy.yml), instead of rebuilding from source on
+    # the server itself. `build: .` is still here so local `docker compose
+    # up --build` (no CI involved) keeps working for local dev/testing.
+    image: ghcr.io/aplusdigitalsolutions04-netizen/ims-next:latest
+    build: .
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - .env.docker
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-ims_user}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      DB_NAME: ${DB_NAME:-newdb}
+      PORT: 3011
+    ports:
+      - "3011:3011"
+    volumes:
+      - uploads_data:/app/uploads
+
+volumes:
+  mysql_data:
+  uploads_data:
