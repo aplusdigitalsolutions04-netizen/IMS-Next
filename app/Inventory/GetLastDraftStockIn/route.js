@@ -9,6 +9,6 @@ export const GET = withErrorHandling(async (request) => {
   authorizeInventory(user, "GET");
   requireAuth(user);
 
-  const [rows] = await mysqlPool.query("SELECT * FROM inventorystockin WHERE status = 0 AND isDeleted = 0 ORDER BY createdAt DESC LIMIT 1");
+  const [rows] = await mysqlPool.query("SELECT * FROM inventorystockin WHERE status = 0 AND isDeleted = 0 AND companyGuid = ? ORDER BY createdAt DESC LIMIT 1", [user.companyId]);
   return NextResponse.json({ data: rows, message: "Success" });
 });

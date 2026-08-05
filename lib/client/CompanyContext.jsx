@@ -1,7 +1,6 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import Swal from "sweetalert2";
 import { useAppData } from "./AppDataContext";
 import { setSession } from "./auth";
 import api from "./apiClient";
@@ -28,7 +27,14 @@ export function CompanyProvider({ children }) {
         const comps = JSON.parse(compsStr);
         setAvailableCompanies(comps);
         const active = comps.find((c) => c.guid === user.companyId);
-        if (active) setActiveCompany(active);
+        // On a fresh page load the session is always scoped to one specific
+        // company (never "all") — dashboardFilter must match that, otherwise
+        // it stays stuck on its "all" default while every other tab is
+        // showing the actual active company's data.
+        if (active) {
+          setActiveCompany(active);
+          setDashboardFilter(active.guid);
+        }
       } catch (err) {}
     }
   }, []);
@@ -66,18 +72,16 @@ export function CompanyProvider({ children }) {
       await loadCoreData();
       await minWait;
 
-      Swal.fire({
-        toast: true,
-        position: "top-end",
-        icon: "success",
-        title: newActive ? `Switched to ${newActive.name}` : "Company switched",
-        timer: 1800,
-        showConfirmButton: false,
-      });
+      // Many pages (vendors, categories, stock in/out, contracts, etc.) fetch
+      // their own list data once on mount and never re-fetch — company switch
+      // doesn't remount them, so their state stays stuck on the old company
+      // until something forces a fresh mount. A full reload is the only
+      // change that's guaranteed to reach every one of those pages at once,
+      // instead of hunting down and patching every fetch-on-mount effect.
+      window.location.reload();
     } catch (err) {
       console.error("Error switching company:", err);
       alert(err.response?.data?.message || err.message);
-    } finally {
       setIsSwitchingCompany(false);
     }
   };

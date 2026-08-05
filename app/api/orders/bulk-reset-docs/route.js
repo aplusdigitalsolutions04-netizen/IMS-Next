@@ -11,11 +11,12 @@ export const PUT = withErrorHandling(async (request) => {
   const { items, removeInvoice, removeEwayBill } = await parseJsonBody(request);
   if (!Array.isArray(items) || !items.length) throw new ApiError(400, "No items provided");
 
-  for (const item of items) {
-    const clauses = [];
-    if (removeInvoice) { clauses.push("invoiceNumber=NULL", "invoiceFilename=NULL"); }
-    if (removeEwayBill) { clauses.push("ewayBillNumber=NULL", "ewayBillFilename=NULL"); }
-    if (clauses.length) await mysqlPool.query(`UPDATE orders SET ${clauses.join(",")} WHERE guid=?`, [item.id]);
+  const clauses = [];
+  if (removeInvoice) clauses.push("invoiceNumber=NULL", "invoiceFilename=NULL");
+  if (removeEwayBill) clauses.push("ewayBillNumber=NULL", "ewayBillFilename=NULL");
+  if (clauses.length) {
+    const ids = items.map((item) => item.id);
+    await mysqlPool.query(`UPDATE orders SET ${clauses.join(",")} WHERE guid IN (?) AND companyGuid=?`, [ids, user.companyId]);
   }
   return NextResponse.json({ message: "Documents reset successfully" });
 });

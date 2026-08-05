@@ -17,18 +17,19 @@ export const GET = withErrorHandling(async (request) => {
   const [countRows] = await mysqlPool.query(`
     SELECT COUNT(DISTINCT m.parentVariantId) as total
     FROM inventorycombomapping m
+    JOIN inventoryitemvariant pv ON m.parentVariantId = pv.itemVariantId AND pv.companyGuid = ?
     WHERE m.isDeleted = 0
-  `);
+  `, [user.companyId]);
 
   const [rows] = await mysqlPool.query(`
     SELECT m.parentVariantId as itemVariantId, pv.variantName as variantCode, pi.itemName, COUNT(m.childVariantId) as componentCount
     FROM inventorycombomapping m
-    JOIN inventoryitemvariant pv ON m.parentVariantId = pv.itemVariantId
+    JOIN inventoryitemvariant pv ON m.parentVariantId = pv.itemVariantId AND pv.companyGuid = ?
     JOIN inventoryitemmaster pi ON pv.itemId = pi.itemId
     WHERE m.isDeleted = 0
     GROUP BY m.parentVariantId
     LIMIT ? OFFSET ?
-  `, [limit, offset]);
+  `, [user.companyId, limit, offset]);
 
   return NextResponse.json({ data: rows, total: countRows[0].total, message: "Success" });
 });

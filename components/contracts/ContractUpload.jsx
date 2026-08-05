@@ -222,15 +222,22 @@ export default function ContractUpload() {
   };
 
   // Runs right after a contract is saved — checks every product against
-  // Item Master and, for anything missing, asks whether to add it now via
-  // the wizard. Returns the product list with itemVariantId filled in for
-  // whatever got linked, so the contract can be updated with the links.
+  // Item Master (by product name, then by the contract's separate model
+  // field) and, for anything missing, asks whether to add it now via the
+  // wizard. When the model field alone matches something that already
+  // exists, the user is asked whether to reuse that model or create a
+  // separate new one — a name mismatch doesn't necessarily mean it's a
+  // different product, so this shouldn't be silently decided either way.
+  // Returns the product list with itemVariantId filled in for whatever got
+  // linked, so the contract can be updated with the links.
   const runInventoryValidation = async (savedProducts) => {
-    const names = savedProducts.map((p) => p.productName).filter(Boolean);
-    if (names.length === 0) return savedProducts;
+    const productsToCheck = savedProducts
+      .filter((p) => p.productName)
+      .map((p) => ({ productName: p.productName, model: p.model }));
+    if (productsToCheck.length === 0) return savedProducts;
     let results = [];
     try {
-      results = await contractsService.checkProductsInInventory(names);
+      results = await contractsService.checkProductsInInventory(productsToCheck);
     } catch (err) {
       console.error("Inventory check failed:", err);
       return savedProducts;
@@ -238,7 +245,31 @@ export default function ContractUpload() {
 
     let updated = [...savedProducts];
     for (const r of results) {
-      if (r.exists) continue;
+      if (r.exists && r.matchedBy === "name") continue;
+
+      if (r.exists && r.matchedBy === "model") {
+        const choice = await Swal.fire({
+          title: "Model already in inventory",
+          text: `The model for "${r.productName}" matches an existing item ("${r.matchedName}") in your inventory. Use it, or create a separate new item?`,
+          icon: "question",
+          showDenyButton: true,
+          showCancelButton: true,
+          confirmButtonText: "Use Existing Model",
+          denyButtonText: "Create New",
+          cancelButtonText: "Skip",
+        });
+        if (choice.isConfirmed) {
+          updated = updated.map((p) => (p.productName === r.productName ? { ...p, itemVariantId: r.itemVariantId } : p));
+        } else if (choice.isDenied) {
+          const product = updated.find((p) => p.productName === r.productName);
+          const itemVariantId = await promptAddProduct(product);
+          if (itemVariantId) {
+            updated = updated.map((p) => (p.productName === r.productName ? { ...p, itemVariantId } : p));
+          }
+        }
+        continue;
+      }
+
       const confirm = await Swal.fire({
         title: "Product not in inventory",
         text: `This product ("${r.productName}") is not available in your inventory. Would you like to add it now?`,

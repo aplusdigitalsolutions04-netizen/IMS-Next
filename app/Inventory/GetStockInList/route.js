@@ -17,8 +17,8 @@ export const GET = withErrorHandling(async (request) => {
   const limit = parseInt(searchParams.get("limit")) || 10;
   const offset = (page - 1) * limit;
 
-  let filterSql = "WHERE s.status = ? AND s.isDeleted = 0";
-  const filterParams = [status];
+  let filterSql = "WHERE s.status = ? AND s.isDeleted = 0 AND s.companyGuid = ?";
+  const filterParams = [status, user.companyId];
   if (startDate && endDate) {
     filterSql += " AND s.invoiceDate BETWEEN ? AND ?";
     filterParams.push(`${startDate} 00:00:00`, `${endDate} 23:59:59`);

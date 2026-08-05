@@ -17,7 +17,7 @@ export const GET = withErrorHandling(async (request) => {
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
     LEFT JOIN inventoryunitmaster u ON i.unitId = u.unitId
     LEFT JOIN inventoryvariantstock s ON v.itemVariantId = s.itemVariantId
-    WHERE vb.barcode = ? AND v.isDeleted = 0
+    WHERE vb.barcode = ? AND v.isDeleted = 0 AND v.companyGuid = ?
 
     UNION
 
@@ -28,8 +28,8 @@ export const GET = withErrorHandling(async (request) => {
     JOIN inventoryitemvariant pv ON m.parentVariantId = pv.itemVariantId
     JOIN inventoryitemmaster pi ON pv.itemId = pi.itemId
     LEFT JOIN inventoryvariantstock ps ON pv.itemVariantId = ps.itemVariantId
-    WHERE vb.barcode = ? AND m.isDeleted = 0 AND pv.isDeleted = 0
-  `, [barcode, barcode]);
+    WHERE vb.barcode = ? AND m.isDeleted = 0 AND pv.isDeleted = 0 AND pv.companyGuid = ?
+  `, [barcode, user.companyId, barcode, user.companyId]);
 
   for (const row of rows) {
     if (row.isCombo === 1) {

@@ -1,8 +1,43 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeOrdersRequest, requireCompany, ApiError } from "@/lib/auth";
 import { safeStr } from "@/lib/helpers";
+import { validateBody } from "@/lib/validate";
+
+// Only `products` was previously checked (array, non-empty) — every other
+// field flowed straight into an INSERT with no shape/type guarantee. This
+// doesn't change what's *required* (everything but products stays optional,
+// matching current behavior for contracts missing some fields), just what
+// happens when a field IS present but the wrong type.
+const productSchema = z.object({
+  productName: z.string().nullish(),
+  brand: z.string().nullish(),
+  model: z.string().nullish(),
+  categoryQuadrant: z.string().nullish(),
+  hsnCode: z.string().nullish(),
+  quantity: z.coerce.number().nullish(),
+  unitPrice: z.coerce.number().nullish(),
+  totalValue: z.coerce.number().nullish(),
+  itemVariantId: z.string().nullish(),
+});
+const bodySchema = z.object({
+  bidNumber: z.string().nullish(),
+  contractNumber: z.string().nullish(),
+  generatedDate: z.string().nullish(),
+  buyerContact: z.string().nullish(),
+  buyerEmail: z.string().nullish(),
+  buyerGstin: z.string().nullish(),
+  buyerAddress: z.string().nullish(),
+  consigneeEmail: z.string().nullish(),
+  consigneeAddress: z.string().nullish(),
+  organisation: z.string().nullish(),
+  deliveryStartAfter: z.string().nullish(),
+  deliveryCompletedBy: z.string().nullish(),
+  pdfFilename: z.string().nullish(),
+  products: z.array(productSchema).min(1, "At least one product is required to create an order draft."),
+});
 
 // Contract-extracted dates arrive as full ISO timestamps (e.g. "2026-07-08T18:30:00.000Z")
 // which MySQL rejects for DATE columns — reduce to a plain YYYY-MM-DD.
@@ -27,17 +62,13 @@ export const POST = withErrorHandling(async (request) => {
   requireCompany(user);
   authorizeOrdersRequest(user, "POST", new URL(request.url).pathname, null);
 
-  const body = await parseJsonBody(request);
+  const rawBody = await parseJsonBody(request);
   const {
     bidNumber, contractNumber, generatedDate, buyerContact, buyerEmail, buyerGstin, buyerAddress,
     consigneeEmail, consigneeAddress, organisation,
     deliveryStartAfter, deliveryCompletedBy,
     pdfFilename, products,
-  } = body;
-
-  if (!Array.isArray(products) || products.length === 0) {
-    throw new ApiError(400, "At least one product is required to create an order draft.");
-  }
+  } = validateBody(bodySchema, rawBody);
 
   // Try to match each contract product against an existing catalog model (by
   // name) so the Confirm-Order step can pre-select it instead of forcing the
@@ -53,7 +84,14 @@ export const POST = withErrorHandling(async (request) => {
   // the product's combined text (as a substring, so "3004dw" still matches
   // inside "pro3004dw").
   const alnum = (v) => String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const catalogGuids = new Set(catalogModels.map((m) => m.guid));
   const matchModelGuid = (product) => {
+    // If the product was already explicitly linked to a model — via the
+    // Contract Save / Draft Order "Add Product" wizard, or the "Use Existing
+    // Model" choice — that resolution is authoritative and must win over any
+    // re-guessing here, otherwise the user's explicit pick gets silently
+    // discarded in favor of (possibly wrong, or no) fuzzy text matching.
+    if (product.itemVariantId && catalogGuids.has(product.itemVariantId)) return product.itemVariantId;
     const blob = alnum([product.productName, product.brand, product.model].filter(Boolean).join(" "));
     if (!blob) return null;
     const found = catalogModels.find((m) => {
@@ -120,18 +158,20 @@ export const POST = withErrorHandling(async (request) => {
       return `${num} ${unit}${num === "1" ? "" : "s"}`;
     };
 
-    for (const product of products) {
-      const label = productLabel(product);
+    const orderItemRows = products.map((product) => {
       const modelGuid = matchModelGuid(product);
-      const warranty = extractWarranty(product);
-      await conn.query(
-        `INSERT INTO order_items
-           (guid,companyGuid,orderGuid,modelGuid,sellingPrice,quantity,contractFilename,remarks,warranty)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
-        [randomUUID(), user.companyId, orderId, modelGuid, Number(product.unitPrice) || 0, Number(product.quantity) || 1,
-          pdfFilename || null, label || null, warranty]
-      );
-    }
+      return [
+        randomUUID(), user.companyId, orderId, modelGuid, modelGuid,
+        Number(product.unitPrice) || 0, Number(product.quantity) || 1,
+        pdfFilename || null, productLabel(product) || null, extractWarranty(product),
+      ];
+    });
+    await conn.query(
+      `INSERT INTO order_items
+         (guid,companyGuid,orderGuid,modelGuid,itemVariantId,sellingPrice,quantity,contractFilename,remarks,warranty)
+       VALUES ?`,
+      [orderItemRows]
+    );
 
     await conn.commit();
     broadcastRealtimeEvent(user.companyId, "orders");

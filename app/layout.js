@@ -14,14 +14,20 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: "APDS-IMS",
   description: "A Plus Digital Solutions — Inventory Management System",
+  manifest: "/manifest.json",
   icons: {
     icon: "/Apluslogo.jpeg",
     shortcut: "/aplus.png",
-    apple: "/aplus.png",
+    apple: "/icons/icon-192.png",
   },
 };
 
+export const viewport = {
+  themeColor: "#4f46e5",
+};
+
 import { ThemeProvider } from "@/components/ThemeProvider";
+import PwaRegister from "@/components/PwaRegister";
 
 export default function RootLayout({ children }) {
   return (
@@ -32,6 +38,7 @@ export default function RootLayout({ children }) {
     >
       <body className="min-h-full flex flex-col">
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem enableColorScheme={false} disableTransitionOnChange>
+          <PwaRegister />
           {children}
         </ThemeProvider>
       </body>

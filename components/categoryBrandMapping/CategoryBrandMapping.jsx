@@ -33,7 +33,11 @@ export default function CategoryBrandMapping() {
   const fetchMappings = async () => {
     setTableLoading(true);
     try {
-      const response = await legacyApi.get("/Inventory/GetCategoryBrandMappingList");
+      // This page renders every mapping in one table (no pager UI), so it
+      // needs the full list — the endpoint itself paginates by default now,
+      // so ask for a high limit explicitly instead of relying on it to
+      // return everything unbounded.
+      const response = await legacyApi.get("/Inventory/GetCategoryBrandMappingList", { params: { limit: 5000 } });
       setMappings(response.data?.data || []);
     } catch (error) {
       console.error(error);

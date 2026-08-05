@@ -28,7 +28,7 @@ export const GET = withErrorHandling(async (request) => {
     LEFT JOIN inventoryunitmaster u ON d.unitId = u.unitId
     LEFT JOIN model_itemvariant_map map ON d.modelGuid COLLATE utf8mb4_unicode_ci = map.modelGuid COLLATE utf8mb4_unicode_ci
     LEFT JOIN inventoryitemvariant mim ON map.itemVariantId COLLATE utf8mb4_unicode_ci = mim.itemVariantId COLLATE utf8mb4_unicode_ci
-    WHERE d.stockInId = ? AND d.isDeleted = 0
-  `, [stockInId]);
+    WHERE d.stockInId = ? AND d.isDeleted = 0 AND d.companyGuid = ?
+  `, [stockInId, user.companyId]);
   return NextResponse.json({ data: rows, message: "Success" });
 });

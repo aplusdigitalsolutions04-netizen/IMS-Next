@@ -22,14 +22,21 @@ export const POST = withErrorHandling(async (request) => {
   try {
     await connection.beginTransaction();
     try {
-      for (const sn of serialNumbers) {
-        const [dupStockIn] = await connection.query("SELECT serialNumber FROM inventorystockinserial WHERE serialNumber = ? AND isDeleted = 0 FOR UPDATE", [sn]);
-        if (dupStockIn.length > 0) throw new Error(`Serial Number ${sn} already exists`);
-      }
+      // Scoped to this company — serial numbers were previously checked
+      // globally, so one company using a serial number permanently blocked
+      // every other company from ever using that same string, even on
+      // completely unrelated hardware.
+      const [dupRows] = await connection.query(
+        "SELECT serialNumber FROM inventorystockinserial WHERE serialNumber IN (?) AND isDeleted = 0 AND companyGuid = ? FOR UPDATE",
+        [serialNumbers, user.companyId]
+      );
+      if (dupRows.length > 0) throw new Error(`Serial Number ${dupRows[0].serialNumber} already exists`);
 
-      for (const sn of serialNumbers) {
-        await connection.execute("INSERT INTO inventorystockinserial (serialId, stockInDetailId, itemVariantId, serialNumber) VALUES (?, ?, ?, ?)", [uuidv4(), stockInDetailId, itemVariantId || null, sn]);
-      }
+      const values = serialNumbers.map((sn) => [uuidv4(), stockInDetailId, itemVariantId || null, sn, user.companyId]);
+      await connection.query(
+        "INSERT INTO inventorystockinserial (serialId, stockInDetailId, itemVariantId, serialNumber, companyGuid) VALUES ?",
+        [values]
+      );
       await connection.commit();
     } catch (err) {
       await connection.rollback();

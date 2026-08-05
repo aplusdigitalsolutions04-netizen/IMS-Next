@@ -17,8 +17,8 @@ export const GET = withErrorHandling(async (request) => {
       o.issueDate as dispatchDate
     FROM inventorystationeryreturns r
     LEFT JOIN inventorystockout o ON r.stockOutId = o.stockOutId
-    WHERE r.isDeleted = 0
+    WHERE r.isDeleted = 0 AND r.companyGuid = ?
     ORDER BY r.createdAt DESC
-  `);
+  `, [user.companyId]);
   return NextResponse.json({ data: rows });
 });

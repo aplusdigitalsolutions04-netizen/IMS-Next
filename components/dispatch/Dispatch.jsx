@@ -216,6 +216,8 @@ export default function Dispatch({
   const [tempWeight, setTempWeight] = useState("");
   const [localModels, setLocalModels] = useState(models);
   const [logisticsBatch, setLogisticsBatch] = useState(null);
+  const [isSavingLogistics, setIsSavingLogistics] = useState(false);
+  const [isSendingBackToBilling, setIsSendingBackToBilling] = useState(false);
   const [isCreatingShipment, setIsCreatingShipment] = useState(false);
   const [isTrackingShipment, setIsTrackingShipment] = useState(false);
   const [shipmentTrackInfo, setShipmentTrackInfo] = useState(null);
@@ -753,6 +755,8 @@ export default function Dispatch({
 
   const handleSaveLogistics = async (e) => {
     e.preventDefault();
+    if (isSavingLogistics) return;
+    setIsSavingLogistics(true);
     const finalLogisticsStatus = logisticsForm.logisticsStatus;
 
     const commonUpdateData = isDeliveredLogisticsLocked
@@ -807,6 +811,8 @@ export default function Dispatch({
     } catch (err) {
       console.error(err);
       alert("Failed to update logistics.");
+    } finally {
+      setIsSavingLogistics(false);
     }
   };
 
@@ -816,6 +822,8 @@ export default function Dispatch({
       alert("Please enter a reason for sending back to billing.");
       return;
     }
+    if (isSendingBackToBilling) return;
+    setIsSendingBackToBilling(true);
 
     try {
       const remarks = `Sent back from Dispatch: ${logisticsForm.sendBackRemark.trim()}`;
@@ -836,6 +844,8 @@ export default function Dispatch({
     } catch (err) {
       console.error(err);
       alert("Failed to send back to billing: " + (err.response?.data?.message || err.message));
+    } finally {
+      setIsSendingBackToBilling(false);
     }
   };
 
@@ -1363,17 +1373,17 @@ export default function Dispatch({
                   <button
                     type="button"
                     onClick={handleSendBackToBilling}
-                    disabled={!logisticsForm.sendBackRemark?.trim() || isDeliveredLogisticsLocked}
+                    disabled={!logisticsForm.sendBackRemark?.trim() || isDeliveredLogisticsLocked || isSendingBackToBilling}
                     className="w-full py-2 bg-white border border-amber-300 text-amber-700 font-bold rounded-xl hover:bg-amber-100 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Send Back
+                    {isSendingBackToBilling ? "Sending..." : "Send Back"}
                   </button>
                 </div>
               </div>
 
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setLogisticsBatch(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition">Cancel</button>
-                <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">Save Update</button>
+                <button type="submit" disabled={isSavingLogistics} className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed">{isSavingLogistics ? "Saving..." : "Save Update"}</button>
               </div>
             </form>
           </div>

@@ -11,8 +11,8 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 
   const { rowColor, tags } = body;
   await mysqlPool.query(
-    "UPDATE orders o JOIN order_items oi ON o.guid=oi.orderGuid SET o.rowColor=?,o.tags=? WHERE oi.guid=?",
-    [rowColor || null, tags || null, id]
+    "UPDATE orders o JOIN order_items oi ON o.guid=oi.orderGuid SET o.rowColor=?,o.tags=? WHERE oi.guid=? AND o.companyGuid=?",
+    [rowColor || null, tags || null, id, user.companyId]
   );
   return NextResponse.json({ message: "Appearance updated successfully" });
 });

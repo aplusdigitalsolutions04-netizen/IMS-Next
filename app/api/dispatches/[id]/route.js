@@ -20,8 +20,8 @@ export const GET = withErrorHandling(async (request, { params }) => {
         'Delivered' as status,
         'Delivered' as logisticsStatus
       FROM inventorystockout o
-      WHERE o.stockOutId = ? AND o.isDeleted = 0
-    `, [guid]);
+      WHERE o.stockOutId = ? AND o.isDeleted = 0 AND o.companyGuid = ?
+    `, [guid, user.companyId]);
 
     if (stockOutRows.length === 0) throw new ApiError(404, "Stock Out not found");
 
@@ -78,8 +78,8 @@ export const GET = withErrorHandling(async (request, { params }) => {
         INNER JOIN (SELECT dispatchGuid, MAX(paymentDate) AS maxDate FROM payments GROUP BY dispatchGuid) p2
         ON p1.dispatchGuid = p2.dispatchGuid AND p1.paymentDate = p2.maxDate
     ) p ON oi.guid = p.dispatchGuid
-    WHERE oi.guid = ?
-  `, [guid]);
+    WHERE oi.guid = ? AND o.companyGuid = ?
+  `, [guid, user.companyId]);
 
   if (rows.length === 0) throw new ApiError(404, "Dispatch not found");
   return NextResponse.json(mapDispatchRow(rows[0]));
@@ -93,13 +93,13 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 
   if (guid.startsWith("SO-")) {
     const { commission } = body;
-    const [stockOutCheck] = await mysqlPool.query("SELECT * FROM inventorystockout WHERE stockOutId = ? AND isDeleted = 0", [guid]);
+    const [stockOutCheck] = await mysqlPool.query("SELECT * FROM inventorystockout WHERE stockOutId = ? AND isDeleted = 0 AND companyGuid = ?", [guid, user.companyId]);
     if (stockOutCheck.length === 0) throw new ApiError(404, "Stock Out not found");
 
-    await mysqlPool.query("UPDATE inventorystockout SET commission = ? WHERE stockOutId = ?", [commission || 0, guid]);
+    await mysqlPool.query("UPDATE inventorystockout SET commission = ? WHERE stockOutId = ? AND companyGuid = ?", [commission || 0, guid, user.companyId]);
     return NextResponse.json({ message: "Updated successfully" });
   }
 
-  await updateDispatchItem(mysqlPool, guid, body, user?.username);
+  await updateDispatchItem(mysqlPool, guid, body, user?.username, user.companyId);
   return NextResponse.json({ message: "Dispatch updated successfully" });
 });

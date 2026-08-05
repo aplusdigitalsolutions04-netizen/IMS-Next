@@ -11,6 +11,6 @@ export const POST = withErrorHandling(async (request) => {
   requireAuth(user);
 
   const { vendorId } = body;
-  await mysqlPool.execute("UPDATE inventoryvendor SET isDeleted = 1 WHERE vendorId = ?", [vendorId]);
+  await mysqlPool.execute("UPDATE inventoryvendor SET isDeleted = 1 WHERE vendorId = ? AND companyGuid = ?", [vendorId, user.companyId]);
   return NextResponse.json({ message: "Success" });
 });

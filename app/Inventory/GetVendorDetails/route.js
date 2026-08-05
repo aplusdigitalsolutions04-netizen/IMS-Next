@@ -10,7 +10,7 @@ export const GET = withErrorHandling(async (request) => {
   requireAuth(user);
 
   const vendorId = new URL(request.url).searchParams.get("vendorId");
-  const [rows] = await mysqlPool.query("SELECT * FROM inventoryvendor WHERE vendorId = ?", [vendorId]);
+  const [rows] = await mysqlPool.query("SELECT * FROM inventoryvendor WHERE vendorId = ? AND companyGuid = ?", [vendorId, user.companyId]);
   if (rows.length === 0) throw new ApiError(404, "Vendor not found");
 
   return NextResponse.json({ data: rows[0], message: "Success" });

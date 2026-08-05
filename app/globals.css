@@ -165,10 +165,15 @@ html.dark {
   background-color: #111827; /* Matches tailwind slate-900 roughly after invert */
 }
 
-/* Re-invert media so images and videos look normal */
+/* Re-invert raster media (photos, logos) so they look normal instead of
+   color-negative. Inline <svg> icons (lucide-react, etc.) are deliberately
+   NOT re-inverted here — they render with `stroke: currentColor`, so they
+   already pick up the correctly-inverted text color from the outer filter.
+   Re-inverting them separately would flip that color back to its original
+   (light-mode) hue while the surrounding text stays dark-mode-inverted,
+   making every icon visibly mismatched from its label. */
 html.dark img:not(.logo-invert),
-html.dark video,
-html.dark svg {
+html.dark video {
   filter: invert(1) hue-rotate(180deg);
 }
 

@@ -25,7 +25,7 @@ export const GET = withErrorHandling(async (request) => {
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
     LEFT JOIN inventoryunitmaster u ON i.unitId = u.unitId
     LEFT JOIN inventoryvariantstock s ON v.itemVariantId = s.itemVariantId
-    WHERE vb.barcode = ? AND v.isDeleted = 0
-  `, [code]);
+    WHERE vb.barcode = ? AND v.isDeleted = 0 AND v.companyGuid = ?
+  `, [code, user.companyId]);
   return NextResponse.json({ data: rows, message: "Success" });
 });

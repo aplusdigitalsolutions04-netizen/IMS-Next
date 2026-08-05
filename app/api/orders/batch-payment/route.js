@@ -24,12 +24,15 @@ export const POST = withErrorHandling(async (request) => {
       const amtPer = (numTotal / itemIds.length).toFixed(2);
       const dedPer = (numDeduction / itemIds.length).toFixed(2);
       for (const id of itemIds) {
-        const [ex] = await conn.query("SELECT guid FROM payments WHERE dispatchGuid=? AND companyGuid=?", [id, user.companyId]);
-        if (ex.length) {
-          await conn.query("UPDATE payments SET paymentDate=?,amount=?,utrId=?,paymentType=?,settlementDeduction=? WHERE dispatchGuid=? AND companyGuid=?", [safeDate(paymentDate), amtPer, utrId, paymentType || "Full", dedPer, id, user.companyId]);
-        } else {
-          await conn.query("INSERT INTO payments (guid,companyGuid,dispatchGuid,paymentDate,amount,utrId,paymentType,settlementDeduction) VALUES (UUID(),?,?,?,?,?,?,?)", [user.companyId, id, safeDate(paymentDate), amtPer, utrId, paymentType || "Full", dedPer]);
-        }
+        // Atomic upsert — same race (double-submit creating duplicate payment
+        // rows) and same fix as app/api/orders/[id]/payment/route.js, backed
+        // by the same unique constraint on payments(dispatchGuid, companyGuid).
+        await conn.query(
+          `INSERT INTO payments (guid,companyGuid,dispatchGuid,paymentDate,amount,utrId,paymentType,settlementDeduction)
+           VALUES (UUID(),?,?,?,?,?,?,?)
+           ON DUPLICATE KEY UPDATE paymentDate=VALUES(paymentDate), amount=VALUES(amount), utrId=VALUES(utrId), paymentType=VALUES(paymentType), settlementDeduction=VALUES(settlementDeduction)`,
+          [user.companyId, id, safeDate(paymentDate), amtPer, utrId, paymentType || "Full", dedPer]
+        );
         const [ir] = await conn.query("SELECT orderGuid FROM order_items WHERE guid=? AND companyGuid=?", [id, user.companyId]);
         if (ir.length) {
           await conn.query("UPDATE orders SET status=? WHERE guid=? AND companyGuid=?", [status || "Completed", ir[0].orderGuid, user.companyId]);

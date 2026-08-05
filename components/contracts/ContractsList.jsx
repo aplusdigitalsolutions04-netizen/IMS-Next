@@ -6,6 +6,7 @@ import { contractsService } from "@/lib/services/contractsService";
 import { printerService } from "@/lib/services/api";
 import { useCompany } from "@/lib/client/CompanyContext";
 import { useAppData } from "@/lib/client/AppDataContext";
+import AddProductWizard from "./AddProductWizard";
 
 const parseProducts = (val) => {
   if (!val) return [];
@@ -375,6 +376,9 @@ export default function ContractsList({ statusFilter = "Active" }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOrder, setSortOrder] = useState("desc"); // by Generated Date
   const [visibleCols, setVisibleCols] = useState(() => new Set(TOGGLABLE_COLUMNS.map((c) => c.key)));
+  const [wizardProduct, setWizardProduct] = useState(null);
+  const wizardResolveRef = React.useRef(null);
+  const [creatingDraftFor, setCreatingDraftFor] = useState(null);
   const toggleCol = (key) =>
     setVisibleCols((prev) => {
       const next = new Set(prev);
@@ -424,14 +428,123 @@ export default function ContractsList({ statusFilter = "Active" }) {
   };
 
 
+  // Waits for the user to either finish the AddProductWizard (resolves with
+  // the new itemVariantId) or dismiss it without linking (resolves null).
+  const promptAddProduct = (product) =>
+    new Promise((resolve) => {
+      wizardResolveRef.current = resolve;
+      setWizardProduct(product);
+    });
+
+  const handleWizardLinked = (itemVariantId) => {
+    wizardResolveRef.current?.(itemVariantId);
+    wizardResolveRef.current = null;
+    setWizardProduct(null);
+  };
+
+  const handleWizardClose = () => {
+    wizardResolveRef.current?.(null);
+    wizardResolveRef.current = null;
+    setWizardProduct(null);
+  };
+
+  // Same "product missing from inventory" check used after Contract Save,
+  // but here it's blocking — a draft order can only be created once every
+  // product on the contract is actually linked to inventory. If a product
+  // was skipped at save time, this is where it gets caught again.
   const handleCreateDraftOrder = async (c) => {
+    // Guards against a double-click (or a slow request + a second click)
+    // firing this twice — that created two separate Draft orders from the
+    // same contract, both with the same orderid, which then merged into one
+    // confusing batch showing double the actual quantity.
+    if (creatingDraftFor) return;
+    setCreatingDraftFor(c.guid);
+    try {
+      await createDraftOrderForContract(c);
+    } finally {
+      setCreatingDraftFor(null);
+    }
+  };
+
+  const createDraftOrderForContract = async (c) => {
     const products = parseProducts(c.products);
     if (products.length === 0) {
       Swal.fire("No products", "This contract has no products to create a draft order from.", "warning");
       return;
     }
+
+    // Products already linked to inventory (itemVariantId set, e.g. from the
+    // Contract Save wizard) are already known-good — re-checking by name can
+    // false-negative if the linked item's name differs slightly, so skip them.
+    const toCheck = products.filter((p) => !p.itemVariantId && p.productName).map((p) => ({ productName: p.productName, model: p.model }));
+    let results = [];
     try {
-      await printerService.createOrderDraft({ ...c, products, pdfFilename: c.pdfFilename });
+      results = toCheck.length > 0 ? await contractsService.checkProductsInInventory(toCheck) : [];
+    } catch (err) {
+      console.error("Inventory check failed:", err);
+      Swal.fire("Error", "Failed to check products against inventory", "error");
+      return;
+    }
+
+    let updated = [...products];
+    for (const r of results) {
+      if (r.exists && r.matchedBy === "name") continue;
+
+      if (r.exists && r.matchedBy === "model") {
+        const choice = await Swal.fire({
+          title: "Model already in inventory",
+          text: `The model for "${r.productName}" matches an existing item ("${r.matchedName}") in your inventory. Use it, or create a separate new item?`,
+          icon: "question",
+          showDenyButton: true,
+          showCancelButton: true,
+          confirmButtonText: "Use Existing Model",
+          denyButtonText: "Create New",
+          cancelButtonText: "Cancel",
+        });
+        if (choice.isConfirmed) {
+          updated = updated.map((p) => (p.productName === r.productName ? { ...p, itemVariantId: r.itemVariantId } : p));
+          continue;
+        }
+        if (choice.isDenied) {
+          const product = updated.find((p) => p.productName === r.productName);
+          const itemVariantId = await promptAddProduct(product);
+          if (!itemVariantId) {
+            Swal.fire("Draft not created", "Every product must be added to inventory before creating the order draft.", "warning");
+            return;
+          }
+          updated = updated.map((p) => (p.productName === r.productName ? { ...p, itemVariantId } : p));
+          continue;
+        }
+        Swal.fire("Draft not created", "Every product must be added to inventory before creating the order draft.", "warning");
+        return;
+      }
+
+      const confirm = await Swal.fire({
+        title: "Product not in inventory",
+        text: `This product ("${r.productName}") is not available in your inventory. It must be added before an order draft can be created.`,
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Add Product",
+        cancelButtonText: "Cancel",
+      });
+      if (!confirm.isConfirmed) {
+        Swal.fire("Draft not created", "Every product must be added to inventory before creating the order draft.", "warning");
+        return;
+      }
+      const product = updated.find((p) => p.productName === r.productName);
+      const itemVariantId = await promptAddProduct(product);
+      if (!itemVariantId) {
+        Swal.fire("Draft not created", "Every product must be added to inventory before creating the order draft.", "warning");
+        return;
+      }
+      updated = updated.map((p) => (p.productName === r.productName ? { ...p, itemVariantId } : p));
+    }
+
+    try {
+      if (updated.some((p, i) => p.itemVariantId && p.itemVariantId !== products[i]?.itemVariantId)) {
+        await contractsService.updateContract(c.guid, { products: JSON.stringify(updated) });
+      }
+      await printerService.createOrderDraft({ ...c, products: updated, pdfFilename: c.pdfFilename });
       Swal.fire("Draft created", "Order draft created — check the Draft tab in Order Processing.", "success");
     } catch (error) {
       console.error("Create order draft failed:", error);
@@ -543,8 +656,8 @@ export default function ContractsList({ statusFilter = "Active" }) {
                         </button>
                         {!isCancelled && (
                           <>
-                            <button onClick={() => handleCreateDraftOrder(c)} className="text-teal-600 hover:text-teal-800" title="Create Order Draft">
-                              <PackagePlus size={16} />
+                            <button onClick={() => handleCreateDraftOrder(c)} disabled={creatingDraftFor === c.guid} className="text-teal-600 hover:text-teal-800 disabled:opacity-40 disabled:cursor-wait" title="Create Order Draft">
+                              {creatingDraftFor === c.guid ? <Loader2 size={16} className="animate-spin" /> : <PackagePlus size={16} />}
                             </button>
                             <button onClick={() => setCancellingContract(c)} className="text-amber-500 hover:text-amber-700" title="Cancel Contract">
                               <Ban size={16} />
@@ -689,6 +802,10 @@ export default function ContractsList({ statusFilter = "Active" }) {
           onClose={() => setCancellingContract(null)}
           onCancelled={loadContracts}
         />
+      )}
+
+      {wizardProduct && (
+        <AddProductWizard product={wizardProduct} onClose={handleWizardClose} onLinked={handleWizardLinked} />
       )}
     </div>
   );

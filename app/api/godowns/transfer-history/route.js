@@ -13,7 +13,7 @@ export const GET = withErrorHandling(async (request) => {
   const limit = Math.min(parseInt(searchParams.get("limit")) || 20, 100);
   const offset = (page - 1) * limit;
 
-  const [countRows] = await mysqlPool.query("SELECT COUNT(*) as total FROM stocktransferhistory");
-  const [rows] = await mysqlPool.query("SELECT * FROM stocktransferhistory ORDER BY transferDate DESC LIMIT ? OFFSET ?", [limit, offset]);
+  const [countRows] = await mysqlPool.query("SELECT COUNT(*) as total FROM stocktransferhistory WHERE companyGuid = ?", [user.companyId]);
+  const [rows] = await mysqlPool.query("SELECT * FROM stocktransferhistory WHERE companyGuid = ? ORDER BY transferDate DESC LIMIT ? OFFSET ?", [user.companyId, limit, offset]);
   return NextResponse.json({ data: rows, total: countRows[0].total, page, limit });
 });

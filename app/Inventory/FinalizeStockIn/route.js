@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth, requireCompany } from "@/lib/auth";
+import { authenticateRequest, requireAuth, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
@@ -15,7 +15,16 @@ export const POST = withErrorHandling(async (request) => {
   const connection = await mysqlPool.getConnection();
   try {
     await connection.beginTransaction();
-    await connection.execute("UPDATE inventorystockin SET status = 1, finalizedOn = CURRENT_TIMESTAMP WHERE stockInId = ?", [stockInId]);
+    // `AND status = 0` makes this idempotent — without it, a double-click or
+    // a network retry on an already-finalized stock-in re-runs every stock
+    // increment below a second time, silently duplicating the added quantity.
+    const [finalizeResult] = await connection.execute(
+      "UPDATE inventorystockin SET status = 1, finalizedOn = CURRENT_TIMESTAMP WHERE stockInId = ? AND status = 0",
+      [stockInId]
+    );
+    if (finalizeResult.affectedRows === 0) {
+      throw new ApiError(400, "This stock-in has already been finalized.");
+    }
 
     const [details] = await connection.query(`
       SELECT d.*, i.isTrackable

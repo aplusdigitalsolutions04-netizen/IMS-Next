@@ -10,6 +10,6 @@ export const GET = withErrorHandling(async (request) => {
   requireAuth(user);
 
   const detailId = new URL(request.url).searchParams.get("detailId");
-  const [rows] = await mysqlPool.query("SELECT serialId, serialNumber FROM inventorystockinserial WHERE stockInDetailId = ? AND isDeleted = 0", [detailId]);
+  const [rows] = await mysqlPool.query("SELECT serialId, serialNumber FROM inventorystockinserial WHERE stockInDetailId = ? AND isDeleted = 0 AND companyGuid = ?", [detailId, user.companyId]);
   return NextResponse.json({ data: rows, message: "Success" });
 });

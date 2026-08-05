@@ -9,7 +9,7 @@ export const GET = withErrorHandling(async (request) => {
   authorizeInventory(user, "GET");
   requireAuth(user);
 
-  const [drafts] = await mysqlPool.query("SELECT COUNT(*) as count FROM inventorystockin WHERE status = 0 AND isDeleted = 0");
-  const [finalized] = await mysqlPool.query("SELECT COUNT(*) as count FROM inventorystockin WHERE status = 1 AND isDeleted = 0");
+  const [drafts] = await mysqlPool.query("SELECT COUNT(*) as count FROM inventorystockin WHERE status = 0 AND isDeleted = 0 AND companyGuid = ?", [user.companyId]);
+  const [finalized] = await mysqlPool.query("SELECT COUNT(*) as count FROM inventorystockin WHERE status = 1 AND isDeleted = 0 AND companyGuid = ?", [user.companyId]);
   return NextResponse.json({ draftCount: drafts[0].count, finalizedCount: finalized[0].count });
 });

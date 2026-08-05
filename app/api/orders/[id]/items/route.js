@@ -20,21 +20,39 @@ export const POST = withErrorHandling(async (request, { params }) => {
   if (!orderRows.length) throw new ApiError(404, "Order not found");
   const order = orderRows[0];
 
-  const [serRows] = await mysqlPool.query("SELECT *, serialStatus as status, serialNumber as value FROM inventorystockinserial WHERE guid=? AND isDeleted=0 AND companyGuid=?", [newSerialId, user.companyId]);
-  if (!serRows.length) throw new ApiError(404, "Serial not found");
-  if (serRows[0].status !== "Available") throw new ApiError(400, "Selected serial is not Available");
-
   const newItemGuid = randomUUID();
 
   const conn = await mysqlPool.getConnection();
+  let serRow;
   try {
     await conn.beginTransaction();
+
+    // Locked + checked inside the transaction (not before it) so two
+    // concurrent requests for the same serial can't both read "Available"
+    // and both proceed — the second request blocks on FOR UPDATE until the
+    // first commits, then sees the already-Dispatched status.
+    const [serRows] = await conn.query(
+      "SELECT *, serialStatus as status, serialNumber as value FROM inventorystockinserial WHERE guid=? AND isDeleted=0 AND companyGuid=? FOR UPDATE",
+      [newSerialId, user.companyId]
+    );
+    if (!serRows.length) throw new ApiError(404, "Serial not found");
+    if (serRows[0].status !== "Available") throw new ApiError(400, "Selected serial is not Available");
+    serRow = serRows[0];
+
     await conn.query(
       `INSERT INTO order_items (guid,companyGuid,orderGuid,serialNumberGuid,modelGuid,itemVariantId,sellingPrice,warranty)
        VALUES (?,?,?,?,?,?,?,?)`,
-      [newItemGuid, user.companyId, orderGuid, newSerialId, serRows[0].itemVariantId, serRows[0].itemVariantId, sellingPrice || 0, warranty || null]
+      [newItemGuid, user.companyId, orderGuid, newSerialId, serRow.itemVariantId, serRow.itemVariantId, sellingPrice || 0, warranty || null]
     );
-    await conn.query("UPDATE inventorystockinserial SET serialStatus='Dispatched' WHERE guid=? AND companyGuid=?", [newSerialId, user.companyId]);
+    // Belt-and-suspenders: even with the row locked above, the guard here
+    // means this can never flip a serial that isn't Available, regardless
+    // of how this query is reached in the future.
+    const [updateResult] = await conn.query(
+      "UPDATE inventorystockinserial SET serialStatus='Dispatched' WHERE guid=? AND companyGuid=? AND serialStatus='Available'",
+      [newSerialId, user.companyId]
+    );
+    if (updateResult.affectedRows === 0) throw new ApiError(400, "Selected serial is not Available");
+
     await conn.commit();
   } catch (txErr) {
     await conn.rollback();
@@ -46,7 +64,7 @@ export const POST = withErrorHandling(async (request, { params }) => {
   await recordSerialMovement(mysqlPool, {
     companyGuid: user.companyId,
     serialNumberGuid: newSerialId,
-    serialValue: serRows[0].value,
+    serialValue: serRow.value,
     dispatchGuid: newItemGuid,
     actionType: "Dispatched",
     status: "Dispatched",

@@ -34,12 +34,15 @@ export const POST = withErrorHandling(async (request) => {
 
       await conn.query("UPDATE inventorystockinserial SET godownGuid=? WHERE guid IN (?) AND companyGuid=?", [destinationGodownId, serialIds, user.companyId]);
 
-      for (const s of serials) {
-        await conn.query(
-          "INSERT INTO stocktransferhistory (transferId,companyGuid,modelName,serialNumber,fromGodown,toGodown,transferredBy) VALUES (?,?,?,?,?,?,?)",
-          [transferId, user.companyId, modelName || "Unknown Model", s.value, srcG[0].godownName, dstG[0].godownName, user?.username || "System"]
-        );
-      }
+      // Single multi-row insert instead of one INSERT per serial — this
+      // transaction is holding a FOR UPDATE lock on every one of those
+      // serial rows above, so a per-serial loop here stretched the lock
+      // window linearly with transfer size.
+      const historyRows = serials.map((s) => [transferId, user.companyId, modelName || "Unknown Model", s.value, srcG[0].godownName, dstG[0].godownName, user?.username || "System"]);
+      await conn.query(
+        "INSERT INTO stocktransferhistory (transferId,companyGuid,modelName,serialNumber,fromGodown,toGodown,transferredBy) VALUES ?",
+        [historyRows]
+      );
     } else {
       if (!itemVariantId) throw new ApiError(400, "itemVariantId is required for a non-serialized transfer");
       const qty = Number(quantity);

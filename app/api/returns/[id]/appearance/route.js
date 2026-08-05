@@ -10,6 +10,6 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   const { id } = await params;
 
   const { rowColor, tags } = await parseJsonBody(request);
-  await mysqlPool.query("UPDATE returns SET rowColor=?, tags=? WHERE guid=?", [rowColor || null, tags || null, id]);
+  await mysqlPool.query("UPDATE returns SET rowColor=?, tags=? WHERE guid=? AND companyGuid=?", [rowColor || null, tags || null, id, user.companyId]);
   return NextResponse.json({ message: "Appearance updated successfully" });
 });

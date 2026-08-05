@@ -10,6 +10,6 @@ export const POST = withErrorHandling(async (request) => {
   authorizeInventory(user, "POST");
   requireAuth(user);
 
-  await mysqlPool.execute("UPDATE inventoryitemmaster SET isDeleted = 1 WHERE itemId = ?", [body.itemId]);
+  await mysqlPool.execute("UPDATE inventoryitemmaster SET isDeleted = 1 WHERE itemId = ? AND companyGuid = ?", [body.itemId, user.companyId]);
   return NextResponse.json({ message: "Success" });
 });

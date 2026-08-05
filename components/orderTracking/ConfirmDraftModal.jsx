@@ -127,6 +127,21 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
     const fromCatalog = fullCatalog.find((v) => String(v.itemVariantId) === String(modelGuid));
     return fromCatalog ? { id: fromCatalog.itemVariantId, guid: fromCatalog.itemVariantId, name: fromCatalog.variantName, isSerialized: !!fromCatalog.isTrackable } : undefined;
   };
+
+  // `models` (serialized-only, from GET /api/models) misses any non-serialized
+  // item — so if the draft's product is a non-serialized model, it never
+  // appeared in the picker at all and there was no way to select it. Merge in
+  // the full catalog (deduped by id) so every model, serialized or not, is pickable.
+  const allPickableModels = useMemo(() => {
+    const byId = new Map(models.map((m) => [String(m.id || m.guid), m]));
+    fullCatalog.forEach((v) => {
+      const id = String(v.itemVariantId);
+      if (!byId.has(id)) {
+        byId.set(id, { id: v.itemVariantId, guid: v.itemVariantId, name: v.variantName, isSerialized: !!v.isTrackable });
+      }
+    });
+    return Array.from(byId.values());
+  }, [models, fullCatalog]);
   const isNonSerializedModel = (modelGuid) => {
     const m = getModel(modelGuid);
     return !!m && (m.isSerialized === false || m.isSerialized === 0 || m.isSerialized === "0");
@@ -264,10 +279,11 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
                 ) : (
                   <div className="space-y-3">
                     {units.map((unit, idx) => {
-                      const modelName = getModel(unit.modelGuid)?.name;
+                      const resolvedModel = getModel(unit.modelGuid);
+                      const modelName = resolvedModel?.name;
                       return (
                         <div key={idx} className="grid grid-cols-2 gap-3">
-                          {unit.modelGuid ? (
+                          {unit.modelGuid && resolvedModel ? (
                             <div className="border border-slate-200 bg-slate-50 rounded-lg px-3 py-2 text-sm text-slate-600 flex items-center truncate" title={modelName}>
                               {modelName || "Model"}
                             </div>
@@ -278,7 +294,7 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
                               onChange={(e) => updateUnit(itemKey, idx, "modelGuid", e.target.value)}
                             >
                               <option value="">Select Model</option>
-                              {models.map((m) => (
+                              {allPickableModels.map((m) => (
                                 <option key={m.id || m.guid} value={m.id || m.guid}>{m.name}</option>
                               ))}
                             </select>

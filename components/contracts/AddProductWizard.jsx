@@ -90,7 +90,7 @@ function PickOrCreate({ icon: Icon, label, helperText, items, valueKey, labelKey
       )}
 
       {items.length > 0 && !creating && (
-        <div className="option-scroll grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-4 max-h-64 overflow-y-auto p-1 -m-1 rounded-xl">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-4">
           {items.map((it) => {
             const isSelected = selected?.[valueKey] === it[valueKey];
             return (
@@ -256,7 +256,10 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
   const ensureMapping = async () => {
     setMappingBusy(true);
     try {
-      const res = await legacyApi.get("/Inventory/GetCategoryBrandMappingList");
+      // Needs the complete list to reliably check "does this mapping already
+      // exist" — the endpoint paginates by default now, so ask for a high
+      // limit explicitly rather than relying on an unbounded default.
+      const res = await legacyApi.get("/Inventory/GetCategoryBrandMappingList", { params: { limit: 5000 } });
       const list = res.data?.data || [];
       const already = list.some((m) => m.categoryId === category.Value && m.brandId === brand.Value);
       if (!already) {
@@ -470,7 +473,7 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
                           No existing items for this brand/category yet — try "New Item" instead.
                         </p>
                       ) : (
-                        <div className="option-scroll grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4 max-h-56 overflow-y-auto p-1 -m-1 rounded-xl">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4">
                           {items.map((it) => {
                             const isSelected = existingItem?.itemId === it.itemId;
                             return (

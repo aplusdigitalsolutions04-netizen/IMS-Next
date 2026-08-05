@@ -21,12 +21,19 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   try {
     await conn.beginTransaction();
     try {
-      const [existing] = await conn.query("SELECT guid FROM payments WHERE dispatchGuid=? AND companyGuid=?", [id, user.companyId]);
-      if (existing.length) {
-        await conn.query("UPDATE payments SET paymentDate=?,amount=?,utrId=?,paymentType=?,settlementDeduction=? WHERE dispatchGuid=? AND companyGuid=?", [safeDate(paymentDate), numAmount, utrId, paymentType || "Full", numDeduction, id, user.companyId]);
-      } else {
-        await conn.query("INSERT INTO payments (guid,companyGuid,dispatchGuid,paymentDate,amount,utrId,paymentType,settlementDeduction) VALUES (UUID(),?,?,?,?,?,?,?)", [user.companyId, id, safeDate(paymentDate), numAmount, utrId, paymentType || "Full", numDeduction]);
-      }
+      // A plain "check then insert-or-update" here left a window where two
+      // concurrent submits (double-click, or a retried request) could both
+      // see "no existing payment" and both INSERT, creating two payment rows
+      // for the same dispatch and inflating recorded revenue. A single
+      // atomic INSERT ... ON DUPLICATE KEY UPDATE (backed by a unique
+      // constraint on payments(dispatchGuid, companyGuid)) closes that
+      // window entirely — there's no read-then-write gap for a race to land in.
+      await conn.query(
+        `INSERT INTO payments (guid,companyGuid,dispatchGuid,paymentDate,amount,utrId,paymentType,settlementDeduction)
+         VALUES (UUID(),?,?,?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE paymentDate=VALUES(paymentDate), amount=VALUES(amount), utrId=VALUES(utrId), paymentType=VALUES(paymentType), settlementDeduction=VALUES(settlementDeduction)`,
+        [user.companyId, id, safeDate(paymentDate), numAmount, utrId, paymentType || "Full", numDeduction]
+      );
       const [itemRows] = await conn.query("SELECT orderGuid FROM order_items WHERE guid=? AND companyGuid=?", [id, user.companyId]);
       if (itemRows.length) {
         await conn.query("UPDATE orders SET status=? WHERE guid=? AND companyGuid=?", [status || "Completed", itemRows[0].orderGuid, user.companyId]);

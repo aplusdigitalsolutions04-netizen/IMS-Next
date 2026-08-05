@@ -11,8 +11,11 @@ export const GET = withErrorHandling(async (request) => {
 
   const itemVariantId = new URL(request.url).searchParams.get("itemVariantId");
   const [rows] = await mysqlPool.query(
-    "SELECT barcodeId as BarcodeId, barcode as Barcode, subUnitQty as SubUnitQty FROM inventoryvariantbarcode WHERE itemVariantId = ? AND isDeleted = 0",
-    [itemVariantId]
+    `SELECT vb.barcodeId as BarcodeId, vb.barcode as Barcode, vb.subUnitQty as SubUnitQty
+     FROM inventoryvariantbarcode vb
+     JOIN inventoryitemvariant v ON vb.itemVariantId = v.itemVariantId AND v.companyGuid = ?
+     WHERE vb.itemVariantId = ? AND vb.isDeleted = 0`,
+    [user.companyId, itemVariantId]
   );
   return NextResponse.json({ message: "Success", data: rows });
 });

@@ -58,6 +58,12 @@ export default function NewDispatch({
   const [successMsg, setSuccessMsg] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  // Tracks the async duplicate-Order-ID check separately from `error` —
+  // `error` gets wiped at the top of handleSubmit, so a fast submit right
+  // after typing a duplicate ID (before the blur check's response lands, or
+  // before the user even notices the warning) could previously slip through
+  // with no check having actually blocked it. 'idle' | 'checking' | 'ok' | 'duplicate'.
+  const [orderIdCheckStatus, setOrderIdCheckStatus] = useState("idle");
 
   const [selectedCompany, setSelectedCompany] = useState("");
   const [selectedItemName, setSelectedItemName] = useState("");
@@ -152,11 +158,21 @@ export default function NewDispatch({
 
   // Check for duplicate Order ID immediately
   const handleOrderIdBlur = async () => {
-    if (!form.orderId || String(form.orderId).trim() === "" || String(form.orderId).toLowerCase() === "n/a") return;
+    if (!form.orderId || String(form.orderId).trim() === "" || String(form.orderId).toLowerCase() === "n/a") {
+      setOrderIdCheckStatus("idle");
+      return;
+    }
+    const checkedValue = String(form.orderId).trim();
     try {
       setIsProcessing(true);
-      const res = await axios.get(`${API_BASE_URL}/api/dispatches/check/${encodeURIComponent(String(form.orderId).trim())}`, getAuthHeaders());
+      setOrderIdCheckStatus("checking");
+      const res = await axios.get(`${API_BASE_URL}/api/dispatches/check/${encodeURIComponent(checkedValue)}`, getAuthHeaders());
+      // If the field changed again while this request was in flight, this
+      // result is for a stale value — don't let it set the status for
+      // whatever's in the field now.
+      if (String(form.orderId).trim() !== checkedValue) return;
       if (res.data.exists) {
+        setOrderIdCheckStatus("duplicate");
         Swal.fire({
           title: "Duplicate Order ID",
           text: `Order ID "${form.orderId}" already exists in the system!`,
@@ -165,10 +181,15 @@ export default function NewDispatch({
         });
         setError(`Order ID "${form.orderId}" already exists. Cannot create a duplicate.`);
       } else {
+        setOrderIdCheckStatus("ok");
         if (error && error.includes("already exists")) setError("");
       }
     } catch (err) {
       console.error("Failed to check Order ID", err);
+      // A failed check is treated as "unknown", not "ok" — handleSubmit
+      // re-runs the check itself before proceeding, so this doesn't block
+      // submission, it just doesn't pre-clear the warning either.
+      setOrderIdCheckStatus("idle");
     } finally {
       setIsProcessing(false);
     }
@@ -567,6 +588,33 @@ export default function NewDispatch({
       if (!form.platform || !form.orderId) {
         setError("Please select Platform and enter Order ID.");
         return;
+      }
+
+      // `error` was just cleared above, and the blur-triggered duplicate
+      // check is async — a fast submit right after typing/tabbing out could
+      // previously reach here before that check ever resolved (or without
+      // it having fired at all, e.g. Enter-to-submit). Re-check synchronously
+      // here so submission is always gated on a real, current answer instead
+      // of trusting a check that may still be in flight or may never have run.
+      if (orderIdCheckStatus === "duplicate") {
+        setError(`Order ID "${form.orderId}" already exists. Cannot create a duplicate.`);
+        return;
+      }
+      if (orderIdCheckStatus !== "ok") {
+        try {
+          const res = await axios.get(`${API_BASE_URL}/api/dispatches/check/${encodeURIComponent(String(form.orderId).trim())}`, getAuthHeaders());
+          if (res.data.exists) {
+            setOrderIdCheckStatus("duplicate");
+            setError(`Order ID "${form.orderId}" already exists. Cannot create a duplicate.`);
+            return;
+          }
+          setOrderIdCheckStatus("ok");
+        } catch (checkErr) {
+          console.error("Failed to verify Order ID before submit", checkErr);
+          // Network hiccup on the check itself shouldn't block a legitimate
+          // submission — the backend's own uniqueness handling is still the
+          // final authority either way.
+        }
       }
 
       let contractFilename = null;
@@ -1001,6 +1049,7 @@ export default function NewDispatch({
                         value={form.orderId}
                         onChange={(e) => {
                           setForm({ ...form, orderId: e.target.value });
+                          setOrderIdCheckStatus("idle");
                           if (error && error.includes("already exists")) setError("");
                         }}
                         onBlur={handleOrderIdBlur}

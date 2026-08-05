@@ -43,7 +43,6 @@ export const POST = withErrorHandling(async (request) => {
       let mammothInput = { path: filePath };
 
       if (headerEntries.length > 0) {
-        console.log(`[warranty] Found ${headerEntries.length} header XML file(s) in docx.`);
         headerEntries.sort((a, b) => a.entryName.localeCompare(b.entryName));
 
         let targetHeader = headerEntries.find((e) => {
@@ -56,7 +55,6 @@ export const POST = withErrorHandling(async (request) => {
         }
 
         const headerXml = zip.readAsText(targetHeader);
-        console.log(`[warranty] Parsing content from header: ${targetHeader.entryName}`);
 
         let documentXml = headerXml;
         const hdrStartMatch = headerXml.match(/<w:hdr([\s\S]*?)>/);
@@ -84,8 +82,6 @@ export const POST = withErrorHandling(async (request) => {
         }
 
         mammothInput = { buffer: zip.toBuffer() };
-      } else {
-        console.log("[warranty] No header XML found in docx, falling back to document body.");
       }
 
       const result = await mammoth.convertToHtml(mammothInput, {

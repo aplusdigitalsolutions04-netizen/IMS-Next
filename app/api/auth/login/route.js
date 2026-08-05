@@ -3,10 +3,19 @@ import { mysqlPool } from "@/lib/db";
 import { ApiError, hasAllCompaniesAccess } from "@/lib/auth";
 import { sanitizeUser, safeStr, verifyPassword, hashPassword, signToken, logUserActivity } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { recordLoginAttempt } from "@/lib/rateLimiter";
 
 export const POST = withErrorHandling(async (request) => {
   const { username, password } = await parseJsonBody(request);
   if (!username || !password) throw new ApiError(400, "Username and password are required.");
+
+  // Rate limiting on /api/auth/login is per-IP (see proxy.js) — an admin
+  // unblocking someone needs to know *which* IP is theirs when several show
+  // up as blocked, so every failed attempt records which username was tried
+  // against this IP. Same x-forwarded-for parsing as proxy.js, so this lines
+  // up with the IP the rate limiter is actually tracking.
+  const forwarded = request.headers.get("x-forwarded-for");
+  const ip = forwarded ? forwarded.split(",")[0].trim() : "unknown";
 
   const [rows] = await mysqlPool.query(
     `SELECT u.*, r.permissions as rolePermissions, r.editPermissions as roleEditPermissions
@@ -14,11 +23,17 @@ export const POST = withErrorHandling(async (request) => {
      WHERE (u.username=? OR u.email=?) LIMIT 1`,
     [safeStr(username, ""), safeStr(username, "")]
   );
-  if (rows.length === 0) throw new ApiError(401, "Invalid credentials");
+  if (rows.length === 0) {
+    recordLoginAttempt(ip, username);
+    throw new ApiError(401, "Invalid credentials");
+  }
   const user = rows[0];
 
   const { ok, legacy } = await verifyPassword(password, user.password);
-  if (!ok) throw new ApiError(401, "Invalid credentials");
+  if (!ok) {
+    recordLoginAttempt(ip, username);
+    throw new ApiError(401, "Invalid credentials");
+  }
 
   // Admin (and allCompaniesAccess-flagged users) see every active company,
   // present and future, without needing a row per company in user_companies.

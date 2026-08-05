@@ -9,8 +9,26 @@ export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requirePermission(user, "users", "User management access required.");
 
+  // Same page/limit convention as GetVendorList and friends. Explicit column
+  // list (no `password` hash pulled into memory for a response that never
+  // returns it anyway) — includes the per-user allow_edit_* columns
+  // sanitizeUser() falls back to for any user whose roleId isn't set yet,
+  // dropping them would silently break that fallback.
+  const { searchParams } = new URL(request.url);
+  const page = parseInt(searchParams.get("page")) || 1;
+  const limit = parseInt(searchParams.get("limit")) || 100;
+  const offset = (page - 1) * limit;
+
+  const [[{ total }]] = await mysqlPool.query("SELECT COUNT(*) as total FROM users");
+
   const [rows] = await mysqlPool.query(
-    "SELECT * FROM users ORDER BY createdAt DESC, userid DESC"
+    `SELECT userid, username, role, roleId, fullName, email, phone, profilePhoto,
+            permissions, allCompaniesAccess, notificationsEnabled, createdAt, updatedAt,
+            allow_edit_models, allow_edit_serials, allow_edit_godown, allow_create_order,
+            allow_edit_order_processing, allow_edit_billing, allow_edit_dispatch, allow_edit_installations,
+            allow_edit_damaged, allow_edit_returns, allow_edit_fbf_fba, allow_edit_warranty, allow_edit_inventory
+     FROM users ORDER BY createdAt DESC, userid DESC LIMIT ? OFFSET ?`,
+    [limit, offset]
   );
 
   const [companyLinks] = rows.length
@@ -24,9 +42,12 @@ export const GET = withErrorHandling(async (request) => {
     (companyIdsByUser[l.userGuid] ||= []).push(l.companyGuid);
   });
 
-  return NextResponse.json(
-    rows.map((r) => ({ ...sanitizeUser(r), companyIds: companyIdsByUser[r.userid] || [] }))
-  );
+  return NextResponse.json({
+    data: rows.map((r) => ({ ...sanitizeUser(r), companyIds: companyIdsByUser[r.userid] || [] })),
+    total,
+    page,
+    limit,
+  });
 });
 
 export const POST = withErrorHandling(async (request) => {

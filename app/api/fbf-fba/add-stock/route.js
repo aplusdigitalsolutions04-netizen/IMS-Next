@@ -1,16 +1,35 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeFbfFba, resolveModelId } from "@/lib/fbfFbaAuth";
 import { recordSerialMovement } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { validateBody } from "@/lib/validate";
+
+// Only covers shape/type safety for fields the business-logic checks further
+// down don't already cover (type/quantity/model-or-item presence stay as
+// explicit checks below since they're conditional on itemKind) — this closes
+// the gap where `serialNumbers` or `warehouseGuid` arriving as the wrong
+// type could reach a query without ever being validated.
+const bodySchema = z.object({
+  modelGuid: z.string().nullish(),
+  itemId: z.string().nullish(),
+  type: z.string().nullish(),
+  quantity: z.coerce.number().nullish(),
+  serialNumbers: z.array(z.string().min(1)).nullish(),
+  createdBy: z.string().nullish(),
+  warehouseGuid: z.string().nullish(),
+  itemKind: z.enum(["serialized", "nonSerialized"]).nullish(),
+});
 
 export const POST = withErrorHandling(async (request) => {
-  const body = await parseJsonBody(request);
+  const rawBody = await parseJsonBody(request);
   const user = await authenticateRequest(request);
   requireCompany(user);
   authorizeFbfFba(user, "POST");
 
+  const body = validateBody(bodySchema, rawBody);
   const { modelGuid, itemId, type, quantity, serialNumbers, createdBy, warehouseGuid } = body;
   const itemKind = body.itemKind || (serialNumbers?.length ? "serialized" : "nonSerialized");
   const isSerialized = itemKind === "serialized";
@@ -71,8 +90,11 @@ export const POST = withErrorHandling(async (request) => {
     }
 
     if (isSerialized && serialNumbers && serialNumbers.length > 0) {
+      // guid is selected here so the movement-log loop below can reuse it
+      // directly instead of re-querying it per serial — that redundant
+      // per-serial SELECT was fetching data this same query already had.
       const [matchedSerials] = await connection.query(
-        "SELECT serialNumber as value FROM inventorystockinserial WHERE serialNumber IN (?) AND itemVariantId = ? AND isDeleted = 0 AND companyGuid = ? FOR UPDATE",
+        "SELECT guid, serialNumber as value FROM inventorystockinserial WHERE serialNumber IN (?) AND itemVariantId = ? AND isDeleted = 0 AND companyGuid = ? FOR UPDATE",
         [serialNumbers, safeModelId, user.companyId]
       );
       if (matchedSerials.length !== serialNumbers.length) {
@@ -84,19 +106,16 @@ export const POST = withErrorHandling(async (request) => {
         [type, type, serialNumbers, safeModelId, user.companyId]
       );
 
-      for (const sn of serialNumbers) {
-        const [sRow] = await connection.query("SELECT guid FROM inventorystockinserial WHERE serialNumber = ? AND companyGuid = ?", [sn, user.companyId]);
-        if (sRow.length > 0) {
-          await recordSerialMovement(connection, {
-            companyGuid: user.companyId,
-            serialNumberGuid: sRow[0].guid,
-            serialValue: sn,
-            actionType: type,
-            status: type,
-            notes: `Moved to ${type} stock`,
-            createdBy,
-          });
-        }
+      for (const s of matchedSerials) {
+        await recordSerialMovement(connection, {
+          companyGuid: user.companyId,
+          serialNumberGuid: s.guid,
+          serialValue: s.value,
+          actionType: type,
+          status: type,
+          notes: `Moved to ${type} stock`,
+          createdBy,
+        });
       }
     }
 

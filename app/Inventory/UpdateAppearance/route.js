@@ -16,7 +16,7 @@ export const PUT = withErrorHandling(async (request) => {
   const table = type === "in" ? "inventorystockin" : type === "stationery_return" ? "inventorystationeryreturns" : "inventorystockout";
   const idColumn = type === "in" ? "stockInId" : type === "stationery_return" ? "returnId" : "stockOutId";
 
-  const [result] = await mysqlPool.query(`UPDATE ${table} SET rowColor = ?, tags = ? WHERE ${idColumn} = ?`, [rowColor || null, tags || null, id]);
+  const [result] = await mysqlPool.query(`UPDATE ${table} SET rowColor = ?, tags = ? WHERE ${idColumn} = ? AND companyGuid = ?`, [rowColor || null, tags || null, id, user.companyId]);
   if (result.affectedRows === 0) throw new ApiError(404, "Record not found");
 
   return NextResponse.json({ message: "Appearance updated successfully" });

@@ -33,7 +33,9 @@ import {
   Ban,
   ArrowRightLeft,
   Palette,
-  Printer
+  Printer,
+  DatabaseBackup,
+  ShieldHalf
 } from "lucide-react";
 import { useCompany } from "@/lib/client/CompanyContext";
 
@@ -97,7 +99,7 @@ export default function Sidebar({ currentUser, isAdmin }) {
     const inventoryGroup = ["currentStock","stockIn","fbfFbaManagement","godownTransfer"];
     const ordersGroup = ["orderTracking","dispatch","stockOut"];
     const operationsGroup = ["returns","damaged"];
-    const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","emailInbox","sentEmails","apiLogs"];
+    const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","emailInbox","sentEmails","apiLogs","backupRestore","rateLimitSettings"];
 
     const expandTo = (group) => {
       setIsSidebarVisible(true);
@@ -192,7 +194,7 @@ export default function Sidebar({ currentUser, isAdmin }) {
   }
 
   // Settings mode
-  if (['companyMaster','users','roles','userActivity','reports','profile','settings','notifications','warrantyEmail','emailAccounts','emailTemplates','emailInbox','sentEmails','apiLogs'].includes(activeTab)) {
+  if (['companyMaster','users','roles','userActivity','reports','profile','settings','notifications','warrantyEmail','emailAccounts','emailTemplates','emailInbox','sentEmails','apiLogs','backupRestore','rateLimitSettings'].includes(activeTab)) {
     return (
       <aside className="bg-white border-r flex flex-col w-64 h-full shrink-0 animate-sidebar-in transition-all">
         <div className="p-4 flex items-center justify-between border-b border-slate-100">
@@ -210,7 +212,7 @@ export default function Sidebar({ currentUser, isAdmin }) {
           <Settings size={18} className="text-indigo-600" />
           <span className="font-bold text-indigo-600 text-base">Settings</span>
         </div>
-        <nav className="flex-1 px-2 py-2 flex flex-col overflow-y-auto gap-1">
+        <nav className="flex-1 px-2 py-2 flex flex-col overflow-y-auto gap-1 min-h-0">
           <button onClick={() => router.push('/profile')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'profile' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <User size={18} /> <span>My Profile</span>
           </button>
@@ -261,13 +263,22 @@ export default function Sidebar({ currentUser, isAdmin }) {
               <ShieldAlert size={18} /> <span>API Logs</span>
             </button>
           )}
-          <div className="flex-1" />
-          <div className="border-t border-slate-100 pt-2">
-            <button onClick={() => router.push('/')} className="w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-500 hover:bg-indigo-50 hover:text-indigo-600">
-              <LayoutDashboard size={18} /> <span>Back to Dashboard</span>
+          {isAdmin && (
+            <button onClick={() => router.push('/backupRestore')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'backupRestore' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <DatabaseBackup size={18} /> <span>Backup &amp; Restore</span>
             </button>
-          </div>
+          )}
+          {isAdmin && (
+            <button onClick={() => router.push('/rateLimitSettings')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'rateLimitSettings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <ShieldHalf size={18} /> <span>Rate Limiting</span>
+            </button>
+          )}
         </nav>
+        <div className="shrink-0 px-2 pb-2 border-t border-slate-100 pt-2">
+          <button onClick={() => router.push('/')} className="w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-500 hover:bg-indigo-50 hover:text-indigo-600">
+            <LayoutDashboard size={18} /> <span>Back to Dashboard</span>
+          </button>
+        </div>
       </aside>
     );
   }

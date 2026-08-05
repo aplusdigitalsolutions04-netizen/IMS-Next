@@ -24,8 +24,8 @@ export const GET = withErrorHandling(async (request) => {
     JOIN inventorystockoutdetail d ON o.stockOutId = d.stockOutId
     JOIN inventoryitemvariant v ON d.itemVariantId = v.itemVariantId
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
-    WHERE (o.refNo LIKE ? OR o.orderId = ? OR o.trackingId = ? OR o.stockOutId = ?) AND o.isDeleted = 0
-  `, [`%${decodedQuery}%`, decodedQuery, decodedQuery, decodedQuery]);
+    WHERE (o.refNo LIKE ? OR o.orderId = ? OR o.trackingId = ? OR o.stockOutId = ?) AND o.isDeleted = 0 AND o.companyGuid = ?
+  `, [`%${decodedQuery}%`, decodedQuery, decodedQuery, decodedQuery, user.companyId]);
 
   if (inventoryOrders.length > 0) {
     const result = {
@@ -54,8 +54,8 @@ export const GET = withErrorHandling(async (request) => {
     LEFT JOIN order_logistics ol ON o.guid = ol.orderGuid
     LEFT JOIN inventorystockinserial sn ON oi.serialNumberGuid = sn.guid
     LEFT JOIN inventoryitemvariant fbiv ON sn.itemVariantId = fbiv.itemVariantId
-    WHERE (o.invoiceNumber LIKE ? OR ol.trackingId LIKE ? OR sn.serialNumber = ? OR o.ewayBillNumber = ? OR CAST(oi.guid AS CHAR) = ?) AND o.isDeleted = 0
-  `, [`%${decodedQuery}%`, `%${decodedQuery}%`, decodedQuery, decodedQuery, decodedQuery]);
+    WHERE (o.invoiceNumber LIKE ? OR ol.trackingId LIKE ? OR sn.serialNumber = ? OR o.ewayBillNumber = ? OR CAST(oi.guid AS CHAR) = ?) AND o.isDeleted = 0 AND o.companyGuid = ?
+  `, [`%${decodedQuery}%`, `%${decodedQuery}%`, decodedQuery, decodedQuery, decodedQuery, user.companyId]);
 
   if (legacyOrders.length > 0) {
     const result = {
@@ -86,8 +86,8 @@ export const GET = withErrorHandling(async (request) => {
     JOIN inventorystockout o ON d.stockOutId = o.stockOutId
     JOIN inventoryitemvariant v ON d.itemVariantId = v.itemVariantId
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
-    WHERE (ss.serialNumber = ? OR sis.serialNumber = ?) AND o.isDeleted = 0
-  `, [decodedQuery, decodedQuery]);
+    WHERE (ss.serialNumber = ? OR sis.serialNumber = ?) AND o.isDeleted = 0 AND o.companyGuid = ?
+  `, [decodedQuery, decodedQuery, user.companyId]);
 
   if (serialMatch.length > 0) {
     const result = {
@@ -153,9 +153,9 @@ export const GET = withErrorHandling(async (request) => {
     JOIN inventorystockout o ON d.stockOutId = o.stockOutId
     JOIN inventoryitemvariant v ON d.itemVariantId = v.itemVariantId
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
-    WHERE vb.barcode = ? AND o.isDeleted = 0
+    WHERE vb.barcode = ? AND o.isDeleted = 0 AND o.companyGuid = ?
     ORDER BY o.issueDate DESC LIMIT 1
-  `, [decodedQuery]);
+  `, [decodedQuery, user.companyId]);
 
   if (barcodeMatch.length > 0) {
     const result = {

@@ -11,8 +11,8 @@ export const PUT = withErrorHandling(async (request) => {
   const { ids, rowColor, tags } = body;
   if (!Array.isArray(ids) || !ids.length) throw new ApiError(400, "No IDs provided");
   await mysqlPool.query(
-    "UPDATE orders o JOIN order_items oi ON o.guid=oi.orderGuid SET o.rowColor=?,o.tags=? WHERE oi.guid IN (?)",
-    [rowColor || null, tags || null, ids]
+    "UPDATE orders o JOIN order_items oi ON o.guid=oi.orderGuid SET o.rowColor=?,o.tags=? WHERE oi.guid IN (?) AND o.companyGuid=?",
+    [rowColor || null, tags || null, ids, user.companyId]
   );
   return NextResponse.json({ message: "Batch appearance updated successfully" });
 });
