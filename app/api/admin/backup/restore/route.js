@@ -54,7 +54,7 @@ export const POST = withErrorHandling(async (request) => {
   }
 
   const [tableRows] = await mysqlPool.query("SHOW TABLES");
-  const existingTables = new Set(tableRows.map((r) => Object.values(r)[0]));
+  const existingTables = new Set(tableRows.map((tableRow) => Object.values(tableRow)[0]));
 
   const restored = [];
   const skipped = [];
@@ -82,16 +82,16 @@ export const POST = withErrorHandling(async (request) => {
           // so a hand-crafted backup file could otherwise smuggle arbitrary
           // identifier text into the SQL via a "column name" containing a
           // backtick.
-          const [colRows] = await conn.query(`SHOW COLUMNS FROM \`${tableName}\``);
-          const realColumns = new Set(colRows.map((c) => c.Field));
-          const columns = Object.keys(rows[0]).filter((c) => realColumns.has(c));
+          const [columnRows] = await conn.query(`SHOW COLUMNS FROM \`${tableName}\``);
+          const realColumns = new Set(columnRows.map((columnRow) => columnRow.Field));
+          const columns = Object.keys(rows[0]).filter((columnName) => realColumns.has(columnName));
           if (columns.length === 0) throw new Error("No matching columns between backup and current schema");
-          const columnList = columns.map((c) => `\`${c}\``).join(",");
+          const columnList = columns.map((columnName) => `\`${columnName}\``).join(",");
           for (let i = 0; i < rows.length; i += BATCH_SIZE) {
             const batch = rows.slice(i, i + BATCH_SIZE);
             const placeholders = batch.map(() => `(${columns.map(() => "?").join(",")})`).join(",");
             const values = [];
-            batch.forEach((row) => columns.forEach((c) => values.push(row[c])));
+            batch.forEach((row) => columns.forEach((columnName) => values.push(row[columnName])));
             await conn.query(`INSERT INTO \`${tableName}\` (${columnList}) VALUES ${placeholders}`, values);
           }
         }

@@ -38,7 +38,7 @@ export const POST = withErrorHandling(async (request) => {
       // transaction is holding a FOR UPDATE lock on every one of those
       // serial rows above, so a per-serial loop here stretched the lock
       // window linearly with transfer size.
-      const historyRows = serials.map((s) => [transferId, user.companyId, modelName || "Unknown Model", s.value, srcG[0].godownName, dstG[0].godownName, user?.username || "System"]);
+      const historyRows = serials.map((serial) => [transferId, user.companyId, modelName || "Unknown Model", serial.value, srcG[0].godownName, dstG[0].godownName, user?.username || "System"]);
       await conn.query(
         "INSERT INTO stocktransferhistory (transferId,companyGuid,modelName,serialNumber,fromGodown,toGodown,transferredBy) VALUES ?",
         [historyRows]

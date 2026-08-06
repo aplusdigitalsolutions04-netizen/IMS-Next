@@ -12,13 +12,7 @@ import { inventoryService } from "@/lib/services/inventoryService";
 import { printerService } from "@/lib/services/api";
 import DayFilterSelect from "@/components/common/DayFilterSelect";
 import { getDayFilterRange } from "@/lib/client/dayFilter";
-
-const toYmd = (d) => {
-  if (!d) return "";
-  const dt = new Date(d);
-  if (Number.isNaN(dt.getTime())) return "";
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-};
+import { toLocalDateStr as toYmd } from "@/lib/dateUtils";
 
 
 // In a real crypto JS environment we'd use crypto.randomUUID()

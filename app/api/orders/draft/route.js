@@ -83,8 +83,8 @@ export const POST = withErrorHandling(async (request) => {
   // alphanumeric "word" of the catalog model name to appear somewhere in
   // the product's combined text (as a substring, so "3004dw" still matches
   // inside "pro3004dw").
-  const alnum = (v) => String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  const catalogGuids = new Set(catalogModels.map((m) => m.guid));
+  const alnum = (text) => String(text || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const catalogGuids = new Set(catalogModels.map((catalogModel) => catalogModel.guid));
   const matchModelGuid = (product) => {
     // If the product was already explicitly linked to a model — via the
     // Contract Save / Draft Order "Add Product" wizard, or the "Use Existing
@@ -94,9 +94,9 @@ export const POST = withErrorHandling(async (request) => {
     if (product.itemVariantId && catalogGuids.has(product.itemVariantId)) return product.itemVariantId;
     const blob = alnum([product.productName, product.brand, product.model].filter(Boolean).join(" "));
     if (!blob) return null;
-    const found = catalogModels.find((m) => {
-      const words = String(m.name || "").toLowerCase().split(/\s+/).map(alnum).filter(Boolean);
-      return words.length > 0 && words.every((w) => blob.includes(w));
+    const found = catalogModels.find((catalogModel) => {
+      const words = String(catalogModel.name || "").toLowerCase().split(/\s+/).map(alnum).filter(Boolean);
+      return words.length > 0 && words.every((word) => blob.includes(word));
     });
     return found ? found.guid : null;
   };

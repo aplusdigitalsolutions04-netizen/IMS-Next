@@ -8,7 +8,7 @@ import {
   Calendar, IndianRupee, Loader2, Check, AlertTriangle,
   Sparkles, Phone, Send, FileCheck, Ban, PauseCircle, CheckSquare,
   List, Archive, Layers, Edit3, Wrench, UploadCloud, RotateCcw,
-  Hash, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, XCircle, Palette, Trash2
+  Hash, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, XCircle, Palette, Trash2, FileDown
 } from "lucide-react";
 import axios from "axios";
 import Swal from "sweetalert2";
@@ -26,9 +26,11 @@ import {
 import { Toast, StatusBadge, StatusTimeline } from "./parts";
 import OrderDetailModal from "./OrderDetailModal";
 import ConfirmDraftModal from "./ConfirmDraftModal";
+import OrderExportModal from "./OrderExportModal";
 import DayFilterSelect from "@/components/common/DayFilterSelect";
 import { getDayFilterRange, isWithinDayFilter } from "@/lib/client/dayFilter";
 import { ordersService } from "@/lib/services/ordersService";
+import { platformsService } from "@/lib/services/platformsService";
 
 export default function OrderTracking({
   orders = [],
@@ -51,6 +53,7 @@ export default function OrderTracking({
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
   const [isCreating, setIsCreating] = useState(false);
+  const [showExportPicker, setShowExportPicker] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [dayFilter, setDayFilter] = useState(initialDayFilter);
   const [customStart, setCustomStart] = useState(initialCustomStart);
@@ -84,6 +87,10 @@ export default function OrderTracking({
     showToast("Order confirmed and moved to active orders.", "success");
   };
   const [statusFilter, setStatusFilter] = useState("All");
+  const [platformOptions, setPlatformOptions] = useState([]);
+  useEffect(() => {
+    platformsService.getPlatforms().then(setPlatformOptions);
+  }, []);
   const [selectedBatch, setSelectedBatch] = useState(null);
   const [highlightedBatchId, setHighlightedBatchId] = useState(null);
   const rowRefs = useRef({});
@@ -1476,10 +1483,9 @@ export default function OrderTracking({
             onChange={(e) => setPlatformFilter(e.target.value)}
           >
             <option value="All">All Platforms</option>
-            <option value="Amazon">Amazon</option>
-            <option value="Flipkart">Flipkart</option>
-            <option value="GeM">GeM</option>
-            <option value="Other">Other</option>
+            {platformOptions.map((p) => (
+              <option key={p.name} value={p.name}>{p.name}</option>
+            ))}
           </select>
 
           {canCreateOrder && (
@@ -1499,8 +1505,23 @@ export default function OrderTracking({
               <RefreshCw size={16} />
             </button>
           )}
+
+          <button
+            onClick={() => setShowExportPicker(true)}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-100 font-semibold text-sm flex-shrink-0"
+            title="Download order data as Excel"
+          >
+            <FileDown size={16} /><span className="hidden sm:inline">Export</span>
+          </button>
         </div>
       </div>
+
+      {showExportPicker && (
+        <OrderExportModal
+          dayRange={dayRange}
+          onClose={() => setShowExportPicker(false)}
+        />
+      )}
 
       {/* TABLE */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">

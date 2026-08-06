@@ -25,6 +25,7 @@ const PLACEHOLDERS = [
   "{{PURCHASE_DATE}}", "{{DISPATCH_DATE}}",
   "{{WARRANTY_PERIOD}}", "{{WARRANTY_EXPIRY}}",
   "{{CERT_NUMBER}}", "{{COMPANY_NAME}}",
+  "{{SIGNATURE_STAMP}}",
 ];
 
 // ─── Platform badge helper ────────────────────────────────────────────────────
@@ -85,6 +86,13 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
   const [headerUploading, setHeaderUploading] = useState(false);
   const headerInputRef = useRef(null);
 
+  // Signature & stamp image (template master) — pasted automatically into
+  // every generated certificate at the {{SIGNATURE_STAMP}} placeholder spot,
+  // so it doesn't need to be hand-signed/stamped after printing.
+  const [signatureImgUrl, setSignatureImgUrl]       = useState(null);
+  const [signatureUploading, setSignatureUploading] = useState(false);
+  const signatureInputRef = useRef(null);
+
   // HTML body template (template master)
   const [htmlBody, setHtmlBody]   = useState("");
   const [htmlSaving, setHtmlSaving] = useState(false);
@@ -97,6 +105,7 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
       try {
         const res = await axios.get(`${API}/api/warranty/template`, { headers: getHeaders() });
         if (res.data?.headerImagePath) setHeaderImgUrl(`${API}/uploads/${res.data.headerImagePath}`);
+        if (res.data?.signatureImagePath) setSignatureImgUrl(`${API}/uploads/${res.data.signatureImagePath}`);
         if (res.data?.htmlBody)        setHtmlBody(res.data.htmlBody);
       } catch (e) {
         console.error("Failed to load warranty template:", e);
@@ -127,6 +136,32 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
     try {
       await axios.put(`${API}/api/warranty/template`, { clearHeader: true }, { headers: getHeaders() });
       setHeaderImgUrl(null);
+    } catch (_err) { /* ignore */ }
+  };
+
+  // ── Signature & stamp image upload ──────────────────────────────────────────
+  const uploadSignatureImg = async (file) => {
+    if (!file) return;
+    setSignatureUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await axios.post(`${API}/api/warranty/template/upload-signature`, fd, {
+        headers: { ...getHeaders(), "Content-Type": "multipart/form-data" },
+      });
+      if (res.data?.previewUrl) setSignatureImgUrl(res.data.previewUrl);
+      Swal.fire({ toast: true, position: "top-end", icon: "success", title: "Signature/stamp saved!", timer: 2000, showConfirmButton: false });
+    } catch (e) {
+      Swal.fire("Error", e.response?.data?.message || "Upload failed", "error");
+    } finally {
+      setSignatureUploading(false);
+    }
+  };
+
+  const removeSignatureImg = async () => {
+    try {
+      await axios.put(`${API}/api/warranty/template`, { clearSignature: true }, { headers: getHeaders() });
+      setSignatureImgUrl(null);
     } catch (_err) { /* ignore */ }
   };
 
@@ -390,6 +425,55 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
               )}
               <input ref={headerInputRef} type="file" accept="image/*" className="hidden"
                 onChange={e => { if (e.target.files?.[0]) uploadHeaderImg(e.target.files[0]); e.target.value = ""; }} />
+            </div>
+          </div>
+
+          {/* Section 1b — Signature & Stamp Image */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-6 pt-5 pb-3 border-b border-slate-100">
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                <Image size={15} className="text-indigo-500" />Signature &amp; Stamp Image
+                <span className="text-xs text-slate-400 font-normal normal-case ml-1">
+                  — pasted automatically wherever you put the <code className="bg-slate-100 px-1 rounded">{"{{SIGNATURE_STAMP}}"}</code> placeholder below, no manual signing after printing
+                </span>
+              </h2>
+            </div>
+            <div className="p-6">
+              {signatureImgUrl ? (
+                <div className="space-y-3">
+                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 inline-block">
+                    <img src={signatureImgUrl} alt="Signature & Stamp"
+                      className="block" style={{ maxHeight: 120, objectFit: "contain" }} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => signatureInputRef.current?.click()} disabled={signatureUploading}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition-all">
+                      {signatureUploading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                      Replace Image
+                    </button>
+                    <button onClick={removeSignatureImg}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100 transition-all">
+                      <X size={12} />Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div onClick={() => signatureInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-3 px-6 py-10 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-indigo-300 hover:bg-indigo-50 transition-all">
+                  {signatureUploading
+                    ? <Loader2 size={28} className="text-indigo-400 animate-spin" />
+                    : <div className="p-3 bg-white border border-slate-200 rounded-xl"><Upload size={24} className="text-slate-400" /></div>
+                  }
+                  <div className="text-center">
+                    <p className="font-semibold text-sm text-slate-600">
+                      {signatureUploading ? "Uploading…" : "Click to upload signature/stamp image"}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">PNG (transparent background recommended), JPG, or WEBP</p>
+                  </div>
+                </div>
+              )}
+              <input ref={signatureInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
+                onChange={e => { if (e.target.files?.[0]) uploadSignatureImg(e.target.files[0]); e.target.value = ""; }} />
             </div>
           </div>
 

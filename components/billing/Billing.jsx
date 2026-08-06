@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { format, differenceInDays } from "date-fns";
 import axios from "axios";
 import {
@@ -9,19 +9,14 @@ import {
     ShoppingCart, CreditCard, CheckCircle, AlertTriangle, ExternalLink, Package, Loader2
 } from "lucide-react";
 import { printerService } from "@/lib/services/api";
+import { platformsService } from "@/lib/services/platformsService";
 import AppearanceModal from "@/components/common/AppearanceModal";
 import { Palette } from "lucide-react";
 import DayFilterSelect from "@/components/common/DayFilterSelect";
 import { getDayFilterRange, isWithinDayFilter } from "@/lib/client/dayFilter";
+import { toLocalDateStr } from "@/lib/dateUtils";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
-
-// Converts any date value to YYYY-MM-DD using LOCAL timezone (avoids UTC-offset day-shift)
-const toLocalDateStr = (d) => {
-  if (!d) return "";
-  const dt = new Date(d);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-};
 
 
 export default function Billing({
@@ -40,6 +35,8 @@ export default function Billing({
     const [pageSize, setPageSize] = useState(20);
     const [searchTerm, setSearchTerm] = useState("");
     const [platformFilter, setPlatformFilter] = useState("All");
+    const [platformOptions, setPlatformOptions] = useState([]);
+    useEffect(() => { platformsService.getPlatforms().then(setPlatformOptions); }, []);
     const [dayFilter, setDayFilter] = useState(initialDayFilter);
     const [customStart, setCustomStart] = useState(initialCustomStart);
     const [customEnd, setCustomEnd] = useState(initialCustomEnd);
@@ -626,10 +623,9 @@ export default function Billing({
                         className="appearance-none border border-slate-200 bg-white pl-3 pr-8 py-2.5 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer"
                     >
                         <option value="All">All Platforms</option>
-                        <option value="GeM">GeM</option>
-                        <option value="Amazon">Amazon</option>
-                        <option value="Flipkart">Flipkart</option>
-                        <option value="Other">Other</option>
+                        {platformOptions.map((p) => (
+                            <option key={p.name} value={p.name}>{p.name}</option>
+                        ))}
                     </select>
                     <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 </div>

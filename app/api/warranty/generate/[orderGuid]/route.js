@@ -52,20 +52,22 @@ export const GET = withErrorHandling(async (request, { params }) => {
   const [tplRows] = await mysqlPool.query("SELECT * FROM warranty_template WHERE companyGuid=? LIMIT 1", [user.companyId]);
   const template = tplRows[0] || {};
 
-  let headerImgUrl = null;
-  if (template.headerImagePath) {
+  const loadImageAsDataUrl = (relativePath, label) => {
     try {
-      const imgPath = path.join(uploadDir, template.headerImagePath);
-      if (fs.existsSync(imgPath)) {
-        const imgBuf = fs.readFileSync(imgPath);
-        const ext = path.extname(template.headerImagePath).toLowerCase().slice(1);
-        const mime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "png" ? "image/png" : `image/${ext}`;
-        headerImgUrl = `data:${mime};base64,${imgBuf.toString("base64")}`;
-      }
+      const imgPath = path.join(uploadDir, relativePath);
+      if (!fs.existsSync(imgPath)) return null;
+      const imgBuf = fs.readFileSync(imgPath);
+      const ext = path.extname(relativePath).toLowerCase().slice(1);
+      const mime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "png" ? "image/png" : `image/${ext}`;
+      return `data:${mime};base64,${imgBuf.toString("base64")}`;
     } catch (e) {
-      console.warn("[warranty] Could not load header image:", e.message);
+      console.warn(`[warranty] Could not load ${label} image:`, e.message);
+      return null;
     }
-  }
+  };
+
+  const headerImgUrl = template.headerImagePath ? loadImageAsDataUrl(template.headerImagePath, "header") : null;
+  template.signatureImageUrl = template.signatureImagePath ? loadImageAsDataUrl(template.signatureImagePath, "signature/stamp") : null;
 
   const [existing] = await mysqlPool.query(
     "SELECT guid, htmlContent, status FROM wc_certs WHERE orderGuid=? AND companyGuid=? ORDER BY createdAt DESC LIMIT 1",

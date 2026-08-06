@@ -48,6 +48,13 @@ export const POST = withErrorHandling(async (request) => {
       );
 
   if (userCompanies.length === 0) {
+    // A brand-new signup request (see /api/auth/signup) has no role and no
+    // company access by design — this is what makes it "pending" rather
+    // than a real error, so the message tells the user what's actually
+    // happening instead of a generic access-denied.
+    if (user.role === "User" && !user.roleId) {
+      throw new ApiError(403, "Your signup request is still pending. An Admin needs to approve it before you can log in.");
+    }
     throw new ApiError(403, "You do not have access to any active companies.");
   }
 

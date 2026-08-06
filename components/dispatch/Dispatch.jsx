@@ -1,22 +1,23 @@
 "use client";
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { format, differenceInDays } from "date-fns";
+import { format } from "date-fns";
 import {
   Trash2, X, CheckSquare, Search, AlertCircle,
   RotateCcw, CheckCircle, XCircle, Truck,
   ChevronLeft, ChevronRight, ChevronDown,
   Box, Clock, Phone, UploadCloud, FileText,
   Receipt, MapPin, Info, Banknote, Package,
-  Edit2, Save, AlertTriangle, ExternalLink, User
+  Edit2, Save, ExternalLink, User
 } from "lucide-react";
 import { printerService } from "@/lib/services/api";
 import api from "@/lib/client/apiClient";
 import AppearanceModal from "@/components/common/AppearanceModal";
 import { Palette } from "lucide-react";
 import MasterDropdown from "@/components/common/MasterDropdown";
-import { useCompany } from "@/lib/client/CompanyContext";
 import DayFilterSelect from "@/components/common/DayFilterSelect";
 import { getDayFilterRange, isWithinDayFilter } from "@/lib/client/dayFilter";
+import { getDeadlineUrgency, DeadlineBadge, StatCard } from "./parts";
+import { platformsService } from "@/lib/services/platformsService";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const UPLOADS_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
@@ -101,82 +102,6 @@ const getBatchKey = (item) => {
     return `single__${item.guid}`;
 };
 
-// ============================================
-// 🚨 URGENCY HELPER
-// ============================================
-function getDeadlineUrgency(lastDeliveryDate, status) {
-  if (!lastDeliveryDate) return { level: "none", label: "", daysLeft: null };
-
-  const cancelledStatuses = ["Order Cancelled", "Delivered", "Completed", "RTO"];
-  if (cancelledStatuses.includes(status)) return { level: "none", label: "", daysLeft: null };
-
-  try {
-    const deadline = new Date(lastDeliveryDate);
-    if (isNaN(deadline.getTime())) return { level: "none", label: "", daysLeft: null };
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    deadline.setHours(0, 0, 0, 0);
-
-    const daysLeft = differenceInDays(deadline, today);
-
-    if (daysLeft < 0) return { level: "overdue", label: `${Math.abs(daysLeft)}d OVERDUE`, daysLeft };
-    if (daysLeft === 0) return { level: "today", label: "DUE TODAY", daysLeft: 0 };
-    if (daysLeft === 1) return { level: "critical", label: "DUE TOMORROW", daysLeft: 1 };
-    if (daysLeft <= 3) return { level: "warning", label: `${daysLeft}d LEFT`, daysLeft };
-    return { level: "safe", label: "", daysLeft };
-  } catch {
-    return { level: "none", label: "", daysLeft: null };
-  }
-}
-
-// ============================================
-// 🚨 URGENCY BADGE COMPONENT
-// ============================================
-const DeadlineBadge = ({ lastDeliveryDate, status }) => {
-  const urgency = getDeadlineUrgency(lastDeliveryDate, status);
-  if (urgency.level === "none" || urgency.level === "safe") return null;
-
-  const styles = {
-    overdue: "bg-red-500 text-white animate-pulse",
-    today: "bg-red-500 text-white",
-    critical: "bg-orange-500 text-white",
-    warning: "bg-amber-100 text-amber-700 border border-amber-300"
-  };
-
-  return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap ${styles[urgency.level]}`}>
-      <AlertTriangle size={9} />
-      {urgency.label}
-    </span>
-  );
-};
-
-const StatCard = ({ icon: Icon, label, value, color, subText, onClick, className = "" }) => {
-  const textColorClasses = color.split(' ').find(c => c.startsWith('text-')) || 'text-slate-600';
-  const bgColorClasses = color.split(' ').find(c => c.startsWith('bg-')) || 'bg-slate-50';
-  const borderColor = textColorClasses.replace('text-', 'border-').replace(/600|700|800/, '200').replace(/500/, '100');
-
-  return (
-    <div
-      onClick={onClick}
-      className={`bg-white p-3 sm:p-4 rounded-2xl border ${borderColor} shadow-sm relative overflow-hidden transition-all duration-300 flex items-center gap-3 sm:gap-4 w-full ${onClick ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-md" : "hover:shadow-md"} ${className}`}
-    >
-      <div className="absolute -right-3 -bottom-3 opacity-[0.06] pointer-events-none transform rotate-12">
-        <Icon size={80} className={textColorClasses} />
-      </div>
-      <div className={`p-2.5 sm:p-3 rounded-xl ${bgColorClasses} ${textColorClasses} shadow-inner border ${borderColor} relative z-10 flex-shrink-0`}>
-        <Icon size={20} className="sm:w-[22px] sm:h-[22px] w-4 h-4" />
-      </div>
-      <div className="relative z-10 min-w-0">
-        <p className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider ${textColorClasses} truncate`}>{label}</p>
-        <h3 className="text-lg sm:text-xl font-extrabold text-slate-800 leading-tight mt-0.5 truncate">{value}</h3>
-        {subText && <p className="text-[8px] sm:text-[9px] text-slate-400 mt-0.5 font-medium truncate">{subText}</p>}
-      </div>
-    </div>
-  );
-};
-
 export default function Dispatch({
   models = [],
   serials = [],
@@ -202,6 +127,8 @@ export default function Dispatch({
   const [selectedIndices, setSelectedIndices] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [platformFilter, setPlatformFilter] = useState("All");
+  const [platformOptions, setPlatformOptions] = useState([]);
+  useEffect(() => { platformsService.getPlatforms().then(setPlatformOptions); }, []);
   const [dayFilter, setDayFilter] = useState(initialDayFilter);
   const [customStart, setCustomStart] = useState(initialCustomStart);
   const [customEnd, setCustomEnd] = useState(initialCustomEnd);
@@ -248,18 +175,6 @@ export default function Dispatch({
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewTitle, setPreviewTitle] = useState("Document Preview");
-
-  const { activeCompany } = useCompany();
-  const allowed = activeCompany?.allowedPlatforms;
-  
-  const allPlatforms = [
-    { value: "Amazon" },
-    { value: "Flipkart" },
-    { value: "GeM" },
-    { value: "Other" },
-  ];
-  
-  const platforms = allowed ? allPlatforms.filter(p => allowed.includes(p.value)) : allPlatforms;
 
   const canManage = currentUser?.role === 'Admin' || !!currentUser?.allow_edit_dispatch;
 
@@ -964,10 +879,9 @@ export default function Dispatch({
               className="appearance-none border border-slate-200 bg-white pl-3 pr-8 py-2.5 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm cursor-pointer"
             >
               <option value="All">All Platforms</option>
-              <option value="GeM">GeM</option>
-              <option value="Amazon">Amazon</option>
-              <option value="Flipkart">Flipkart</option>
-              <option value="Other">Other</option>
+              {platformOptions.map((p) => (
+                <option key={p.name} value={p.name}>{p.name}</option>
+              ))}
             </select>
             <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
           </div>

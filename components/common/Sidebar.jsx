@@ -35,7 +35,8 @@ import {
   Palette,
   Printer,
   DatabaseBackup,
-  ShieldHalf
+  ShieldHalf,
+  Globe
 } from "lucide-react";
 import { useCompany } from "@/lib/client/CompanyContext";
 
@@ -99,7 +100,7 @@ export default function Sidebar({ currentUser, isAdmin }) {
     const inventoryGroup = ["currentStock","stockIn","fbfFbaManagement","godownTransfer"];
     const ordersGroup = ["orderTracking","dispatch","stockOut"];
     const operationsGroup = ["returns","damaged"];
-    const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","emailInbox","sentEmails","apiLogs","backupRestore","rateLimitSettings"];
+    const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","emailInbox","sentEmails","apiLogs","backupRestore","rateLimitSettings","platformMaster"];
 
     const expandTo = (group) => {
       setIsSidebarVisible(true);
@@ -194,7 +195,7 @@ export default function Sidebar({ currentUser, isAdmin }) {
   }
 
   // Settings mode
-  if (['companyMaster','users','roles','userActivity','reports','profile','settings','notifications','warrantyEmail','emailAccounts','emailTemplates','emailInbox','sentEmails','apiLogs','backupRestore','rateLimitSettings'].includes(activeTab)) {
+  if (['companyMaster','users','roles','userActivity','reports','profile','settings','notifications','warrantyEmail','emailAccounts','emailTemplates','emailInbox','sentEmails','apiLogs','backupRestore','rateLimitSettings','platformMaster'].includes(activeTab)) {
     return (
       <aside className="bg-white border-r flex flex-col w-64 h-full shrink-0 animate-sidebar-in transition-all">
         <div className="p-4 flex items-center justify-between border-b border-slate-100">
@@ -218,6 +219,9 @@ export default function Sidebar({ currentUser, isAdmin }) {
           </button>
           <button onClick={() => router.push('/companyMaster')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'companyMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <Building2 size={18} /> <span>Company Master</span>
+          </button>
+          <button onClick={() => router.push('/platformMaster')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'platformMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <Globe size={18} /> <span>Selling Platforms</span>
           </button>
           <button onClick={() => router.push('/users')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <UsersIcon size={18} /> <span>User Management</span>

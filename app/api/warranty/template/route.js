@@ -23,7 +23,7 @@ export const PUT = withErrorHandling(async (request) => {
   requireCompany(user);
   authorizeWarranty(user, "PUT");
 
-  const { htmlBody, docxRawText, docxFileName, docxBase64, clearHeader,
+  const { htmlBody, docxRawText, docxFileName, docxBase64, clearHeader, clearSignature,
     emailSubject, emailBody, emailTo, emailCc, emailBcc } = body;
 
   const setClauses = [];
@@ -45,6 +45,10 @@ export const PUT = withErrorHandling(async (request) => {
     setClauses.push("headerImagePath=?");
     sqlParams.push(null);
     setClauses.push("headerHtml=?");
+    sqlParams.push(null);
+  }
+  if (clearSignature) {
+    setClauses.push("signatureImagePath=?");
     sqlParams.push(null);
   }
 

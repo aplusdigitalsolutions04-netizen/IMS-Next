@@ -23,8 +23,8 @@ export const POST = withErrorHandling(async (request) => {
   const filePath = path.join(uploadDir, saved.filename);
 
   try {
-    const wb = xlsx.readFile(filePath);
-    const data = xlsx.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    const workbook = xlsx.readFile(filePath);
+    const data = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
     if (!data.length) throw new ApiError(400, "Excel file is empty");
 
     const results = { success: [], failed: [], skipped: [], totalRows: data.length };
@@ -37,7 +37,7 @@ export const POST = withErrorHandling(async (request) => {
       const rowNum = i + 2;
       const modelIdValue = row.modelId || row.modelid || row.ModelId || row["Model ID"] || row.model_id;
       const serialValue = row.value || row.Value || row.serialNumber || row.SerialNumber || row["Serial Number"] || row["Serial No"] || row.serial;
-      const lpKey = Object.keys(row).find((k) => k.toLowerCase().replace(/[^a-z]/g, "") === "landingprice");
+      const lpKey = Object.keys(row).find((key) => key.toLowerCase().replace(/[^a-z]/g, "") === "landingprice");
       const rawLp = lpKey ? row[lpKey] : 0;
       const statusValue = row.status || row.Status || "Available";
       const reasonValue = row.landingPriceReason || row.LandingPriceReason || row.reason || row.Reason || null;
@@ -45,40 +45,40 @@ export const POST = withErrorHandling(async (request) => {
       return { rowNum, row, modelIdValue, serialValue, rawLp, statusValue, reasonValue, godownGuidValue };
     });
 
-    const modelIds = [...new Set(parsed.map((p) => p.modelIdValue && String(p.modelIdValue).trim()).filter(Boolean))];
-    const serialValues = [...new Set(parsed.map((p) => p.serialValue && String(p.serialValue).trim()).filter(Boolean))];
-    const godownGuids = [...new Set(parsed.map((p) => p.godownGuidValue && String(p.godownGuidValue).trim()).filter(Boolean))];
+    const modelIds = [...new Set(parsed.map((parsedRow) => parsedRow.modelIdValue && String(parsedRow.modelIdValue).trim()).filter(Boolean))];
+    const serialValues = [...new Set(parsed.map((parsedRow) => parsedRow.serialValue && String(parsedRow.serialValue).trim()).filter(Boolean))];
+    const godownGuids = [...new Set(parsed.map((parsedRow) => parsedRow.godownGuidValue && String(parsedRow.godownGuidValue).trim()).filter(Boolean))];
 
     const modelsById = new Map();
     if (modelIds.length) {
-      const [mRows] = await mysqlPool.query(
+      const [modelRows] = await mysqlPool.query(
         "SELECT itemVariantId as id, sellingPrice as mrp, variantName as name FROM inventoryitemvariant WHERE itemVariantId IN (?) AND isDeleted=0 AND companyGuid=?",
         [modelIds, user.companyId]
       );
-      mRows.forEach((r) => modelsById.set(String(r.id), r));
+      modelRows.forEach((modelRow) => modelsById.set(String(modelRow.id), modelRow));
     }
     const existingSerials = new Set();
     if (serialValues.length) {
-      const [sRows] = await mysqlPool.query(
+      const [serialRows] = await mysqlPool.query(
         "SELECT serialNumber FROM inventorystockinserial WHERE serialNumber IN (?) AND companyGuid=?",
         [serialValues, user.companyId]
       );
-      sRows.forEach((r) => existingSerials.add(r.serialNumber));
+      serialRows.forEach((serialRow) => existingSerials.add(serialRow.serialNumber));
     }
     const validGodowns = new Set();
     if (godownGuids.length) {
-      const [gRows] = await mysqlPool.query(
+      const [godownRows] = await mysqlPool.query(
         "SELECT guid FROM godowns WHERE guid IN (?) AND isDeleted=0 AND companyGuid=?",
         [godownGuids, user.companyId]
       );
-      gRows.forEach((r) => validGodowns.add(r.guid));
+      godownRows.forEach((godownRow) => validGodowns.add(godownRow.guid));
     }
 
     const seenInFile = new Set();
     const toInsert = [];
 
-    for (const p of parsed) {
-      const { rowNum, row, modelIdValue, serialValue, rawLp, statusValue, reasonValue, godownGuidValue } = p;
+    for (const parsedRow of parsed) {
+      const { rowNum, row, modelIdValue, serialValue, rawLp, statusValue, reasonValue, godownGuidValue } = parsedRow;
       if (!modelIdValue || !serialValue) { results.failed.push({ row: rowNum, serialNumber: serialValue || "N/A", reason: "Missing required fields: modelId or value" }); continue; }
 
       const modelId = String(modelIdValue).trim();
@@ -125,15 +125,15 @@ export const POST = withErrorHandling(async (request) => {
       try {
         await mysqlPool.query(
           "INSERT INTO inventorystockinserial (serialId,guid,companyGuid,itemVariantId,godownGuid,serialNumber,landingPrice,serialStatus,landingPriceReason,isUsed,isDeleted,createdAt) VALUES ?",
-          [toInsert.map((v) => [...v, 0, 0, new Date()])]
+          [toInsert.map((insertRow) => [...insertRow, 0, 0, new Date()])]
         );
-      } catch (e) {
+      } catch (insertError) {
         // A dup-entry (or any other) failure here means the whole batch
         // insert didn't happen — reflect that in the results instead of
         // claiming success for rows that were never actually written.
-        const failedSerials = new Set(toInsert.map((v) => v[5]));
-        results.success = results.success.filter((s) => !failedSerials.has(s.serialNumber));
-        toInsert.forEach((v) => results.failed.push({ row: "-", serialNumber: v[5], reason: e.code === "ER_DUP_ENTRY" ? "Serial number already exists" : e.message }));
+        const failedSerials = new Set(toInsert.map((insertRow) => insertRow[5]));
+        results.success = results.success.filter((successRow) => !failedSerials.has(successRow.serialNumber));
+        toInsert.forEach((insertRow) => results.failed.push({ row: "-", serialNumber: insertRow[5], reason: insertError.code === "ER_DUP_ENTRY" ? "Serial number already exists" : insertError.message }));
       }
     }
 

@@ -20,7 +20,7 @@ export const GET = withErrorHandling(async (request) => {
   requireRoles(user, ["Admin"], "Only Admin can create backups.");
 
   const [tableRows] = await mysqlPool.query("SHOW TABLES");
-  const tableNames = tableRows.map((r) => Object.values(r)[0]);
+  const tableNames = tableRows.map((tableRow) => Object.values(tableRow)[0]);
 
   const tables = {};
   for (const name of tableNames) {

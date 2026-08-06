@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Swal from "sweetalert2";
 import { User, Lock, ArrowRight, Loader2, AlertCircle, ShieldCheck, Truck, Cpu } from "lucide-react";
 
 import { authService } from "@/lib/services/authService";
@@ -44,10 +45,13 @@ export default function SignupPage() {
     setIsLoading(true);
 
     try {
-      await authService.signup(formData);
-      setTimeout(() => {
-        router.push("/login");
-      }, 1000);
+      const result = await authService.signup(formData);
+      await Swal.fire({
+        title: setupRequired ? "Admin account created!" : "Request submitted!",
+        text: result?.message || "An Admin needs to approve your access before you can log in.",
+        icon: "success",
+      });
+      router.push("/login");
     } catch (err) {
       setError(err.response?.data?.message || "Username already taken or invalid.");
       setIsLoading(false);

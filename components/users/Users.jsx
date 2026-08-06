@@ -247,7 +247,10 @@ export default function Users({ currentUser }) {
                         <p className="text-xs text-slate-400 font-medium mt-0.5">@{user.username}</p>
                       )}
                       <div className="flex justify-center mt-2">
-                        <RoleBadge role={user.role} label={user.roleLabel} />
+                        <RoleBadge
+                          role={user.role}
+                          label={user.role === "User" && !user.roleId ? "Pending Approval" : user.roleLabel}
+                        />
                       </div>
                     </div>
 

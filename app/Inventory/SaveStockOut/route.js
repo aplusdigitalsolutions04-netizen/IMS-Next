@@ -32,7 +32,7 @@ export const POST = withErrorHandling(async (request) => {
     // Batch-fetched once for every item on this stock-out, instead of one
     // SELECT per line item inside the loop below (which was running while
     // the transaction already holds locks from the stock UPDATEs).
-    const allVariantIds = [...new Set(Items.map((i) => i.itemVariantId))];
+    const allVariantIds = [...new Set(Items.map((item) => item.itemVariantId))];
     const [allComboRows] = allVariantIds.length
       ? await connection.query(
           "SELECT parentVariantId, childVariantId, quantity FROM inventorycombomapping WHERE parentVariantId IN (?) AND isDeleted = 0",
@@ -40,9 +40,9 @@ export const POST = withErrorHandling(async (request) => {
         )
       : [[]];
     const comboByParent = new Map();
-    allComboRows.forEach((r) => {
-      if (!comboByParent.has(r.parentVariantId)) comboByParent.set(r.parentVariantId, []);
-      comboByParent.get(r.parentVariantId).push(r);
+    allComboRows.forEach((comboRow) => {
+      if (!comboByParent.has(comboRow.parentVariantId)) comboByParent.set(comboRow.parentVariantId, []);
+      comboByParent.get(comboRow.parentVariantId).push(comboRow);
     });
 
     for (const item of Items) {

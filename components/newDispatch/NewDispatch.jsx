@@ -18,6 +18,7 @@ import MasterDropdown from "@/components/common/MasterDropdown";
 import SearchableSelect from "../common/SearchableSelect";
 import SidePanel from "./SidePanel";
 import { useCompany } from "@/lib/client/CompanyContext";
+import { platformsService } from "@/lib/services/platformsService";
 
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -207,14 +208,15 @@ export default function NewDispatch({
 
   const { activeCompany } = useCompany();
   const allowed = activeCompany?.allowedPlatforms;
-  
-  const allPlatforms = [
-    { value: "Amazon", icon: "🛒", color: "from-amber-400 to-orange-500", bg: "bg-amber-50", border: "border-amber-300", text: "text-amber-700" },
-    { value: "Flipkart", icon: "📦", color: "from-blue-400 to-blue-600", bg: "bg-blue-50", border: "border-blue-300", text: "text-blue-700" },
-    { value: "GeM", icon: "🏛️", color: "from-emerald-400 to-emerald-600", bg: "bg-emerald-50", border: "border-emerald-300", text: "text-emerald-700" },
-    { value: "Other", icon: "🔗", color: "from-violet-400 to-purple-600", bg: "bg-violet-50", border: "border-violet-300", text: "text-violet-700" },
-  ];
-  
+
+  // Emoji per platform is purely decorative for the picker buttons below —
+  // the 4 built-ins keep their distinct icon, any custom platform added via
+  // Settings > Selling Platforms falls back to a generic storefront icon.
+  const PLATFORM_ICONS = { Amazon: "🛒", Flipkart: "📦", GeM: "🏛️", Other: "🔗" };
+  const [allPlatformRows, setAllPlatformRows] = useState([]);
+  useEffect(() => { platformsService.getPlatforms().then(setAllPlatformRows); }, []);
+  const allPlatforms = allPlatformRows.map((p) => ({ value: p.name, icon: PLATFORM_ICONS[p.name] || "🏬" }));
+
   const platforms = allowed ? allPlatforms.filter(p => allowed.includes(p.value)) : allPlatforms;
 
   const getCompanyName = (model) => {

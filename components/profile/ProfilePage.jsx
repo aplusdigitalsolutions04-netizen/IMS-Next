@@ -2,9 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { printerService } from '@/lib/services/api';
 import { setSession, getStoredToken } from '@/lib/client/auth';
+import { useCompany } from '@/lib/client/CompanyContext';
+import { RoleBadge } from '@/components/users/parts';
+import { PERMISSIONS_LIST } from '@/components/users/constants';
 import {
   User, KeyRound, Save, Loader2, AlertCircle, CheckCircle,
-  Mail, Phone, ShieldCheck, Lock, Eye, EyeOff, Bell, BellOff, Camera, Trash2
+  Mail, Phone, ShieldCheck, Lock, Eye, EyeOff, Bell, BellOff, Camera, Trash2,
+  Building2, CalendarDays, KeyRound as PermissionsIcon,
 } from 'lucide-react';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -56,6 +60,13 @@ const Toast = ({ message, type, onClose }) => {
 };
 
 export default function ProfilePage({ currentUser }) {
+  const { availableCompanies } = useCompany();
+  const isPendingApproval = currentUser?.role === 'User' && !currentUser?.roleId;
+  const isAdmin = currentUser?.role === 'Admin';
+  const grantedPermissionLabels = isAdmin
+    ? ['All modules']
+    : PERMISSIONS_LIST.filter((p) => currentUser?.permissions?.includes(p.id)).map((p) => p.label);
+
   const [profile, setProfile] = useState({ fullName: '', email: '', phone: '' });
   const [passwordForm, setPasswordForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
 
@@ -377,6 +388,78 @@ export default function ProfilePage({ currentUser }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+
+        {/* Role & Access Section */}
+        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden animate-fade-in-up">
+          <div className="relative z-10">
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-slate-800 mb-2 flex items-center gap-3">
+                <div className="p-2.5 bg-sky-50 rounded-xl text-sky-600 shadow-sm border border-sky-100/50">
+                  <ShieldCheck size={22} />
+                </div>
+                Role &amp; Access
+              </h2>
+              <p className="text-slate-500 text-sm ml-1">What your account can currently see and do.</p>
+            </div>
+
+            {isPendingApproval ? (
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 text-sm font-medium">
+                <AlertCircle size={18} />
+                Your signup request is pending — an Admin needs to approve it and assign you a role before you get access.
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-semibold text-slate-700">Role:</span>
+                  <RoleBadge role={currentUser?.role} label={currentUser?.roleLabel} />
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                    <PermissionsIcon size={15} className="text-slate-400" /> Modules you can access
+                  </p>
+                  {grantedPermissionLabels.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {grantedPermissionLabels.map((label) => (
+                        <span key={label} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">No modules assigned yet.</p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                    <Building2 size={15} className="text-slate-400" /> Company access
+                  </p>
+                  {currentUser?.allCompaniesAccess ? (
+                    <p className="text-xs text-slate-500">Full access to all companies.</p>
+                  ) : availableCompanies?.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {availableCompanies.map((c) => (
+                        <span key={c.guid} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
+                          {c.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">No company access assigned yet.</p>
+                  )}
+                </div>
+
+                {currentUser?.createdAt && (
+                  <div className="flex items-center gap-2 text-xs text-slate-400 pt-2 border-t border-slate-100">
+                    <CalendarDays size={14} />
+                    Member since {new Date(currentUser.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

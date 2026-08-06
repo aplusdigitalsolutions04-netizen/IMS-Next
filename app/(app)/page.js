@@ -18,6 +18,7 @@ import { inventoryService } from "@/lib/services/inventoryService";
 import { printerService } from "@/lib/services/api";
 import { legacyApi } from "@/lib/client/http";
 import { buildDayFilterQuery } from "@/lib/client/dayFilter";
+import { platformsService } from "@/lib/services/platformsService";
 
 // Full port of Frontend4/src/components/dashboard/Dashboard.jsx. models/serials/
 // dispatches/returns now come from AppDataContext (app/(app)/layout.jsx) instead
@@ -27,7 +28,10 @@ import { buildDayFilterQuery } from "@/lib/client/dayFilter";
 
 const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 
-const ALL_PLATFORM_OPTIONS = ["Overall", "GeM", "Flipkart", "Amazon", "Other"];
+// Fallback used only until the real list loads from the Platform Master
+// table (Settings > Selling Platforms) — matches the previous hardcoded
+// list so there's no blank/broken dropdown during that first fetch.
+const DEFAULT_PLATFORM_OPTIONS = ["Overall", "GeM", "Flipkart", "Amazon", "Other"];
 
 function normalizePlatform(firmName) {
   const val = String(firmName || "").trim().toLowerCase();
@@ -130,6 +134,13 @@ export default function DashboardPage() {
   const canSeeAllCompanies = userRole === "Admin";
   const [filteredData, setFilteredData] = useState(null);
   const [filterLoading, setFilterLoading] = useState(false);
+  const [allPlatformOptions, setAllPlatformOptions] = useState(DEFAULT_PLATFORM_OPTIONS);
+
+  useEffect(() => {
+    platformsService.getPlatforms().then((rows) => {
+      if (Array.isArray(rows) && rows.length) setAllPlatformOptions(["Overall", ...rows.map((p) => p.name)]);
+    });
+  }, []);
 
   useEffect(() => {
     if (!canSeeAllCompanies || dashboardFilter !== "all") {
@@ -243,14 +254,14 @@ export default function DashboardPage() {
 
   const allowedPlatforms = activeCompany?.allowedPlatforms;
   const PLATFORM_OPTIONS = allowedPlatforms
-    ? ["Overall", ...ALL_PLATFORM_OPTIONS.slice(1).filter((p) => allowedPlatforms.includes(p))]
-    : ALL_PLATFORM_OPTIONS;
+    ? ["Overall", ...allPlatformOptions.slice(1).filter((p) => allowedPlatforms.includes(p))]
+    : allPlatformOptions;
 
   const categoryFilteredModels =
     categoryFilter === "All" ? models : models.filter((m) => m.mainCategory === categoryFilter || m.category === categoryFilter);
 
   const allModelsStock = categoryFilteredModels.map((m) => {
-    const stockCount = serials.filter((s) => s.modelGuid === m.id && s.status === "Available").length;
+    const stockCount = serials.filter((s) => s.modelId === m.id && s.status === "Available").length;
     return { name: m.name, stock: stockCount };
   });
 
@@ -264,7 +275,7 @@ export default function DashboardPage() {
   const categoryStockMap = {};
   categoryFilteredModels.forEach((m) => {
     const cat = m.mainCategory || m.category || "Uncategorized";
-    const stockCount = serials.filter((s) => s.modelGuid === m.id && s.status === "Available").length;
+    const stockCount = serials.filter((s) => s.modelId === m.id && s.status === "Available").length;
     categoryStockMap[cat] = (categoryStockMap[cat] || 0) + stockCount;
   });
   const categoryStockData = Object.entries(categoryStockMap)

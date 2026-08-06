@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Swal from "sweetalert2";
@@ -11,22 +11,7 @@ import { setSession } from "@/lib/client/auth";
 export default function LoginPage() {
   const [formData, setFormData] = useState({ EmailId: "", Password: "" });
   const [isLoading, setIsLoading] = useState(false);
-  const [setupRequired, setSetupRequired] = useState(false);
   const router = useRouter();
-
-  useEffect(() => {
-    let mounted = true;
-    const loadBootstrapStatus = async () => {
-      try {
-        const result = await authService.getBootstrapStatus();
-        if (mounted) setSetupRequired(Boolean(result?.setupRequired));
-      } catch {
-        if (mounted) setSetupRequired(false);
-      }
-    };
-    loadBootstrapStatus();
-    return () => { mounted = false; };
-  }, []);
 
   const validation = () => {
     if (!formData.EmailId.trim()) {
@@ -185,14 +170,12 @@ export default function LoginPage() {
                     Forgot Password?
                   </button>
 
-                  {setupRequired && (
-                    <span className="text-slate-400">
-                      Don&apos;t have an account yet?{" "}
-                      <Link href="/signup" className="text-emerald-500 font-bold hover:underline">
-                        Sign Up
-                      </Link>
-                    </span>
-                  )}
+                  <span className="text-slate-400">
+                    Don&apos;t have an account yet?{" "}
+                    <Link href="/signup" className="text-emerald-500 font-bold hover:underline">
+                      Sign Up
+                    </Link>
+                  </span>
                 </div>
               </div>
             </form>
