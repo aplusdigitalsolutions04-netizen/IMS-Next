@@ -1674,7 +1674,7 @@ export default function OrderTracking({
                         } ${isHighlighted ? 'ring-2 ring-indigo-400 bg-indigo-50/80' : ''}`}
                     >
                       <td className="p-4 text-center text-slate-400 font-medium text-sm">
-                        {index + 1}
+                        {(currentPage - 1) * itemsPerPage + index + 1}
                       </td>
                       <td className="p-4">
                         <div className="min-w-0">
