@@ -1,0 +1,33 @@
+name: CI
+
+# Runs on every push and PR — a quick, secret-free quality gate (install,
+# lint, build) so broken code is caught before it ever reaches main, let
+# alone the deploy workflow. No DB or SMTP access needed: `next build` only
+# compiles the app, it doesn't need real runtime env vars to succeed.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

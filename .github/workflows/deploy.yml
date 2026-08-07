@@ -1,0 +1,71 @@
+name: Deploy
+
+# Runs only on push to main, and only after CI passes (via workflow_run) —
+# builds the Docker image (see ../../Dockerfile), pushes it to GitHub
+# Container Registry, then SSHes into the production server and redeploys
+# via `docker compose`.
+#
+# Requires these GitHub repo secrets (Settings > Secrets and variables >
+# Actions) before this will actually deploy anywhere — until they're set,
+# this workflow will fail at the SSH step, which is expected and harmless:
+#   DEPLOY_HOST         — server IP/hostname (e.g. your Hostinger VPS)
+#   DEPLOY_USER         — SSH user
+#   DEPLOY_SSH_KEY       — private key with access to that user (PEM contents)
+#   DEPLOY_PATH         — absolute path to this repo's docker-compose.yml on the server
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: ["main"]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tag
+        id: meta
+        # GHCR image names must be lowercase — github.repository preserves
+        # the repo's actual casing (e.g. "aplusdigitalsolutions04-netizen/IMS-Next"),
+        # which Docker rejects as an invalid tag.
+        run: echo "image=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):latest" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            docker compose pull app
+            docker compose up -d app
+            docker image prune -f
