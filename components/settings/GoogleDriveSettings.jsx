@@ -1,11 +1,13 @@
 "use client";
 import React, { useState } from "react";
-import { HardDrive, Loader2, CheckCircle2, XCircle, PlugZap } from "lucide-react";
+import { HardDrive, Loader2, CheckCircle2, XCircle, PlugZap, UploadCloud, AlertTriangle } from "lucide-react";
 import { googleDriveService } from "@/lib/services/googleDriveService";
 
 export default function GoogleDriveSettings() {
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState(null); // { connected, folderName?, message? }
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState(null);
 
   const handleTest = async () => {
     setTesting(true);
@@ -17,6 +19,19 @@ export default function GoogleDriveSettings() {
       setResult({ connected: false, message: err?.response?.data?.message || err.message || "Test failed" });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleMigrate = async () => {
+    setMigrating(true);
+    setMigrateResult(null);
+    try {
+      const res = await googleDriveService.migrateLocalFiles();
+      setMigrateResult(res);
+    } catch (err) {
+      setMigrateResult({ error: err?.response?.data?.message || err.message || "Migration failed" });
+    } finally {
+      setMigrating(false);
     }
   };
 
@@ -76,6 +91,59 @@ export default function GoogleDriveSettings() {
                 <p className="text-xs text-red-500 mt-2">
                   If the account was never authorized, visit <code className="bg-red-100 px-1 py-0.5 rounded">/api/google-drive/authorize</code> once to connect it.
                 </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 mt-6">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h3 className="text-sm font-black text-slate-700 uppercase tracking-wide mb-1">Migrate Existing Files</h3>
+            <p className="text-sm text-slate-500 max-w-xl">
+              Uploads whatever&apos;s still sitting in the server&apos;s local <code className="bg-slate-200 px-1 py-0.5 rounded">uploads/</code> folder (e.g. files placed there before Drive was connected, or via FTP) into the matching Drive folder. Safe to run more than once — already-migrated files are skipped.
+            </p>
+          </div>
+          <button
+            onClick={handleMigrate}
+            disabled={migrating}
+            className="shrink-0 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-md shadow-indigo-100 transition-all"
+          >
+            {migrating ? <Loader2 className="animate-spin" size={18} /> : <UploadCloud size={18} />}
+            {migrating ? "Migrating…" : "Migrate Existing Files"}
+          </button>
+        </div>
+
+        {migrateResult && (
+          <div
+            className={`mt-5 rounded-2xl p-4 flex items-start gap-3 ${
+              migrateResult.error ? "bg-red-50 border border-red-200" : "bg-emerald-50 border border-emerald-200"
+            }`}
+          >
+            {migrateResult.error ? (
+              <XCircle className="text-red-500 shrink-0 mt-0.5" size={20} />
+            ) : (
+              <CheckCircle2 className="text-emerald-600 shrink-0 mt-0.5" size={20} />
+            )}
+            <div className="text-sm">
+              {migrateResult.error ? (
+                <p className="text-red-600 font-medium">{migrateResult.error}</p>
+              ) : (
+                <>
+                  <p className="text-emerald-700 font-bold">
+                    Migrated {migrateResult.migrated} file(s){migrateResult.alreadyMigrated ? `, ${migrateResult.alreadyMigrated} already done` : ""}.
+                  </p>
+                  <p className="text-emerald-600 mt-0.5">
+                    Database references {migrateResult.referencedInDb} filenames in total — {migrateResult.foundLocally} of those were found in the local uploads/ folder.
+                  </p>
+                  {migrateResult.failed?.length > 0 && (
+                    <div className="mt-2 flex items-start gap-2 text-amber-700">
+                      <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                      <span>{migrateResult.failed.length} file(s) failed: {migrateResult.failed.map((f) => f.filename).join(", ")}</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

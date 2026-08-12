@@ -192,7 +192,7 @@ export default function Sidebar({ currentUser, isAdmin }) {
   }
 
   // Settings mode
-  if (['companyMaster','users','roles','userActivity','reports','profile','settings','notifications','warrantyEmail','emailAccounts','emailTemplates','emailInbox','sentEmails','apiLogs','backupRestore','rateLimitSettings','platformMaster'].includes(activeTab)) {
+  if (['companyMaster','users','roles','userActivity','reports','profile','settings','notifications','warrantyEmail','emailAccounts','emailTemplates','emailInbox','sentEmails','apiLogs','backupRestore','rateLimitSettings','platformMaster','googleDrive'].includes(activeTab)) {
     return (
       <aside className="bg-white border-r flex flex-col w-64 h-full shrink-0 animate-sidebar-in transition-all">
         <div className="p-4 flex items-center justify-between border-b border-slate-100">
