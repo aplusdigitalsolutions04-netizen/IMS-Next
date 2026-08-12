@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 const COLOR_THEMES = [
@@ -15,7 +15,7 @@ const COLOR_THEMES = [
 // everything else in the app actually consumes.
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can manage selling platforms.");
+  requirePermission(user, "platformMaster", "Only Admin can manage selling platforms.");
 
   const [rows] = await mysqlPool.query("SELECT * FROM selling_platforms ORDER BY sortOrder ASC, name ASC");
   return NextResponse.json({ data: rows });
@@ -23,7 +23,7 @@ export const GET = withErrorHandling(async (request) => {
 
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can manage selling platforms.");
+  requirePermission(user, "platformMaster", "Only Admin can manage selling platforms.");
 
   const { name, colorTheme: requestedColor } = await parseJsonBody(request);
   const trimmed = String(name || "").trim();

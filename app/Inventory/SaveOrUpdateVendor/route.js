@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth, requireCompany } from "@/lib/auth";
-import { authorizeInventory } from "@/lib/inventoryAuth";
+import { authenticateRequest, requireAuth, requireCompany, authorizeMasterWrite } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
   const user = await authenticateRequest(request);
-  authorizeInventory(user, "POST");
   requireAuth(user);
   requireCompany(user);
 
@@ -21,6 +19,9 @@ export const POST = withErrorHandling(async (request) => {
     VendorGST = "",
     VendorAddress = "",
   } = body;
+
+  const isCreate = !(VendorId && VendorId !== "0" && VendorId !== "");
+  authorizeMasterWrite(user, "vendor", { isCreate });
 
   if (VendorId && VendorId !== "0" && VendorId !== "") {
     await mysqlPool.execute(

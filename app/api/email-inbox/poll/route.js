@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest, requireRoles } from "@/lib/auth";
+import { authenticateRequest, requirePermission } from "@/lib/auth";
 import { pollAllInboxes } from "@/lib/imapReader";
 import { withErrorHandling } from "@/lib/apiResponse";
 
@@ -12,7 +12,7 @@ import { withErrorHandling } from "@/lib/apiResponse";
 // only from an explicit click on the Sent Emails page.
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can poll the email inbox.");
+  requirePermission(user, "emailInbox", "Only Admin can poll the email inbox.");
 
   const results = await pollAllInboxes();
   return NextResponse.json({ message: "Poll complete", results });

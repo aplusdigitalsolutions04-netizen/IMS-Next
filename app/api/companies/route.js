@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can view all companies.");
+  requirePermission(user, "companyMaster", "Only Admin can view all companies.");
 
   const [rows] = await mysqlPool.query("SELECT * FROM companies ORDER BY name ASC");
   return NextResponse.json(rows);
@@ -13,7 +13,7 @@ export const GET = withErrorHandling(async (request) => {
 
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can create companies.");
+  requirePermission(user, "companyMaster", "Only Admin can create companies.");
 
   const { name, allowedPlatforms, isActive } = await parseJsonBody(request);
   if (!name) throw new ApiError(400, "Company name is required.");

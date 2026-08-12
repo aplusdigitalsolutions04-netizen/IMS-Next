@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth, ApiError } from "@/lib/auth";
-import { authorizeInventory } from "@/lib/inventoryAuth";
+import { authenticateRequest, requireAuth, ApiError, authorizeMasterWrite } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
   const user = await authenticateRequest(request);
-  authorizeInventory(user, "POST");
   requireAuth(user);
 
   const { MappingId, CategoryId, BrandId } = body;
   if (!CategoryId || !BrandId) throw new ApiError(400, "CategoryId and BrandId are required");
+
+  const isCreate = !(MappingId && MappingId !== "0" && MappingId !== "");
+  authorizeMasterWrite(user, "mapping", { isCreate });
 
   let finalMappingId = MappingId;
   if (MappingId && MappingId !== "0" && MappingId !== "") {

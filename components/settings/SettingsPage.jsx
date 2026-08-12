@@ -1,9 +1,10 @@
 "use client";
 import React, { Suspense, lazy, useState } from 'react';
-import { Loader2, Users, History, FileText, User, Mail } from 'lucide-react';
+import { Loader2, Users, ShieldCheck, History, FileText, User, Mail } from 'lucide-react';
 import WarrantyEmailTemplate from './WarrantyEmailTemplate';
 
 const UsersComp = lazy(() => import('@/components/users/Users'));
+const RolesComp = lazy(() => import('@/components/roles/Roles'));
 const UserActivityComp = lazy(() => import('@/components/userActivity/UserActivity'));
 const ReportsComp = lazy(() => import('@/components/reports/Reports'));
 const ProfilePageComp = lazy(() => import('@/components/profile/ProfilePage'));
@@ -27,6 +28,7 @@ export default function SettingsPage({
 }) {
   const tabs = [
     hasPermission('users') && { id: 'users', label: 'User Management', icon: Users },
+    hasPermission('users') && { id: 'roles', label: 'Manage Roles', icon: ShieldCheck },
     hasPermission('users') && { id: 'activity', label: 'User Activity', icon: History },
     hasPermission('reports') && { id: 'reports', label: 'Reports', icon: FileText },
     { id: 'warranty-email', label: 'Warranty Email', icon: Mail },
@@ -70,6 +72,9 @@ export default function SettingsPage({
               hasPermission={hasPermission}
               onCurrentUserUpdate={onCurrentUserUpdate}
             />
+          )}
+          {activeTab === 'roles' && hasPermission('users') && (
+            <RolesComp />
           )}
           {activeTab === 'activity' && hasPermission('users') && (
             <UserActivityComp hasPermission={hasPermission} />

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth, requireCompany } from "@/lib/auth";
-import { authorizeInventory } from "@/lib/inventoryAuth";
+import { authenticateRequest, requireAuth, requireCompany, authorizeMasterWrite } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 // Persists the dynamic category-specification values (Specs: { [specificationId]: value })
@@ -31,13 +30,14 @@ async function saveSpecValues(companyGuid, itemVariantId, specs) {
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
   const user = await authenticateRequest(request);
-  authorizeInventory(user, "POST");
   requireAuth(user);
   requireCompany(user);
 
   const { ItemVariantId, ItemId, VariantCode, Mrp, Specs } = body;
   const safeMrp = Mrp !== undefined && Mrp !== null && Mrp !== "" ? Number(Mrp) : null;
   let finalItemVariantId = ItemVariantId;
+  const isCreate = !(ItemVariantId && ItemVariantId !== "0" && ItemVariantId !== "");
+  authorizeMasterWrite(user, "item", { isCreate });
 
   if (ItemVariantId && ItemVariantId !== "0" && ItemVariantId !== "") {
     await mysqlPool.execute(

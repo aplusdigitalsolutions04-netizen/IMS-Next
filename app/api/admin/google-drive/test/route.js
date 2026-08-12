@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest, requireRoles } from "@/lib/auth";
+import { authenticateRequest, requirePermission } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 import { testDriveConnection } from "@/lib/googleDrive";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can test the Google Drive connection.");
+  requirePermission(user, "googleDrive", "Only Admin can test the Google Drive connection.");
 
   try {
     const { folderName } = await testDriveConnection();

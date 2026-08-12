@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth } from "@/lib/auth";
-import { authorizeInventory } from "@/lib/inventoryAuth";
+import { authenticateRequest, requireAuth, authorizeMasterWrite } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
   const user = await authenticateRequest(request);
-  authorizeInventory(user, "POST");
   requireAuth(user);
 
   const { UnitId, UnitName, UnitDesc, BaseUnitQty } = body;
   let finalUnitId = UnitId;
+  const isCreate = !(UnitId && UnitId !== "0" && UnitId !== "");
+  authorizeMasterWrite(user, "unit", { isCreate });
   if (UnitId && UnitId !== "0" && UnitId !== "") {
     await mysqlPool.execute("UPDATE inventoryunitmaster SET unitName = ?, unitDesc = ?, baseUnitQty = ? WHERE unitId = ?", [UnitName, UnitDesc, BaseUnitQty, UnitId]);
   } else {

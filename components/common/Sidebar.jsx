@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import { useCompany } from "@/lib/client/CompanyContext";
 
-export default function Sidebar({ currentUser, isAdmin }) {
+export default function Sidebar({ currentUser, isAdmin, hasPermission = () => false }) {
   const router = useRouter();
   const pathname = usePathname();
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
@@ -214,12 +214,16 @@ export default function Sidebar({ currentUser, isAdmin }) {
           <button onClick={() => router.push('/profile')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'profile' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <User size={18} /> <span>My Profile</span>
           </button>
-          <button onClick={() => router.push('/companyMaster')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'companyMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <Building2 size={18} /> <span>Company Master</span>
-          </button>
-          <button onClick={() => router.push('/platformMaster')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'platformMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <Globe size={18} /> <span>Selling Platforms</span>
-          </button>
+          {hasPermission('companyMaster') && (
+            <button onClick={() => router.push('/companyMaster')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'companyMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <Building2 size={18} /> <span>Company Master</span>
+            </button>
+          )}
+          {hasPermission('platformMaster') && (
+            <button onClick={() => router.push('/platformMaster')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'platformMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <Globe size={18} /> <span>Selling Platforms</span>
+            </button>
+          )}
           <button onClick={() => router.push('/users')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <UsersIcon size={18} /> <span>User Management</span>
           </button>
@@ -235,7 +239,7 @@ export default function Sidebar({ currentUser, isAdmin }) {
           <button onClick={() => router.push('/notifications')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'notifications' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <Bell size={18} /> <span>Notifications</span>
           </button>
-          {isAdmin && (
+          {(hasPermission('emailAccounts') || hasPermission('emailTemplates') || hasPermission('sentEmails') || hasPermission('emailInbox')) && (
             <div className="space-y-1">
               <button onClick={() => toggleSubmenu('email')} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
                 <div className="flex items-center gap-3"><Mail size={18} /><span>Email</span></div>
@@ -243,38 +247,46 @@ export default function Sidebar({ currentUser, isAdmin }) {
               </button>
               {expandedMenus.email && (
                 <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
-                  <button onClick={() => router.push('/emailAccounts')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailAccounts' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-                    <Mail size={14} className="flex-shrink-0" /> <span className="truncate">Email Accounts</span>
-                  </button>
-                  <button onClick={() => router.push('/emailTemplates')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailTemplates' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-                    <FileText size={14} className="flex-shrink-0" /> <span className="truncate">Email Templates</span>
-                  </button>
-                  <button onClick={() => router.push('/sentEmails')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'sentEmails' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-                    <Send size={14} className="flex-shrink-0" /> <span className="truncate">Sent Emails</span>
-                  </button>
-                  <button onClick={() => router.push('/emailInbox')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailInbox' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-                    <Inbox size={14} className="flex-shrink-0" /> <span className="truncate">Email Inbox</span>
-                  </button>
+                  {hasPermission('emailAccounts') && (
+                    <button onClick={() => router.push('/emailAccounts')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailAccounts' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <Mail size={14} className="flex-shrink-0" /> <span className="truncate">Email Accounts</span>
+                    </button>
+                  )}
+                  {hasPermission('emailTemplates') && (
+                    <button onClick={() => router.push('/emailTemplates')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailTemplates' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <FileText size={14} className="flex-shrink-0" /> <span className="truncate">Email Templates</span>
+                    </button>
+                  )}
+                  {hasPermission('sentEmails') && (
+                    <button onClick={() => router.push('/sentEmails')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'sentEmails' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <Send size={14} className="flex-shrink-0" /> <span className="truncate">Sent Emails</span>
+                    </button>
+                  )}
+                  {hasPermission('emailInbox') && (
+                    <button onClick={() => router.push('/emailInbox')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailInbox' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <Inbox size={14} className="flex-shrink-0" /> <span className="truncate">Email Inbox</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
           )}
-          {isAdmin && (
+          {hasPermission('apiLogs') && (
             <button onClick={() => router.push('/apiLogs')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'apiLogs' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
               <ShieldAlert size={18} /> <span>API Logs</span>
             </button>
           )}
-          {isAdmin && (
+          {hasPermission('backupRestore') && (
             <button onClick={() => router.push('/backupRestore')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'backupRestore' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
               <DatabaseBackup size={18} /> <span>Backup &amp; Restore</span>
             </button>
           )}
-          {isAdmin && (
+          {hasPermission('rateLimitSettings') && (
             <button onClick={() => router.push('/rateLimitSettings')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'rateLimitSettings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
               <ShieldHalf size={18} /> <span>Rate Limiting</span>
             </button>
           )}
-          {isAdmin && (
+          {hasPermission('googleDrive') && (
             <button onClick={() => router.push('/googleDrive')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'googleDrive' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
               <HardDrive size={18} /> <span>Google Drive</span>
             </button>
@@ -312,21 +324,23 @@ export default function Sidebar({ currentUser, isAdmin }) {
         </button>
 
         {/* CONTRACTS */}
-        <div className="space-y-1">
-          <button onClick={() => toggleSubmenu("contracts")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
-            <div className="flex items-center gap-3"><FileText size={18} /><span>Contracts</span></div>
-            {expandedMenus.contracts ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </button>
-          {expandedMenus.contracts && (
-            <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
-              {navItems.filter(i => i.group === "contracts").map(item => (
-                <button key={item.id} onClick={() => router.push(item.path || `/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${pathname === (item.path || `/${item.id}`) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-                  {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {hasPermission("contracts") && (
+          <div className="space-y-1">
+            <button onClick={() => toggleSubmenu("contracts")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+              <div className="flex items-center gap-3"><FileText size={18} /><span>Contracts</span></div>
+              {expandedMenus.contracts ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {expandedMenus.contracts && (
+              <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
+                {navItems.filter(i => i.group === "contracts").map(item => (
+                  <button key={item.id} onClick={() => router.push(item.path || `/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${pathname === (item.path || `/${item.id}`) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* MASTERS */}
         <div className="space-y-1">

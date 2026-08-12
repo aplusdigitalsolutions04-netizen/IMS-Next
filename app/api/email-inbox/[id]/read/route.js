@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can update the email inbox.");
+  requirePermission(user, "emailInbox", "Only Admin can update the email inbox.");
   const { id } = await params;
   const { isRead } = await parseJsonBody(request);
 

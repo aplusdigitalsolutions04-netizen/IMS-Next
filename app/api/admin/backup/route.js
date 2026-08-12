@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import AdmZip from "adm-zip";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles } from "@/lib/auth";
+import { authenticateRequest, requirePermission } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 import { uploadDir } from "@/lib/upload";
 
@@ -17,7 +17,7 @@ import { uploadDir } from "@/lib/upload";
 // company runs out of the same shared MySQL database and uploads folder.
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can create backups.");
+  requirePermission(user, "backupRestore", "Only Admin can create backups.");
 
   const [tableRows] = await mysqlPool.query("SHOW TABLES");
   const tableNames = tableRows.map((tableRow) => Object.values(tableRow)[0]);

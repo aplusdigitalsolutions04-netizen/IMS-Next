@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, authorizeReadWrite, requireCompany, resolveScopedCompanyGuid, ApiError } from "@/lib/auth";
+import { authenticateRequest, authorizeReadWrite, requireCompany, requirePermission, resolveScopedCompanyGuid, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
 import { createNotification } from "@/lib/notifications";
@@ -17,6 +17,7 @@ const authorize = (user, method) =>
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
+  requirePermission(user, "contracts", "You do not have permission to access contracts.");
   authorize(user, "GET");
 
   const companyGuid = resolveScopedCompanyGuid(user, request);
@@ -33,6 +34,7 @@ export const GET = withErrorHandling(async (request) => {
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
+  requirePermission(user, "contracts", "You do not have permission to access contracts.");
   authorize(user, "POST");
 
   const body = await parseJsonBody(request);

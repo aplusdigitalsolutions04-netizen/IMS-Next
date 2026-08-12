@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth, ApiError } from "@/lib/auth";
-import { authorizeInventory } from "@/lib/inventoryAuth";
+import { authenticateRequest, requireAuth, ApiError, authorizeMasterRead } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  authorizeInventory(user, "GET");
+  authorizeMasterRead(user, "stat_vendor");
   requireAuth(user);
 
   const vendorId = new URL(request.url).searchParams.get("vendorId");

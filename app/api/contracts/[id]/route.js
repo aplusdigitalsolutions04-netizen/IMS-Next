@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, authorizeReadWrite, requireCompany, ApiError } from "@/lib/auth";
+import { authenticateRequest, authorizeReadWrite, requireCompany, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
 
@@ -38,6 +38,7 @@ async function findLinkedOrder(conn, contractNumber, companyGuid) {
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
+  requirePermission(user, "contracts", "You do not have permission to access contracts.");
   authorize(user, "PUT");
   const { id } = await params;
   const body = await parseJsonBody(request);
@@ -108,6 +109,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 export const DELETE = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
+  requirePermission(user, "contracts", "You do not have permission to access contracts.");
   authorize(user, "DELETE");
   const { id } = await params;
 

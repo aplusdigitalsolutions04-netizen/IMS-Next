@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles } from "@/lib/auth";
+import { authenticateRequest, requirePermission } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can view sent emails.");
+  requirePermission(user, "sentEmails", "Only Admin can view sent emails.");
 
   const [rows] = await mysqlPool.query(`
     SELECT s.*, c.name as companyName

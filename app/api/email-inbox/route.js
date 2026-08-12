@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles } from "@/lib/auth";
+import { authenticateRequest, requirePermission } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can view the email inbox.");
+  requirePermission(user, "emailInbox", "Only Admin can view the email inbox.");
 
   const { searchParams } = new URL(request.url);
   const purpose = searchParams.get("purpose");

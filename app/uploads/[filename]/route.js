@@ -59,6 +59,16 @@ export async function GET(request, { params }) {
   }
 
   const buffer = await downloadDriveFile(rows[0].driveFileId);
+
+  // Write-through cache to local disk: Drive stays the source of truth (and
+  // the off-server backup), but every request after the first one for this
+  // filename hits the fast local-disk path above instead of round-tripping
+  // to the Drive API again. Filenames are unique per upload, so a file's
+  // bytes never change after this point — safe to cache indefinitely.
+  fs.promises.writeFile(filePath, buffer).catch((err) => {
+    console.error(`Failed to cache Drive file "${safeName}" to disk:`, err);
+  });
+
   return new NextResponse(buffer, {
     headers: {
       "Content-Type": rows[0].mimetype || detectMimeType(buffer),

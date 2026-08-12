@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 async function validatePurpose(purpose) {
@@ -10,7 +10,7 @@ async function validatePurpose(purpose) {
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can manage email accounts.");
+  requirePermission(user, "emailAccounts", "Only Admin can manage email accounts.");
   const { id } = await params;
 
   const body = await parseJsonBody(request);
@@ -53,7 +53,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 
 export const DELETE = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can manage email accounts.");
+  requirePermission(user, "emailAccounts", "Only Admin can manage email accounts.");
   const { id } = await params;
 
   const [result] = await mysqlPool.query("DELETE FROM email_accounts WHERE guid = ?", [id]);

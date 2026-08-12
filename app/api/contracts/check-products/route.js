@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth, requireCompany } from "@/lib/auth";
+import { authenticateRequest, requireAuth, requireCompany, requirePermission } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
@@ -19,6 +19,7 @@ export const POST = withErrorHandling(async (request) => {
   authorizeInventory(user, "POST");
   requireAuth(user);
   requireCompany(user);
+  requirePermission(user, "contracts", "You do not have permission to access contracts.");
 
   const products = Array.isArray(body.products)
     ? body.products

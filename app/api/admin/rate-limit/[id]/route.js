@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { invalidateRulesCache } from "@/lib/rateLimiter";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can change rate limit settings.");
+  requirePermission(user, "rateLimitSettings", "Only Admin can change rate limit settings.");
   const { id } = await params;
 
   const { windowMs, maxRequests } = await parseJsonBody(request);

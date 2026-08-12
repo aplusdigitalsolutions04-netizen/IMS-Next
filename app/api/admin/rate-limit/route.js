@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles } from "@/lib/auth";
+import { authenticateRequest, requirePermission } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 import { getBucketSnapshot } from "@/lib/rateLimiter";
 
@@ -12,7 +12,7 @@ import { getBucketSnapshot } from "@/lib/rateLimiter";
 // delayed/cached view.
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can view rate limit settings.");
+  requirePermission(user, "rateLimitSettings", "Only Admin can view rate limit settings.");
 
   const [rules] = await mysqlPool.query("SELECT guid, ruleKey, label, windowMs, maxRequests, updatedBy, updatedAt FROM rate_limit_rules ORDER BY ruleKey");
   const buckets = getBucketSnapshot();

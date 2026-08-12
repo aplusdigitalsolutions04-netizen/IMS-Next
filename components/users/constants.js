@@ -1,20 +1,41 @@
 import {
-  BarChart3, Printer, Barcode, ShieldCheck, Eye, ShoppingCart, Receipt, Package,
+  BarChart3, Printer, Barcode, ShieldCheck, ShoppingCart, Receipt, Package,
   Wrench, AlertOctagon, Tags, Layers, History, FileText, Bell, Shield, Database,
   Ruler, ArrowDownCircle, ArrowUpCircle, Plus, Truck, Settings2, Users,
+  Building2, Globe, UploadCloud, Mail, Inbox, Send, ShieldAlert, DatabaseBackup,
+  ShieldHalf, HardDrive, Pencil, Trash2,
 } from "lucide-react";
 
+// Each Master Data entry below (Category/Brand/Vendor/Item/Combo/Unit/Mapping)
+// gets its own Add/Edit/Delete edit-rights — masterKey must match the suffix
+// used by allow_add_<key>/allow_edit_<key>/allow_delete_<key> in lib/auth.js's
+// authorizeMasterWrite/authorizeMasterDelete and lib/helpers.js's MASTER_KEYS.
+const MASTER_EDIT_ENTRIES = [
+  { key: "category", label: "Category" },
+  { key: "brand",    label: "Brand" },
+  { key: "vendor",   label: "Vendor" },
+  { key: "item",     label: "Item" },
+  { key: "combo",    label: "Combo" },
+  { key: "unit",     label: "Unit" },
+  { key: "mapping",  label: "Cate-Brand Mapping" },
+].flatMap(({ key, label }) => [
+  { key: `allow_add_${key}`,    label: `Add ${label}`,    icon: Plus,    group: "Master Data" },
+  { key: `allow_edit_${key}`,   label: `Edit ${label}`,   icon: Pencil,  group: "Master Data" },
+  { key: `allow_delete_${key}`, label: `Delete ${label}`, icon: Trash2,  group: "Master Data" },
+]);
+
+// print_models_view/print_models_edit/print_serials_view/print_serials_edit and
+// create_order used to exist here as separate "view" entries, but nothing
+// server-side ever checked them — the real gates are print_models/print_serials
+// (view) + allow_edit_models/allow_edit_serials/allow_create_order (below, in
+// EDIT_PERMISSIONS). Keeping both copies just showed the same feature twice in
+// the Manage Roles checkbox UI with no functional difference, so they were removed.
 export const PERMISSIONS_LIST = [
   { id: "dashboard",          label: "Dashboard",              icon: BarChart3 },
   { id: "print_models",       label: "Printer Models",         icon: Printer },
   { id: "print_serials",      label: "Printer Serials",        icon: Barcode },
   { id: "warranty",           label: "Warranty Certificates",  icon: ShieldCheck },
-  { id: "print_models_view",  label: "View Printer Models",    icon: Eye },
-  { id: "print_models_edit",  label: "Edit Printer Models",    icon: Printer },
-  { id: "print_serials_view", label: "View Printer Serials",   icon: Eye },
-  { id: "print_serials_edit", label: "Edit Printer Serials",   icon: Barcode },
   { id: "orders",             label: "Order Processing",       icon: ShoppingCart },
-  { id: "create_order",       label: "Create Orders",          icon: ShoppingCart },
   { id: "billing",            label: "Billing",                icon: Receipt },
   { id: "dispatch",           label: "Dispatch",               icon: Package },
   { id: "stat_category",      label: "Category Master",        icon: Database },
@@ -36,13 +57,26 @@ export const PERMISSIONS_LIST = [
   { id: "godownMaster",       label: "Godown Master",          icon: Database },
   { id: "fbfFbaMaster",       label: "FBF/FBA Master",         icon: Database },
   { id: "fbfFbaManagement",   label: "FBF/FBA Stock",          icon: Database },
+  { id: "companyMaster",      label: "Company Master",         icon: Building2 },
+  { id: "platformMaster",     label: "Selling Platforms",      icon: Globe },
+  { id: "contracts",          label: "Contracts",              icon: UploadCloud },
+  { id: "emailAccounts",      label: "Email Accounts",         icon: Mail },
+  { id: "emailTemplates",     label: "Email Templates",        icon: FileText },
+  { id: "emailInbox",         label: "Email Inbox",            icon: Inbox },
+  { id: "sentEmails",         label: "Sent Emails",            icon: Send },
+  { id: "apiLogs",            label: "API Logs",               icon: ShieldAlert },
+  { id: "backupRestore",      label: "Backup & Restore",       icon: DatabaseBackup },
+  { id: "rateLimitSettings",  label: "Rate Limiting",          icon: ShieldHalf },
+  { id: "googleDrive",        label: "Google Drive",           icon: HardDrive },
 ];
 
 export const PERMISSION_GROUPS = [
-  { name: "Sales & Orders",   icon: ShoppingCart, color: "indigo",  permissions: ["orders", "create_order", "billing", "dispatch", "installation", "stat_stock_out", "returns", "damage"] },
-  { name: "Master Data",      icon: Database,     color: "violet",  permissions: ["stat_category", "stat_brand", "stat_vendor", "stat_item", "stat_combo", "stat_mapping", "stat_unit", "godownMaster", "fbfFbaMaster"] },
+  { name: "Sales & Orders",   icon: ShoppingCart, color: "indigo",  permissions: ["orders", "billing", "dispatch", "installation", "stat_stock_out", "returns", "damage"] },
+  { name: "Master Data",      icon: Database,     color: "violet",  permissions: ["stat_category", "stat_brand", "stat_vendor", "stat_item", "stat_combo", "stat_mapping", "stat_unit", "godownMaster", "fbfFbaMaster", "companyMaster", "platformMaster"] },
   { name: "Inventory",        icon: History,      color: "sky",     permissions: ["print_models", "print_serials", "warranty", "stat_stock_in", "stat_current_stock", "fbfFbaManagement"] },
-  { name: "Admin & Analytics",icon: BarChart3,    color: "emerald", permissions: ["dashboard", "notifications", "users", "reports"] },
+  { name: "Admin & Analytics",icon: BarChart3,    color: "emerald", permissions: ["dashboard", "notifications", "users", "reports", "contracts"] },
+  { name: "Email",            icon: Mail,         color: "amber",   permissions: ["emailAccounts", "emailTemplates", "emailInbox", "sentEmails"] },
+  { name: "System Admin",     icon: ShieldAlert,  color: "rose",    permissions: ["apiLogs", "backupRestore", "rateLimitSettings", "googleDrive"] },
 ];
 
 export const EDIT_PERMISSIONS = [
@@ -58,6 +92,7 @@ export const EDIT_PERMISSIONS = [
   { key: "allow_edit_returns",          label: "Edit Returns",              icon: History,      group: "Operations" },
   { key: "allow_edit_damaged",          label: "Edit Damaged",              icon: AlertOctagon, group: "Operations" },
   { key: "allow_edit_warranty",         label: "Edit Warranty Certificates",icon: Shield,       group: "Operations" },
+  ...MASTER_EDIT_ENTRIES,
 ];
 
 export const INITIAL_FORM = {
@@ -91,4 +126,6 @@ export const GROUP_COLORS = {
   violet:  { bg: "bg-violet-50",  text: "text-violet-700",  border: "border-violet-200",  icon: "text-violet-500",  header: "bg-violet-50 border-violet-100",   checked: "bg-violet-600 text-white",  checkedCard: "bg-violet-50/80 border-violet-200 text-violet-900" },
   sky:     { bg: "bg-sky-50",     text: "text-sky-700",     border: "border-sky-200",     icon: "text-sky-500",     header: "bg-sky-50 border-sky-100",         checked: "bg-sky-600 text-white",     checkedCard: "bg-sky-50/80 border-sky-200 text-sky-900" },
   emerald: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", icon: "text-emerald-500", header: "bg-emerald-50 border-emerald-100", checked: "bg-emerald-600 text-white", checkedCard: "bg-emerald-50/80 border-emerald-200 text-emerald-900" },
+  amber:   { bg: "bg-amber-50",   text: "text-amber-700",   border: "border-amber-200",   icon: "text-amber-500",   header: "bg-amber-50 border-amber-100",     checked: "bg-amber-600 text-white",   checkedCard: "bg-amber-50/80 border-amber-200 text-amber-900" },
+  rose:    { bg: "bg-rose-50",    text: "text-rose-700",    border: "border-rose-200",    icon: "text-rose-500",    header: "bg-rose-50 border-rose-100",       checked: "bg-rose-600 text-white",    checkedCard: "bg-rose-50/80 border-rose-200 text-rose-900" },
 };

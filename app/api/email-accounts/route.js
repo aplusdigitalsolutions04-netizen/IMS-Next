@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 async function validatePurpose(purpose) {
@@ -11,7 +11,7 @@ async function validatePurpose(purpose) {
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can view email accounts.");
+  requirePermission(user, "emailAccounts", "Only Admin can view email accounts.");
 
   const [rows] = await mysqlPool.query(`
     SELECT e.*, c.name as companyName
@@ -26,7 +26,7 @@ export const GET = withErrorHandling(async (request) => {
 
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can manage email accounts.");
+  requirePermission(user, "emailAccounts", "Only Admin can manage email accounts.");
 
   const body = await parseJsonBody(request);
   const {

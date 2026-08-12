@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDocumentProxy, extractText } from "unpdf";
-import { authenticateRequest, requireAuth, ApiError } from "@/lib/auth";
+import { authenticateRequest, requireAuth, requirePermission, ApiError } from "@/lib/auth";
 import { callOpenAIContract, callOpenAIVisionContract, checkOpenAIKey } from "@/lib/aiParse";
 import { saveUploadedFile } from "@/lib/upload";
 import { withErrorHandling } from "@/lib/apiResponse";
@@ -8,6 +8,7 @@ import { withErrorHandling } from "@/lib/apiResponse";
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireAuth(user);
+  requirePermission(user, "contracts", "You do not have permission to access contracts.");
 
   if (!checkOpenAIKey()) throw new ApiError(503, "OpenAI API key not configured. Add OPENAI_API_KEY to .env");
 

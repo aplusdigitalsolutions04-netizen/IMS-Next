@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 const VALID_COLOR_THEMES = new Set([
@@ -11,7 +11,7 @@ const VALID_COLOR_THEMES = new Set([
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can manage selling platforms.");
+  requirePermission(user, "platformMaster", "Only Admin can manage selling platforms.");
   const { id } = await params;
 
   const { name, isActive, colorTheme } = await parseJsonBody(request);
@@ -47,7 +47,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 
 export const DELETE = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can manage selling platforms.");
+  requirePermission(user, "platformMaster", "Only Admin can manage selling platforms.");
   const { id } = await params;
 
   const [[platform]] = await mysqlPool.query("SELECT * FROM selling_platforms WHERE guid = ?", [id]);

@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth, requireCompany, ApiError } from "@/lib/auth";
-import { authorizeInventory } from "@/lib/inventoryAuth";
+import { authenticateRequest, requireAuth, requireCompany, ApiError, authorizeMasterWrite } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
   const user = await authenticateRequest(request);
-  authorizeInventory(user, "POST");
   requireAuth(user);
   requireCompany(user);
 
@@ -17,6 +15,9 @@ export const POST = withErrorHandling(async (request) => {
   const displayOrder = Number(DisplayOrder) || 0;
   if (!label) throw new ApiError(400, "Option value is required.");
   if (!SpecificationId) throw new ApiError(400, "SpecificationId is required.");
+
+  const isCreate = !(OptionId && OptionId !== "0" && OptionId !== "");
+  authorizeMasterWrite(user, "category", { isCreate });
 
   const [[spec]] = await mysqlPool.query(
     "SELECT id FROM dropdown_master WHERE id = ? AND companyGuid = ?",

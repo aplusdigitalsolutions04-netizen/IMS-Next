@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { LayoutDashboard, User, Loader2, Clock, Search, X } from "lucide-react";
 import { getStoredUser, clearSession } from "@/lib/client/auth";
+import { hasPermission } from "@/lib/client/rbac";
 import { AppDataProvider, useAppData } from "@/lib/client/AppDataContext";
 import Sidebar from "@/components/common/Sidebar";
 import GlobalSearchModal from "@/components/common/GlobalSearchModal";
@@ -20,6 +21,7 @@ const getPhotoUrl = (filename) => (filename ? `${UPLOADS_BASE_URL}/uploads/${enc
 // Masters/Inventory/Order Processing/Returns groups) is being ported
 // incrementally as each corresponding page lands — see [[ims-next-migration]].
 function AppLayoutInner({ children, currentUser, handleLogout, router, pathname, isAdmin }) {
+  const canAccess = (permissionId) => hasPermission(currentUser, permissionId);
   const { loadCoreData, globalSearch, setGlobalSearch } = useAppData();
   const { isSwitchingCompany } = useCompany();
   const [now, setNow] = useState(null);
@@ -44,7 +46,7 @@ function AppLayoutInner({ children, currentUser, handleLogout, router, pathname,
         </div>
       )}
       <div className="hidden md:flex shrink-0">
-        <Sidebar currentUser={currentUser} isAdmin={isAdmin} />
+        <Sidebar currentUser={currentUser} isAdmin={isAdmin} hasPermission={canAccess} />
       </div>
 
       <main className="flex-1 flex flex-col min-h-0 min-w-0">

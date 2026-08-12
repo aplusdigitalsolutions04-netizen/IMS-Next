@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError, invalidateCompanyActiveCache } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError, invalidateCompanyActiveCache } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can edit companies.");
+  requirePermission(user, "companyMaster", "Only Admin can edit companies.");
 
   const { id } = await params;
   const { name, allowedPlatforms, isActive } = await parseJsonBody(request);
@@ -25,7 +25,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 // login/switch option, but its guid (and every row scoped to it) stays intact.
 export const DELETE = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can delete companies.");
+  requirePermission(user, "companyMaster", "Only Admin can delete companies.");
 
   const { id } = await params;
   await mysqlPool.query("UPDATE companies SET isActive = 0 WHERE guid = ?", [id]);

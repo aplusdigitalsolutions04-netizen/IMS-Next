@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireCompany } from "@/lib/auth";
+import { authenticateRequest, requireCompany, requirePermission } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
+  requirePermission(user, "contracts", "You do not have permission to access contracts.");
 
   const { searchParams } = new URL(request.url);
   const contractNumber = (searchParams.get("contractNumber") || "").trim();

@@ -1,20 +1,20 @@
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth, requireCompany } from "@/lib/auth";
-import { authorizeInventory } from "@/lib/inventoryAuth";
+import { authenticateRequest, requireAuth, requireCompany, authorizeMasterWrite } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
   const user = await authenticateRequest(request);
-  authorizeInventory(user, "POST");
   requireAuth(user);
   requireCompany(user);
 
   const { ItemId, CategoryId, BrandId, ItemName, ItemCode, HsnCode, HSNCode, UnitId, IsTrackable, UseSerialTab } = body;
   const finalHsnCode = HsnCode || HSNCode || "";
   let finalItemId = ItemId;
+  const isCreate = !(ItemId && ItemId !== "0" && ItemId !== "");
+  authorizeMasterWrite(user, "item", { isCreate });
   if (ItemId && ItemId !== "0" && ItemId !== "") {
     await mysqlPool.execute(
       "UPDATE inventoryitemmaster SET categoryId=?, brandId=?, itemName=?, itemCode=?, hsnCode=?, unitId=?, isTrackable=?, useSerialTab=? WHERE itemId=? AND companyGuid=?",

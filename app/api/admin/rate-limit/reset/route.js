@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { clearBucket } from "@/lib/rateLimiter";
 
@@ -8,7 +8,7 @@ import { clearBucket } from "@/lib/rateLimiter";
 // script that misbehaved), without waiting for the window to expire.
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can reset rate limit counters.");
+  requirePermission(user, "rateLimitSettings", "Only Admin can reset rate limit counters.");
 
   const { ruleKey, ip } = await parseJsonBody(request);
   if (!ruleKey || !ip) throw new ApiError(400, "ruleKey and ip are required.");

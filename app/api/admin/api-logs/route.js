@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles } from "@/lib/auth";
+import { authenticateRequest, requirePermission } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 function buildWhere(searchParams) {
@@ -49,7 +49,7 @@ function toCsv(rows) {
 // per-module permission system.
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, [], "Only Admin can view API logs.");
+  requirePermission(user, "apiLogs", "Only Admin can view API logs.");
 
   const { searchParams } = new URL(request.url);
   const { whereSql, params } = buildWhere(searchParams);

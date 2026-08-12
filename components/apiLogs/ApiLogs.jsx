@@ -7,7 +7,7 @@ import { printerService } from "@/lib/services/api";
 const METHODS = ["GET", "POST", "PUT", "DELETE"];
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
 
-export default function ApiLogs({ currentUser }) {
+export default function ApiLogs({ currentUser, hasPermission }) {
   const [logs, setLogs] = useState([]);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState({ totalCalls: 0, totalErrors: 0 });
@@ -24,7 +24,7 @@ export default function ApiLogs({ currentUser }) {
   const [endDate, setEndDate] = useState("");
   const [detailLog, setDetailLog] = useState(null);
 
-  const isAdmin = currentUser?.role === "Admin";
+  const isAdmin = hasPermission ?? currentUser?.role === "Admin";
 
   const activeFilters = () => ({
     onlyErrors: onlyErrors ? "1" : undefined,

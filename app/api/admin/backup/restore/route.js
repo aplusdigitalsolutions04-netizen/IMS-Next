@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import AdmZip from "adm-zip";
 import path from "path";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 import { uploadDir } from "@/lib/upload";
 
@@ -26,7 +26,7 @@ const BATCH_SIZE = 300;
 // finish the job instead of leaving things in an ambiguous state.
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can restore backups.");
+  requirePermission(user, "backupRestore", "Only Admin can restore backups.");
 
   const arrayBuffer = await request.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);

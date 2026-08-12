@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { sendManualReminder } from "@/lib/mailer";
 import { withErrorHandling } from "@/lib/apiResponse";
 
@@ -8,7 +8,7 @@ import { withErrorHandling } from "@/lib/apiResponse";
 // this on a schedule or automatically.
 export const POST = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can send reminders.");
+  requirePermission(user, "sentEmails", "Only Admin can send reminders.");
   const { id } = await params;
 
   try {
