@@ -1,9 +1,10 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Swal from "sweetalert2";
 import axios from "axios";
-import { Plus, Loader2, ListTree, ArrowLeft, Trash2, Barcode, Hash, X, Edit2, Search } from "lucide-react";
+import { Plus, Loader2, ListTree, ArrowLeft, Trash2, Barcode, Hash, X, Edit2, Search, Settings2 } from "lucide-react";
+import CategorySpecificationModal from "../categoryMaster/CategorySpecificationModal";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -18,64 +19,53 @@ const ItemVariant = () => {
   const [mrp, setMrp] = useState("");
   const [variants, setVariants] = useState([]);
   const [categoryName, setCategoryName] = useState(searchParams.get("categoryName") || "");
+  const [categoryId, setCategoryId] = useState("");
 
-  // Which spec fields to show is decided by category name — same buckets
-  // used everywhere else in the app (Monitor / PC / Printer heuristics).
-  const categoryBucket = (() => {
-    const c = (categoryName || "").toLowerCase();
-    if (c.includes("monitor") || c.includes("display") || c.includes("screen")) return "Monitor";
-    if (c.includes("pc") || c.includes("computer") || c.includes("laptop") || c.includes("computing")
-      || c.includes("aio") || c.includes("all in one") || c.includes("all-in-one")
-      || c.includes("desktop") || c.includes("tower")) return "PC";
-    if (c.includes("printer") || c.includes("copier") || c.includes("mfp")) return "Printer";
-    return "Other";
-  })();
+  // Spec fields shown on the form are whatever the category defines under
+  // Category Master → Specifications (dropdown or free-text), not hardcoded.
+  const [specDefs, setSpecDefs] = useState([]);
+  const [specValues, setSpecValues] = useState({});
+  const [loadingSpecDefs, setLoadingSpecDefs] = useState(false);
+  const [showSpecModal, setShowSpecModal] = useState(false);
 
-  const [colorType, setColorType] = useState("");
-  const [printerType, setPrinterType] = useState("");
-  const [cpu, setCpu] = useState("");
-  const [ram, setRam] = useState("");
-  const [ssdHdd, setSsdHdd] = useState("");
-  const [screenSize, setScreenSize] = useState("");
-  const [resolution, setResolution] = useState("");
-  const [panelType, setPanelType] = useState("");
-  const [refreshRate, setRefreshRate] = useState("");
-  const [packagingCost, setPackagingCost] = useState("");
-  const [packageLength, setPackageLength] = useState("");
-  const [packageWidth, setPackageWidth] = useState("");
-  const [packageHeight, setPackageHeight] = useState("");
-  const [packageWeight, setPackageWeight] = useState("");
+  const getHeaders = () => {
+    const token = sessionStorage.getItem("pt_auth_token");
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+  };
 
-  const [colorTypeOptions, setColorTypeOptions] = useState([]);
-  const [printerTypeOptions, setPrinterTypeOptions] = useState([]);
+  const fetchSpecDefs = useCallback(async () => {
+    if (!categoryId) return;
+    setLoadingSpecDefs(true);
+    try {
+      const res = await axios.get(`${API_BASE_URL}/Inventory/GetCategorySpecificationList`, {
+        params: { categoryId },
+        headers: getHeaders(),
+      });
+      setSpecDefs(res.data?.data || []);
+    } catch (error) {
+      console.error("Failed to load category specifications", error);
+      setSpecDefs([]);
+    } finally {
+      setLoadingSpecDefs(false);
+    }
+  }, [categoryId]);
 
   useEffect(() => {
-    const fetchTypeOptions = async () => {
-      try {
-        const [colorRes, printerRes] = await Promise.all([
-          axios.get(`${API_BASE_URL}/Inventory/GetColorTypeList`, { headers: getHeaders() }),
-          axios.get(`${API_BASE_URL}/Inventory/GetPrinterTypeList`, { headers: getHeaders() }),
-        ]);
-        setColorTypeOptions(colorRes.data?.data || []);
-        setPrinterTypeOptions(printerRes.data?.data || []);
-      } catch (error) {
-        console.error("Failed to load color/printer type options", error);
-      }
-    };
-    fetchTypeOptions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    fetchSpecDefs();
+  }, [fetchSpecDefs]);
 
   const resetSpecs = () => {
-    setColorType(""); setPrinterType(""); setCpu(""); setRam(""); setSsdHdd("");
-    setScreenSize(""); setResolution(""); setPanelType(""); setRefreshRate("");
-    setPackagingCost(""); setPackageLength(""); setPackageWidth(""); setPackageHeight(""); setPackageWeight("");
+    setSpecValues({});
   };
   
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
 
   // Click a variant to open a popup with its serial numbers
+  const [expandedVariantId, setExpandedVariantId] = useState("");
   const [serialModalVariant, setSerialModalVariant] = useState(null); // { itemVariantId, variantCode }
   const [serialModalRows, setSerialModalRows] = useState([]);
   const [loadingSerialModal, setLoadingSerialModal] = useState(false);
@@ -194,14 +184,6 @@ const ItemVariant = () => {
   // MRP is only shown for categories that opted into it (Category Master "Show MRP" checkbox)
   const [showMrp, setShowMrp] = useState(false);
 
-  const getHeaders = () => {
-    const token = sessionStorage.getItem("pt_auth_token");
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    };
-  };
-
   const fetchVariants = async (page = currentPage, limit = pageSize, search = searchTerm) => {
     if (!rawItemId) return;
 
@@ -215,6 +197,7 @@ const ItemVariant = () => {
       setTotalRecords(response.data?.total || 0);
       setShowMrp(!!response.data?.showMrp);
       if (response.data?.categoryName) setCategoryName(response.data.categoryName);
+      if (response.data?.categoryId) setCategoryId(response.data.categoryId);
     } catch (error) {
       console.error("Failed to load variants", error);
       setVariants([]);
@@ -266,20 +249,7 @@ const ItemVariant = () => {
         ItemId: rawItemId,
         VariantCode: variantCode.trim(),
         Mrp: mrp !== "" ? Number(mrp) : null,
-        ColorType: colorType || null,
-        PrinterType: printerType || null,
-        Cpu: cpu || null,
-        Ram: ram || null,
-        SsdHdd: ssdHdd || null,
-        ScreenSize: screenSize || null,
-        Resolution: resolution || null,
-        PanelType: panelType || null,
-        RefreshRate: refreshRate || null,
-        PackagingCost: packagingCost !== "" ? Number(packagingCost) : null,
-        PackageLength: packageLength !== "" ? Number(packageLength) : null,
-        PackageWidth: packageWidth !== "" ? Number(packageWidth) : null,
-        PackageHeight: packageHeight !== "" ? Number(packageHeight) : null,
-        PackageWeight: packageWeight !== "" ? Number(packageWeight) : null,
+        Specs: specValues,
       };
 
       const res = await axios.post(
@@ -310,20 +280,9 @@ const ItemVariant = () => {
     setItemVariantId(v.itemVariantId);
     setVariantCode(v.variantCode || "");
     setMrp(v.mrp != null ? String(v.mrp) : "");
-    setColorType(v.colorType || "");
-    setPrinterType(v.printerType || "");
-    setCpu(v.cpu || "");
-    setRam(v.ram || "");
-    setSsdHdd(v.ssdHdd || "");
-    setScreenSize(v.screenSize || "");
-    setResolution(v.resolution || "");
-    setPanelType(v.panelType || "");
-    setRefreshRate(v.refreshRate || "");
-    setPackagingCost(v.packagingCost != null ? String(v.packagingCost) : "");
-    setPackageLength(v.packageLength != null ? String(v.packageLength) : "");
-    setPackageWidth(v.packageWidth != null ? String(v.packageWidth) : "");
-    setPackageHeight(v.packageHeight != null ? String(v.packageHeight) : "");
-    setPackageWeight(v.packageWeight != null ? String(v.packageWeight) : "");
+    setSpecValues(
+      Object.fromEntries(Object.entries(v.specs || {}).map(([specId, val]) => [specId, val ?? ""]))
+    );
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -451,106 +410,56 @@ const ItemVariant = () => {
           </div>
         </div>
 
-        {categoryBucket !== "Other" && (
-          <div className="mt-6 pt-6 border-t border-slate-200">
-            <p className="text-xs font-bold text-slate-500 uppercase mb-4">Specifications ({categoryBucket})</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {categoryBucket === "Printer" && (
-                <>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
-                      Color Type <a href="/colorTypeMaster" target="_blank" rel="noreferrer" className="text-indigo-500 normal-case font-normal hover:underline">(manage options)</a>
-                    </label>
-                    <select value={colorType} onChange={(e) => setColorType(e.target.value)} className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100">
-                      <option value="">-- Select --</option>
-                      {colorTypeOptions.map((o) => (
-                        <option key={o.colorTypeId} value={o.colorTypeName}>{o.colorTypeName}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
-                      Printer Type <a href="/printerTypeMaster" target="_blank" rel="noreferrer" className="text-indigo-500 normal-case font-normal hover:underline">(manage options)</a>
-                    </label>
-                    <select value={printerType} onChange={(e) => setPrinterType(e.target.value)} className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100">
-                      <option value="">-- Select --</option>
-                      {printerTypeOptions.map((o) => (
-                        <option key={o.printerTypeId} value={o.printerTypeName}>{o.printerTypeName}</option>
-                      ))}
-                    </select>
-                  </div>
-                </>
-              )}
-
-              {categoryBucket === "PC" && (
-                <>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">CPU / Processor</label>
-                    <input type="text" value={cpu} onChange={(e) => setCpu(e.target.value)} placeholder="e.g. Intel i5 12th Gen" className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">RAM</label>
-                    <input type="text" value={ram} onChange={(e) => setRam(e.target.value)} placeholder="e.g. 8GB DDR4" className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">SSD / HDD</label>
-                    <input type="text" value={ssdHdd} onChange={(e) => setSsdHdd(e.target.value)} placeholder="e.g. 512GB SSD" className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                  </div>
-                </>
-              )}
-
-              {categoryBucket === "Monitor" && (
-                <>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Screen Size</label>
-                    <input type="text" value={screenSize} onChange={(e) => setScreenSize(e.target.value)} placeholder='e.g. 24"' className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Resolution</label>
-                    <input type="text" value={resolution} onChange={(e) => setResolution(e.target.value)} placeholder="e.g. 1920x1080" className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Panel Type</label>
-                    <input type="text" value={panelType} onChange={(e) => setPanelType(e.target.value)} placeholder="e.g. IPS" className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Refresh Rate</label>
-                    <input type="text" value={refreshRate} onChange={(e) => setRefreshRate(e.target.value)} placeholder="e.g. 75Hz" className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                  </div>
-                </>
-              )}
-
-              {categoryBucket !== "Printer" && (
-                <>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Packaging Cost</label>
-                    <input type="number" min="0" value={packagingCost} onChange={(e) => setPackagingCost(e.target.value)} placeholder="0.00" className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                  </div>
-                  {categoryBucket !== "Monitor" && (
-                    <>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Package Length (cm)</label>
-                        <input type="number" min="0" value={packageLength} onChange={(e) => setPackageLength(e.target.value)} className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Package Width (cm)</label>
-                        <input type="number" min="0" value={packageWidth} onChange={(e) => setPackageWidth(e.target.value)} className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Package Height (cm)</label>
-                        <input type="number" min="0" value={packageHeight} onChange={(e) => setPackageHeight(e.target.value)} className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Package Weight (kg)</label>
-                        <input type="number" min="0" value={packageWeight} onChange={(e) => setPackageWeight(e.target.value)} className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100" />
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
+        <div className="mt-6 pt-6 border-t border-slate-200">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs font-bold text-slate-500 uppercase">Specifications</p>
+            {categoryId && (
+              <button
+                type="button"
+                onClick={() => setShowSpecModal(true)}
+                className="text-xs text-indigo-500 font-medium hover:underline flex items-center gap-1"
+              >
+                <Settings2 size={13} /> Manage specifications for {categoryName}
+              </button>
+            )}
           </div>
-        )}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {loadingSpecDefs ? (
+              <div className="col-span-full flex items-center gap-2 text-sm text-slate-500">
+                <Loader2 size={16} className="animate-spin" /> Loading specifications...
+              </div>
+            ) : specDefs.length === 0 ? (
+              <p className="col-span-full text-sm text-slate-400">
+                No specifications defined for this category yet.
+              </p>
+            ) : (
+              specDefs.map((spec) => (
+                <div key={spec.specificationId}>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{spec.specName}</label>
+                  {spec.fieldType === "DROPDOWN" ? (
+                    <select
+                      value={specValues[spec.specificationId] || ""}
+                      onChange={(e) => setSpecValues((prev) => ({ ...prev, [spec.specificationId]: e.target.value }))}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100"
+                    >
+                      <option value="">-- Select --</option>
+                      {spec.options.map((o) => (
+                        <option key={o.optionId} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <textarea
+                      value={specValues[spec.specificationId] || ""}
+                      onChange={(e) => setSpecValues((prev) => ({ ...prev, [spec.specificationId]: e.target.value }))}
+                      rows={2}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100 resize-y"
+                    />
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="mb-4">
@@ -581,8 +490,15 @@ const ItemVariant = () => {
             </thead>
                 <tbody className="divide-y divide-slate-100">
               {variants.length > 0 ? (
-                variants.map((v, index) => (
-                  <tr key={v.itemVariantId || index} className="hover:bg-indigo-50/30 transition-colors cursor-pointer" onClick={() => openVariantSerials(v)}>
+                variants.map((v, index) => {
+                  const isExpanded = expandedVariantId === v.itemVariantId;
+                  const colCount = showMrp ? 5 : 3;
+                  return (
+                  <React.Fragment key={v.itemVariantId || index}>
+                  <tr
+                    className="hover:bg-indigo-50/30 transition-colors cursor-pointer"
+                    onClick={() => setExpandedVariantId((prev) => (prev === v.itemVariantId ? "" : v.itemVariantId))}
+                  >
                     <td className="py-4 px-6 text-sm font-bold text-slate-800 font-mono">
                       <span className="bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
                         {v.variantCode}
@@ -634,7 +550,29 @@ const ItemVariant = () => {
                       </div>
                     </td>
                   </tr>
-                ))
+                  {isExpanded && (
+                    <tr className="bg-slate-50/70">
+                      <td colSpan={colCount} className="px-6 py-4">
+                        {specDefs.length === 0 ? (
+                          <p className="text-xs text-slate-400">No specifications defined for this category.</p>
+                        ) : (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {specDefs.map((spec) => (
+                              <div key={spec.specificationId}>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{spec.specName}</p>
+                                <p className="text-sm font-semibold text-slate-700">
+                                  {v.specs?.[spec.specificationId] || "-"}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan={showMrp ? 5 : 3} className="py-8 px-6 text-center">
@@ -830,6 +768,16 @@ const ItemVariant = () => {
                 </div>
               </div>
             </div>
+          )}
+
+          {showSpecModal && categoryId && (
+            <CategorySpecificationModal
+              category={{ categoryId, categoryName }}
+              onClose={() => {
+                setShowSpecModal(false);
+                fetchSpecDefs();
+              }}
+            />
           )}
         </div>
   );

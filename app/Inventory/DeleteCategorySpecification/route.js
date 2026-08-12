@@ -11,7 +11,14 @@ export const POST = withErrorHandling(async (request) => {
   requireAuth(user);
   requireCompany(user);
 
-  const { printerTypeId } = body;
-  await mysqlPool.execute("UPDATE inventoryprintertypemaster SET isDeleted = 1 WHERE printerTypeId = ? AND companyGuid = ?", [printerTypeId, user.companyId]);
+  const { specificationId } = body;
+  await mysqlPool.execute(
+    "UPDATE dropdown_master SET is_active = 0 WHERE id = ? AND companyGuid = ?",
+    [specificationId, user.companyId]
+  );
+  await mysqlPool.execute(
+    "UPDATE dropdown_option SET is_active = 0 WHERE dropdown_id = ?",
+    [specificationId]
+  );
   return NextResponse.json({ message: "Success" });
 });

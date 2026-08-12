@@ -32,11 +32,10 @@ import {
   UploadCloud,
   Ban,
   ArrowRightLeft,
-  Palette,
-  Printer,
   DatabaseBackup,
   ShieldHalf,
-  Globe
+  Globe,
+  HardDrive
 } from "lucide-react";
 import { useCompany } from "@/lib/client/CompanyContext";
 
@@ -66,8 +65,6 @@ export default function Sidebar({ currentUser, isAdmin }) {
     { id: "vendorMaster", label: "Vendor Master", icon: UsersIcon, group: "masters" },
     { id: "categoryBrandMapping", label: "Cate-Brand Mapping", icon: FileText, group: "masters" },
     { id: "unitMaster", label: "Unit Master", icon: Ruler, group: "masters" },
-    { id: "colorTypeMaster", label: "Color Type Master", icon: Palette, group: "masters" },
-    { id: "printerTypeMaster", label: "Printer Type Master", icon: Printer, group: "masters" },
     { id: "itemMaster", label: "Item Master", icon: Package, group: "masters" },
     { id: "comboMaster", label: "Combos Master", icon: Layers, group: "masters" },
     { id: "godownMaster", label: "Godown Master", icon: Warehouse, group: "masters" },
@@ -96,11 +93,11 @@ export default function Sidebar({ currentUser, isAdmin }) {
   ];
 
   if (!isSidebarVisible) {
-    const mastersGroup = ["categoryMaster","brandMaster","vendorMaster","categoryBrandMapping","unitMaster","colorTypeMaster","printerTypeMaster","itemMaster","comboMaster","godownMaster","fbfFbaMaster"];
+    const mastersGroup = ["categoryMaster","brandMaster","vendorMaster","categoryBrandMapping","unitMaster","itemMaster","comboMaster","godownMaster","fbfFbaMaster"];
     const inventoryGroup = ["currentStock","stockIn","fbfFbaManagement","godownTransfer"];
     const ordersGroup = ["orderTracking","dispatch","stockOut"];
     const operationsGroup = ["returns","damaged"];
-    const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","emailInbox","sentEmails","apiLogs","backupRestore","rateLimitSettings","platformMaster"];
+    const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","emailInbox","sentEmails","apiLogs","backupRestore","rateLimitSettings","platformMaster","googleDrive"];
 
     const expandTo = (group) => {
       setIsSidebarVisible(true);
@@ -275,6 +272,11 @@ export default function Sidebar({ currentUser, isAdmin }) {
           {isAdmin && (
             <button onClick={() => router.push('/rateLimitSettings')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'rateLimitSettings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
               <ShieldHalf size={18} /> <span>Rate Limiting</span>
+            </button>
+          )}
+          {isAdmin && (
+            <button onClick={() => router.push('/googleDrive')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'googleDrive' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <HardDrive size={18} /> <span>Google Drive</span>
             </button>
           )}
         </nav>

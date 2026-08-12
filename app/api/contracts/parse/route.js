@@ -39,7 +39,7 @@ export const POST = withErrorHandling(async (request) => {
     throw new ApiError(500, err.message || "AI contract parsing failed");
   }
 
-  const saved = await saveUploadedFile(file, { prefix: "contract" });
+  const saved = await saveUploadedFile(file, { prefix: "contract", folder: "contract" });
 
   return NextResponse.json({ extracted, pdfFilename: saved.filename });
 });

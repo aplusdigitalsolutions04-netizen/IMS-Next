@@ -1,10 +1,9 @@
-import fs from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeWarranty } from "@/lib/warrantyAuth";
-import { uploadDir } from "@/lib/upload";
+import { readUploadedFileBuffer } from "@/lib/upload";
 import { DEFAULT_CERT_HTML, renderTemplate } from "@/lib/warrantyTemplate";
 import { withErrorHandling } from "@/lib/apiResponse";
 
@@ -52,11 +51,10 @@ export const GET = withErrorHandling(async (request, { params }) => {
   const [tplRows] = await mysqlPool.query("SELECT * FROM warranty_template WHERE companyGuid=? LIMIT 1", [user.companyId]);
   const template = tplRows[0] || {};
 
-  const loadImageAsDataUrl = (relativePath, label) => {
+  const loadImageAsDataUrl = async (relativePath, label) => {
     try {
-      const imgPath = path.join(uploadDir, relativePath);
-      if (!fs.existsSync(imgPath)) return null;
-      const imgBuf = fs.readFileSync(imgPath);
+      const imgBuf = await readUploadedFileBuffer(relativePath);
+      if (!imgBuf) return null;
       const ext = path.extname(relativePath).toLowerCase().slice(1);
       const mime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "png" ? "image/png" : `image/${ext}`;
       return `data:${mime};base64,${imgBuf.toString("base64")}`;
@@ -66,8 +64,8 @@ export const GET = withErrorHandling(async (request, { params }) => {
     }
   };
 
-  const headerImgUrl = template.headerImagePath ? loadImageAsDataUrl(template.headerImagePath, "header") : null;
-  template.signatureImageUrl = template.signatureImagePath ? loadImageAsDataUrl(template.signatureImagePath, "signature/stamp") : null;
+  const headerImgUrl = template.headerImagePath ? await loadImageAsDataUrl(template.headerImagePath, "header") : null;
+  template.signatureImageUrl = template.signatureImagePath ? await loadImageAsDataUrl(template.signatureImagePath, "signature/stamp") : null;
 
   const [existing] = await mysqlPool.query(
     "SELECT guid, htmlContent, status FROM wc_certs WHERE orderGuid=? AND companyGuid=? ORDER BY createdAt DESC LIMIT 1",

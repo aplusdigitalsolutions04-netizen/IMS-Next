@@ -1,9 +1,8 @@
-import fs from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeOrdersRequest, requireAuth, ApiError } from "@/lib/auth";
-import { uploadDir } from "@/lib/upload";
+import { deleteUploadedFile } from "@/lib/upload";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const DELETE = withErrorHandling(async (request) => {
@@ -23,12 +22,7 @@ export const DELETE = withErrorHandling(async (request) => {
   const [result] = await mysqlPool.query("DELETE FROM orderdocuments WHERE filename=?", [safeFilename]);
   if (!result.affectedRows) throw new ApiError(404, "Document not found");
 
-  const filePath = path.join(uploadDir, safeFilename);
-  try {
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } catch (fsErr) {
-    console.error("[orders] delete doc file:", fsErr.message);
-  }
+  await deleteUploadedFile(safeFilename);
 
   return NextResponse.json({ message: "Document deleted" });
 });

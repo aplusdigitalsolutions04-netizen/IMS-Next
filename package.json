@@ -16,6 +16,7 @@
     "docx-preview": "^0.3.7",
     "docxtemplater": "^3.69.0",
     "dotenv": "^17.4.2",
+    "googleapis": "^174.0.1",
     "imapflow": "^1.6.5",
     "jsonwebtoken": "^9.0.3",
     "jszip": "^3.10.1",

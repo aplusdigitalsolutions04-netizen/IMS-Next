@@ -1,4 +1,3 @@
-import fs from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
 import PizZip from "pizzip";
@@ -8,7 +7,7 @@ import mammoth from "mammoth";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeWarranty } from "@/lib/warrantyAuth";
-import { uploadDir } from "@/lib/upload";
+import { readUploadedFileBuffer } from "@/lib/upload";
 import { parseThemeColors, resolveThemeColorsInXml } from "@/lib/warrantyDocx";
 import { withErrorHandling } from "@/lib/apiResponse";
 
@@ -129,9 +128,8 @@ export const GET = withErrorHandling(async (request, { params }) => {
 
   if (tplRows[0].headerImagePath) {
     try {
-      const imgPath = path.join(uploadDir, tplRows[0].headerImagePath);
-      if (fs.existsSync(imgPath)) {
-        const imgBuf = fs.readFileSync(imgPath);
+      const imgBuf = await readUploadedFileBuffer(tplRows[0].headerImagePath);
+      if (imgBuf) {
         const ext = path.extname(tplRows[0].headerImagePath).toLowerCase().slice(1);
         const mime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "png" ? "image/png" : `image/${ext}`;
         const imgSrc = `data:${mime};base64,${imgBuf.toString("base64")}`;

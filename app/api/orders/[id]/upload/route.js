@@ -20,7 +20,8 @@ export const POST = withErrorHandling(async (request, { params }) => {
     throw new ApiError(403, "You cannot upload this document type.");
   }
 
-  const saved = await saveUploadedFile(file);
+  const DOC_TYPE_FOLDERS = { gemContract: "contract", pod: "pod", ewayBill: "ewayBill", invoice: "invoice" };
+  const saved = await saveUploadedFile(file, { folder: DOC_TYPE_FOLDERS[docType] });
   const filename = saved.filename;
 
   if (id !== "0") {

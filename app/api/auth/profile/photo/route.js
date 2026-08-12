@@ -1,10 +1,8 @@
-import fs from "fs";
-import path from "path";
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, invalidateUserCache, ApiError } from "@/lib/auth";
 import { sanitizeUser } from "@/lib/helpers";
-import { uploadDir, saveUploadedFile } from "@/lib/upload";
+import { saveUploadedFile, deleteUploadedFile } from "@/lib/upload";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
@@ -33,12 +31,10 @@ export const POST = withErrorHandling(async (request) => {
   const [existing] = await mysqlPool.query("SELECT profilePhoto FROM users WHERE userid=?", [user.id]);
   const oldPhoto = existing[0]?.profilePhoto;
 
-  const saved = await saveUploadedFile(file, { prefix: `profile-${user.id}` });
+  const saved = await saveUploadedFile(file, { prefix: `profile-${user.id}`, folder: "profilePhoto" });
   await mysqlPool.query("UPDATE users SET profilePhoto=? WHERE userid=?", [saved.filename, user.id]);
 
-  if (oldPhoto) {
-    fs.promises.unlink(path.join(uploadDir, oldPhoto)).catch(() => {});
-  }
+  if (oldPhoto) deleteUploadedFile(oldPhoto);
 
   invalidateUserCache(user.id);
   const updated = await fetchSanitizedUser(user.id);
@@ -54,7 +50,7 @@ export const DELETE = withErrorHandling(async (request) => {
   if (!oldPhoto) return NextResponse.json({ message: "No profile photo to remove." });
 
   await mysqlPool.query("UPDATE users SET profilePhoto=NULL WHERE userid=?", [user.id]);
-  fs.promises.unlink(path.join(uploadDir, oldPhoto)).catch(() => {});
+  deleteUploadedFile(oldPhoto);
 
   invalidateUserCache(user.id);
   const updated = await fetchSanitizedUser(user.id);

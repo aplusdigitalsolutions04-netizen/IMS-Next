@@ -76,3 +76,67 @@ ALTER TABLE `warranty_template`
 -- skip this statement.
 ALTER TABLE `payments`
   ADD CONSTRAINT `uq_payments_dispatch_company` UNIQUE (`dispatchGuid`, `companyGuid`);
+
+-- ── 6. drive_files (Google Drive-backed uploads) ────────────────────────────
+-- Maps the same `filename` string that's always been stored in
+-- orders/order_items/order_logistics/orderdocuments/etc. to the Google Drive
+-- file it now actually lives in. app/uploads/[filename] checks disk first
+-- (old uploads stay put there), then falls back to this table + Drive.
+CREATE TABLE IF NOT EXISTS `drive_files` (
+  `filename` varchar(255) NOT NULL,
+  `driveFileId` varchar(100) NOT NULL,
+  `mimetype` varchar(100) DEFAULT NULL,
+  `size` int DEFAULT NULL,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`filename`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── 7. Category-defined item specifications (replaces hardcoded Monitor/PC/
+-- Printer spec fields on the Item Variant form) ─────────────────────────────
+-- `dropdown_master` already existed (used only for the generic COMPANY
+-- dropdown). It's extended here so a row can also represent a
+-- category-scoped specification: `categoryId` + `companyGuid` scope it to one
+-- category, `fieldType` says whether the Item Variant form should render a
+-- <select> (options live in `dropdown_option`, unchanged) or a free-text
+-- <textarea> (no options rows). Existing COMPANY-dropdown rows are untouched
+-- (categoryId/companyGuid stay NULL for them).
+-- NOTE: no IF NOT EXISTS here — combining it with AFTER/MODIFY in one ALTER
+-- errors even on MySQL 8.0.45 (tested). Run once; a re-run errors with
+-- "Duplicate column name" — that means it's already applied, skip it.
+ALTER TABLE `dropdown_master`
+  ADD COLUMN `companyGuid` char(36) NULL AFTER `id`,
+  ADD COLUMN `categoryId` char(36) NULL AFTER `dropdown_code`,
+  ADD COLUMN `fieldType` enum('DROPDOWN','TEXTAREA') NOT NULL DEFAULT 'DROPDOWN' AFTER `dropdown_name`,
+  ADD COLUMN `displayOrder` int NOT NULL DEFAULT '0' AFTER `fieldType`,
+  MODIFY COLUMN `dropdown_code` varchar(100) NULL;
+
+-- No IF NOT EXISTS for index add either — if this errors with "Duplicate key
+-- name 'idx_dropdown_master_category'", it's already applied, skip it.
+ALTER TABLE `dropdown_master`
+  ADD INDEX `idx_dropdown_master_category` (`categoryId`);
+
+-- Per item-variant value for a category specification. `specificationId`
+-- points at a `dropdown_master` row (the spec definition); `value` holds
+-- either the free-typed TEXTAREA text or the chosen DROPDOWN option_value.
+CREATE TABLE IF NOT EXISTS `inventoryitemvariantspecvalue` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `companyGuid` char(36) NOT NULL,
+  `itemVariantId` char(36) NOT NULL,
+  `specificationId` int NOT NULL,
+  `value` text,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_variant_spec` (`itemVariantId`, `specificationId`),
+  KEY `idx_specvalue_variant` (`itemVariantId`),
+  KEY `idx_specvalue_spec` (`specificationId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- SaveOrUpdateCategorySpecification originally forgot to set `guid` and
+-- `dropdown_code` (both pre-existing UNIQUE columns on dropdown_master) when
+-- inserting a new category specification, leaving them NULL. Fixed in the
+-- route, but backfill any rows already created before that fix shipped.
+-- UUID() is evaluated per row, so each backfilled row gets a distinct value.
+-- Safe to re-run.
+UPDATE `dropdown_master` SET `guid` = UUID() WHERE `guid` IS NULL;
+UPDATE `dropdown_master` SET `dropdown_code` = CONCAT('CATSPEC_', UUID()) WHERE `dropdown_code` IS NULL AND `categoryId` IS NOT NULL;

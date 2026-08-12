@@ -1,4 +1,3 @@
-import fs from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
 import AdmZip from "adm-zip";
@@ -6,7 +5,7 @@ import mammoth from "mammoth";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeWarranty } from "@/lib/warrantyAuth";
-import { uploadDir, saveUploadedFile } from "@/lib/upload";
+import { saveUploadedFile, saveBufferToDrive } from "@/lib/upload";
 import { logUserActivity } from "@/lib/helpers";
 import { cleanHeaderHtml } from "@/lib/warrantyDocx";
 import { withErrorHandling } from "@/lib/apiResponse";
@@ -27,8 +26,7 @@ export const POST = withErrorHandling(async (request) => {
   const file = formData.get("file");
   if (!file || typeof file.arrayBuffer !== "function") throw new ApiError(400, "No file uploaded");
 
-  const saved = await saveUploadedFile(file, { prefix: `warranty-header-${Date.now()}` });
-  const filePath = path.join(uploadDir, saved.filename);
+  const buffer = Buffer.from(await file.arrayBuffer());
   const ext = path.extname(file.name).toLowerCase();
   const backendBase = process.env.BACKEND_URI || `http://localhost:${process.env.PORT || 3011}`;
   const ip = request.headers.get("x-forwarded-for") || null;
@@ -36,11 +34,11 @@ export const POST = withErrorHandling(async (request) => {
   if (ext === ".docx") {
     let headerHtml = "";
     try {
-      const zip = new AdmZip(filePath);
+      const zip = new AdmZip(buffer);
       const entries = zip.getEntries();
       const headerEntries = entries.filter((e) => /^word\/header\d+\.xml$/.test(e.entryName));
 
-      let mammothInput = { path: filePath };
+      let mammothInput = { buffer };
 
       if (headerEntries.length > 0) {
         headerEntries.sort((a, b) => a.entryName.localeCompare(b.entryName));
@@ -97,45 +95,39 @@ export const POST = withErrorHandling(async (request) => {
       }
     } catch (mammothErr) {
       console.error("[warranty] mammoth error:", mammothErr);
-      fs.unlink(filePath, () => {});
       throw new ApiError(500, "Failed to convert Word file: " + mammothErr.message);
     }
 
     if (!headerHtml) {
-      fs.unlink(filePath, () => {});
       throw new ApiError(400, "Word file produced empty content. Please ensure your header content is designed within the main body or the header section of the document.");
     }
 
     await mysqlPool.query("UPDATE warranty_template SET headerHtml=?, headerImagePath=NULL WHERE companyGuid=?", [headerHtml, user.companyId]);
-    fs.unlink(filePath, () => {});
     await logUserActivity(mysqlPool, user, "Upload Warranty Header (DOCX)", [], ip);
     return NextResponse.json({ message: "Word header uploaded", type: "docx", headerHtml });
   } else if (ext === ".html" || ext === ".htm") {
-    let headerHtml = fs.readFileSync(filePath, "utf8");
+    let headerHtml = buffer.toString("utf8");
     headerHtml = cleanHeaderHtml(headerHtml);
     await mysqlPool.query("UPDATE warranty_template SET headerHtml=?, headerImagePath=NULL WHERE companyGuid=?", [headerHtml || "", user.companyId]);
-    fs.unlink(filePath, () => {});
     await logUserActivity(mysqlPool, user, "Upload Warranty Header (HTML)", [], ip);
     return NextResponse.json({ message: "HTML header uploaded", type: "html", headerHtml });
   } else if (ext === ".pdf") {
     const pngFilename = `warranty-header-${Date.now()}.png`;
-    const outputPath = path.resolve(uploadDir, pngFilename);
 
     try {
       const { renderPdfFirstPageToPng } = await import("@/lib/warrantyPdfRender");
-      await renderPdfFirstPageToPng(filePath, outputPath);
-
-      fs.unlink(filePath, () => {});
+      const pngBuffer = await renderPdfFirstPageToPng(buffer);
+      await saveBufferToDrive(pngBuffer, pngFilename, "image/png", "warrantyTemplate");
 
       await mysqlPool.query("UPDATE warranty_template SET headerImagePath=?, headerHtml=NULL WHERE companyGuid=?", [pngFilename, user.companyId]);
       await logUserActivity(mysqlPool, user, "Upload Warranty Header (PDF)", [], ip);
       return NextResponse.json({ message: "PDF header uploaded and converted", type: "image", filePath: pngFilename, previewUrl: `${backendBase}/uploads/${pngFilename}` });
     } catch (pdfErr) {
       console.error("[warranty] PDF conversion error:", pdfErr);
-      fs.unlink(filePath, () => {});
       throw new ApiError(500, "Failed to convert PDF file: " + pdfErr.message);
     }
   } else {
+    const saved = await saveUploadedFile(file, { prefix: `warranty-header-${Date.now()}`, folder: "warrantyTemplate" });
     const filename = saved.filename;
     await mysqlPool.query("UPDATE warranty_template SET headerImagePath=?, headerHtml=NULL WHERE companyGuid=?", [filename, user.companyId]);
     await logUserActivity(mysqlPool, user, "Upload Warranty Header (Image)", [], ip);

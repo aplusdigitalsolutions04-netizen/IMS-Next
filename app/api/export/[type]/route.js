@@ -19,14 +19,18 @@ export const GET = withErrorHandling(async (request, { params }) => {
     case "models":
       query = `
         SELECT itv.variantName as name, b.brandName as company, c.categoryName as category,
-          itv.colorType, itv.printerType, i.itemName as description, itv.sellingPrice as mrp, 0 as stockQuantity, itv.packagingCost,
+          i.itemName as description, itv.sellingPrice as mrp, 0 as stockQuantity,
+          (SELECT GROUP_CONCAT(CONCAT(dm.dropdown_name, ': ', sv.value) SEPARATOR '; ')
+           FROM inventoryitemvariantspecvalue sv
+           JOIN dropdown_master dm ON sv.specificationId = dm.id
+           WHERE sv.itemVariantId = itv.itemVariantId) AS specifications,
           COUNT(s.guid) as totalSerials, SUM(CASE WHEN s.serialStatus='Available' THEN 1 ELSE 0 END) as availableSerials
         FROM inventoryitemvariant itv
         LEFT JOIN inventoryitemmaster i ON itv.itemId=i.itemId
         LEFT JOIN inventorybrandmaster b ON i.brandId=b.brandId
         LEFT JOIN inventorycategorymaster c ON i.categoryId=c.categoryId
         LEFT JOIN inventorystockinserial s ON s.itemVariantId=itv.itemVariantId AND s.isDeleted=0
-        WHERE itv.isDeleted=0 GROUP BY itv.itemVariantId, itv.variantName, b.brandName, c.categoryName, itv.colorType, itv.printerType, i.itemName, itv.sellingPrice, itv.packagingCost
+        WHERE itv.isDeleted=0 GROUP BY itv.itemVariantId, itv.variantName, b.brandName, c.categoryName, i.itemName, itv.sellingPrice
         ORDER BY itv.variantName
       `;
       filename = "models";

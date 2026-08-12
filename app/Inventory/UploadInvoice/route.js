@@ -13,6 +13,6 @@ export const POST = withErrorHandling(async (request) => {
   const file = formData.get("file");
   if (!file || typeof file.arrayBuffer !== "function") throw new ApiError(400, "No file uploaded");
 
-  const saved = await saveUploadedFile(file);
+  const saved = await saveUploadedFile(file, { folder: "stockInInvoice" });
   return NextResponse.json({ message: "Success", filePath: saved.filename });
 });

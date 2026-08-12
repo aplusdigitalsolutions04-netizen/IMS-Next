@@ -1,8 +1,7 @@
-import fs from "fs";
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
-import { uploadDir, saveUploadedFile } from "@/lib/upload";
+import { saveUploadedFile, deleteUploadedFile } from "@/lib/upload";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp"];
@@ -21,11 +20,11 @@ export const POST = withErrorHandling(async (request, { params }) => {
   if (!ALLOWED_TYPES.includes(file.type)) throw new ApiError(400, "Logo must be a PNG, JPG, or WEBP image.");
   if (file.size > 2 * 1024 * 1024) throw new ApiError(413, "Logo image too large (max 2 MB)");
 
-  const saved = await saveUploadedFile(file, { prefix: `company-logo-${id}` });
+  const saved = await saveUploadedFile(file, { prefix: `company-logo-${id}`, folder: "companyLogo" });
   await mysqlPool.query("UPDATE companies SET logoFilename = ? WHERE guid = ?", [saved.filename, id]);
 
   const oldFilename = existing[0].logoFilename;
-  if (oldFilename) fs.unlink(`${uploadDir}/${oldFilename}`, () => {});
+  if (oldFilename) deleteUploadedFile(oldFilename);
 
   return NextResponse.json({ message: "Logo updated successfully.", logoFilename: saved.filename });
 });
@@ -40,7 +39,7 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
 
   await mysqlPool.query("UPDATE companies SET logoFilename = NULL WHERE guid = ?", [id]);
   const oldFilename = existing[0].logoFilename;
-  if (oldFilename) fs.unlink(`${uploadDir}/${oldFilename}`, () => {});
+  if (oldFilename) deleteUploadedFile(oldFilename);
 
   return NextResponse.json({ message: "Logo removed." });
 });

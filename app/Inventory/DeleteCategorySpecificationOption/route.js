@@ -11,7 +11,13 @@ export const POST = withErrorHandling(async (request) => {
   requireAuth(user);
   requireCompany(user);
 
-  const { colorTypeId } = body;
-  await mysqlPool.execute("UPDATE inventorycolortypemaster SET isDeleted = 1 WHERE colorTypeId = ? AND companyGuid = ?", [colorTypeId, user.companyId]);
+  const { optionId } = body;
+  await mysqlPool.execute(
+    `UPDATE dropdown_option o
+     JOIN dropdown_master m ON o.dropdown_id = m.id
+     SET o.is_active = 0
+     WHERE o.id = ? AND m.companyGuid = ?`,
+    [optionId, user.companyId]
+  );
   return NextResponse.json({ message: "Success" });
 });

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeWarranty } from "@/lib/warrantyAuth";
-import { uploadDir, saveUploadedFile } from "@/lib/upload";
+import { saveUploadedFile } from "@/lib/upload";
 import { logUserActivity } from "@/lib/helpers";
 import { withErrorHandling } from "@/lib/apiResponse";
 
@@ -28,7 +28,7 @@ export const POST = withErrorHandling(async (request) => {
     throw new ApiError(400, "Only PNG, JPG, or WEBP images are allowed for the signature/stamp.");
   }
 
-  const saved = await saveUploadedFile(file, { prefix: `warranty-signature-${Date.now()}` });
+  const saved = await saveUploadedFile(file, { prefix: `warranty-signature-${Date.now()}`, folder: "warrantyTemplate" });
   await mysqlPool.query("UPDATE warranty_template SET signatureImagePath=? WHERE companyGuid=?", [saved.filename, user.companyId]);
 
   const backendBase = process.env.BACKEND_URI || `http://localhost:${process.env.PORT || 3011}`;
