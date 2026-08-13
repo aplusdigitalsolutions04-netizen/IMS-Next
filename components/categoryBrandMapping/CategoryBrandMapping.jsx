@@ -20,11 +20,15 @@ export default function CategoryBrandMapping() {
   const fetchDependencies = async () => {
     try {
       const [catRes, brandRes] = await Promise.all([
-        legacyApi.get("/Inventory/GetCategoryList"),
-        legacyApi.get("/Inventory/GetBrandList"),
+        legacyApi.get("/Inventory/GetCategoryDropdown"),
+        legacyApi.get("/Inventory/GetBrandDropdown"),
       ]);
-      setCategories(catRes.data?.data || []);
-      setBrands(brandRes.data?.data || []);
+      setCategories(
+        (catRes.data?.data || []).map((c) => ({ categoryId: c.Value, categoryName: c.Text }))
+      );
+      setBrands(
+        (brandRes.data?.data || []).map((b) => ({ brandId: b.Value, brandName: b.Text }))
+      );
     } catch (error) {
       console.error("Error fetching dependencies", error);
     }

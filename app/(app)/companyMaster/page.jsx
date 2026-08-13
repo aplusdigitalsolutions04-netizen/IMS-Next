@@ -63,7 +63,7 @@ export default function CompanyMasterPage() {
   const [search, setSearch] = useState("");
   // null = modal closed; { guid: null } = creating; { guid: "..." } = editing
   const [modal, setModal] = useState(null);
-  const [form, setForm] = useState({ name: "", allowedPlatforms: [], isActive: true });
+  const [form, setForm] = useState({ name: "", gstNumber: "", allowedPlatforms: [], isActive: true });
   const [uploadingLogoGuid, setUploadingLogoGuid] = useState(null);
   const nameInputRef = useRef(null);
   const logoInputRef = useRef(null);
@@ -98,7 +98,7 @@ export default function CompanyMasterPage() {
         // login returns: only active companies, {guid, name, allowedPlatforms}.
         const active = res.data
           .filter((c) => c.isActive === 1 || c.isActive === true)
-          .map((c) => ({ guid: c.guid, name: c.name, allowedPlatforms: c.allowedPlatforms, logoFilename: c.logoFilename }));
+          .map((c) => ({ guid: c.guid, name: c.name, gstNumber: c.gstNumber, allowedPlatforms: c.allowedPlatforms, logoFilename: c.logoFilename }));
         setAvailableCompanies(active);
         syncActiveCompany(active);
         window.sessionStorage.setItem("pt_companies", JSON.stringify(active));
@@ -123,13 +123,14 @@ export default function CompanyMasterPage() {
   }, [companies, search]);
 
   const openCreate = () => {
-    setForm({ name: "", allowedPlatforms: [], isActive: true });
+    setForm({ name: "", gstNumber: "", allowedPlatforms: [], isActive: true });
     setModal({ guid: null });
   };
 
   const openEdit = (c) => {
     setForm({
       name: c.name,
+      gstNumber: c.gstNumber || "",
       allowedPlatforms: Array.isArray(c.allowedPlatforms) ? c.allowedPlatforms : [],
       isActive: c.isActive === 1 || c.isActive === true,
     });
@@ -380,6 +381,9 @@ export default function CompanyMasterPage() {
                       <h3 className="font-extrabold text-slate-900 text-base leading-tight truncate max-w-full" title={c.name}>
                         {c.name}
                       </h3>
+                      {c.gstNumber && (
+                        <p className="text-[11px] font-bold text-slate-400 mt-1 tracking-wide">GST: {c.gstNumber}</p>
+                      )}
                     </div>
 
                     <div className="flex-1" />
@@ -460,6 +464,19 @@ export default function CompanyMasterPage() {
                     placeholder="e.g. A Plus Digital Solutions"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block">GST Number</label>
+                <p className="text-xs text-slate-400 mb-1.5">Used to auto-check that an uploaded contract's seller GST matches this company.</p>
+                <input
+                  type="text"
+                  value={form.gstNumber}
+                  onChange={(e) => setForm({ ...form, gstNumber: e.target.value.toUpperCase() })}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  placeholder="e.g. 27ABCDE1234F1Z5"
+                />
               </div>
 
               <div>

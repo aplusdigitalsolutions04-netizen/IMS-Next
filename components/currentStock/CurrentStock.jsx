@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { PackageSearch, Search, Layers, TrendingUp, AlertTriangle, FileDown, Loader2, Hash, X, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { inventoryService } from '@/lib/services/inventoryService';
 import Swal from 'sweetalert2';
 
 const CurrentStock = () => {
@@ -87,10 +86,16 @@ const CurrentStock = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, pageSize, activeBrandId, searchTerm]);
 
+  // Uses the Brand *dropdown* endpoint, not GetBrandList — this is just a
+  // filter for Current Stock, not the Brand Master screen, so it shouldn't
+  // require "Brand Master" permission the way GetBrandList does.
   const fetchBrands = async () => {
     try {
-      const data = await inventoryService.getBrands();
-      setBrands(data || []);
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || ""}/Inventory/GetBrandDropdown`, {
+        headers: { Authorization: `Bearer ${sessionStorage.getItem("pt_auth_token")}` },
+      });
+      const rows = response.data?.data || [];
+      setBrands(rows.map((r) => ({ brandId: r.Value, brandName: r.Text })));
     } catch (error) {
       console.error("Error fetching brands:", error);
     }
@@ -131,7 +136,7 @@ const CurrentStock = () => {
       "Variant": item.variantName,
       "SKU": item.sku || 'N/A',
       "Available Qty": item.availablePCS || 0,
-      "Purchase Rate": item.avgPurchaseRate,
+      "Landing Price": item.avgPurchaseRate,
       "Total Value": item.totalValue
     }));
 
@@ -262,7 +267,7 @@ const CurrentStock = () => {
               <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider">Variant</th>
               <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider">SKU</th>
               <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider text-right">Available Qty</th>
-              <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider text-right">Purchase Rate</th>
+              <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider text-right">Landing Price</th>
               <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider text-right">Total Value</th>
             </tr>
           </thead>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, authorizeMasterWrite, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 const COLOR_THEMES = [
@@ -23,7 +23,7 @@ export const GET = withErrorHandling(async (request) => {
 
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requirePermission(user, "platformMaster", "Only Admin can manage selling platforms.");
+  authorizeMasterWrite(user, "platformMaster", { isCreate: true, denyMessage: "You do not have permission to add selling platforms." });
 
   const { name, colorTheme: requestedColor } = await parseJsonBody(request);
   const trimmed = String(name || "").trim();

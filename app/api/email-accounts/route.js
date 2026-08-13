@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, authorizeMasterWrite, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 async function validatePurpose(purpose) {
@@ -26,7 +26,7 @@ export const GET = withErrorHandling(async (request) => {
 
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requirePermission(user, "emailAccounts", "Only Admin can manage email accounts.");
+  authorizeMasterWrite(user, "emailAccounts", { isCreate: true, denyMessage: "You do not have permission to add email accounts." });
 
   const body = await parseJsonBody(request);
   const {

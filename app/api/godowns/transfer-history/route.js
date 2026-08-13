@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest } from "@/lib/auth";
-import { authorizeGodowns } from "@/lib/godownsAuth";
+import { authorizeGodownTransfer } from "@/lib/godownsAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  authorizeGodowns(user, "GET");
+  authorizeGodownTransfer(user, "GET");
 
   const { searchParams } = new URL(request.url);
   const page = parseInt(searchParams.get("page")) || 1;

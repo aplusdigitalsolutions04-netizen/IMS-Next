@@ -140,3 +140,38 @@ CREATE TABLE IF NOT EXISTS `inventoryitemvariantspecvalue` (
 -- Safe to re-run.
 UPDATE `dropdown_master` SET `guid` = UUID() WHERE `guid` IS NULL;
 UPDATE `dropdown_master` SET `dropdown_code` = CONCAT('CATSPEC_', UUID()) WHERE `dropdown_code` IS NULL AND `categoryId` IS NOT NULL;
+
+-- ── N. Contract upload: seller company/GST verification + delivery instructions ──
+-- MySQL doesn't support `ADD COLUMN IF NOT EXISTS`, so guard with a
+-- prepared-statement no-op when the column is already there (safe to re-run).
+SET @stmt := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'companies' AND column_name = 'gstNumber') = 0,
+  'ALTER TABLE companies ADD COLUMN gstNumber varchar(20) DEFAULT NULL AFTER name',
+  'SELECT 1'
+));
+PREPARE stmt FROM @stmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @stmt := (SELECT IF(
+  (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'contracts' AND column_name = 'deliveryInstructions') = 0,
+  'ALTER TABLE contracts ADD COLUMN deliveryInstructions text DEFAULT NULL',
+  'SELECT 1'
+));
+PREPARE stmt FROM @stmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- ── N+1. Manage Roles: new permissions (Godown Transfer / Manage Roles /
+-- User Activity) + real Add/Edit/Delete split for Roles, Company Master,
+-- Selling Platforms, User Management, Email Accounts, Email Templates ──────
+-- No schema change (roles.permissions / roles.editPermissions are already
+-- JSON columns) — after deploying, run this against production so existing
+-- roles keep the access they already had under the old, coarser checks:
+--   node scripts/backfill_role_permissions.js
+
+-- ── N+2. inventoryitemvariant.purchasePrice was never written by
+-- FinalizeStockIn (fixed in app/Inventory/FinalizeStockIn/route.js), leaving
+-- it stuck at 0 while landingPrice/lastPurchaseRate moved normally. No
+-- schema change — after deploying, backfill existing variants:
+--   node scripts/backfill_purchase_price.js

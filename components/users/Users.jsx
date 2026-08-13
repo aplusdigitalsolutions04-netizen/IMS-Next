@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Shield, Users as UsersIcon, UserPlus, Edit3, Trash2, Loader2,
   Mail, Phone, Check, Eye, Search, Settings2, Key,
-  CheckCircle2, X, ShieldCheck, Building2, Globe,
+  CheckCircle2, X, ShieldCheck, Building2, Globe, LayoutGrid, Table2,
 } from "lucide-react";
 import { printerService } from "@/lib/services/api";
 import {
@@ -23,6 +23,7 @@ export default function Users({ currentUser }) {
   const [roleFilter, setRoleFilter] = useState("All");
   const [viewingUser, setViewingUser] = useState(null);
   const [companies, setCompanies] = useState([]);
+  const [viewMode, setViewMode] = useState("card"); // "card" | "table"
 
   const loadUsers = async () => {
     setLoading(true);
@@ -171,6 +172,26 @@ export default function Users({ currentUser }) {
             <UsersIcon size={15} />
             <span>{filteredUsers.length} of {users.length} members</span>
           </div>
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 shrink-0">
+            <button
+              onClick={() => setViewMode("card")}
+              title="Card view"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === "card" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <LayoutGrid size={14} /> Cards
+            </button>
+            <button
+              onClick={() => setViewMode("table")}
+              title="Table view"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === "table" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Table2 size={14} /> Table
+            </button>
+          </div>
         </div>
 
         {/* User Grid */}
@@ -190,6 +211,126 @@ export default function Users({ currentUser }) {
             <p className="text-sm text-slate-500 mt-1">
               {search || roleFilter !== "All" ? "Try clearing the search or filter." : "Click 'Add Team Member' to get started."}
             </p>
+          </div>
+        ) : viewMode === "table" ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left">
+                  <th className="px-6 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Member</th>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Role</th>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Contact</th>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Company Access</th>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Permissions</th>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUsers.map((user) => {
+                  const isSelf = String(user.id) === String(currentUser?.id);
+                  const modCount = user.role === 'Admin' ? PERMISSIONS_LIST.length : (user.permissions?.length || 0);
+                  const editCount = user.role === 'Admin' ? EDIT_PERMISSIONS.length : editPermCount(user);
+
+                  return (
+                    <tr key={user.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors group">
+                      <td className="px-6 py-3.5">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Avatar name={user.fullName || user.username} role={user.role} size="sm" />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-bold text-slate-900 truncate">{user.fullName || user.username}</p>
+                              {isSelf && (
+                                <span className="px-1.5 py-0.5 rounded-full bg-slate-900 text-white text-[9px] font-black uppercase tracking-wider shrink-0">You</span>
+                              )}
+                            </div>
+                            {user.fullName && <p className="text-xs text-slate-400 truncate">@{user.username}</p>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <RoleBadge
+                          role={user.role}
+                          label={user.role === "User" && !user.roleId ? "Pending Approval" : user.roleLabel}
+                        />
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <div className="space-y-1">
+                          {user.email && (
+                            <div className="flex items-center gap-1.5 text-xs text-slate-500 min-w-0">
+                              <Mail size={11} className="shrink-0 text-slate-400" />
+                              <span className="truncate max-w-[180px]">{user.email}</span>
+                            </div>
+                          )}
+                          {user.phone && (
+                            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                              <Phone size={11} className="shrink-0 text-slate-400" />
+                              <span>{user.phone}</span>
+                            </div>
+                          )}
+                          {!user.email && !user.phone && <span className="text-xs text-slate-300">—</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        {user.allCompaniesAccess ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
+                            <Globe size={11} /> All Companies
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 text-slate-600 text-[11px] font-semibold border border-slate-200 max-w-[220px]"
+                            title={(user.companyIds || []).map((id) => companyNameByGuid[id] || id).join(", ")}
+                          >
+                            <Building2 size={11} className="shrink-0" />
+                            <span className="truncate">
+                              {(user.companyIds || []).length === 0
+                                ? "No company access"
+                                : (user.companyIds || []).map((id) => companyNameByGuid[id] || "…").join(", ")}
+                            </span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        {user.role === 'Admin' ? (
+                          <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-100">
+                            <Shield size={11} /> Full Access
+                          </span>
+                        ) : modCount > 0 ? (
+                          <button
+                            onClick={() => setViewingUser(user)}
+                            className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200 transition-all"
+                          >
+                            <Eye size={11} />
+                            <span>{modCount} modules</span>
+                            {editCount > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black">{editCount} edits</span>
+                            )}
+                          </button>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => router.push(`/users/edit?id=${user.id}`)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                            title="Edit user"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button
+                            disabled={isSelf || submitting || user.role === "Admin"}
+                            onClick={() => handleDelete(user)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                            title={user.role === "Admin" ? "Admin accounts cannot be deleted" : "Delete user"}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -295,25 +436,28 @@ export default function Users({ currentUser }) {
 
                     <div className="flex-1" />
 
-                    {/* Permission footer */}
-                    <div className="pt-3 mt-3 border-t border-slate-100">
-                      {user.role === 'Admin' ? (
-                        <div className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-100">
-                          <Shield size={12} /> Full Access
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setViewingUser(user)}
-                          className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200 transition-all"
-                        >
-                          <Eye size={12} />
-                          <span>{modCount} modules</span>
-                          {editCount > 0 && (
-                            <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black">{editCount} edits</span>
-                          )}
-                        </button>
-                      )}
-                    </div>
+                    {/* Permission footer — omitted entirely when there's
+                        nothing to show (role has zero permissions yet) */}
+                    {(user.role === 'Admin' || modCount > 0) && (
+                      <div className="pt-3 mt-3 border-t border-slate-100">
+                        {user.role === 'Admin' ? (
+                          <div className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-100">
+                            <Shield size={12} /> Full Access
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setViewingUser(user)}
+                            className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200 transition-all"
+                          >
+                            <Eye size={12} />
+                            <span>{modCount} modules</span>
+                            {editCount > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black">{editCount} edits</span>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                   </div>
                 </div>

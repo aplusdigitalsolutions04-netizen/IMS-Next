@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, ApiError, requireCompany } from "@/lib/auth";
-import { authorizeGodowns } from "@/lib/godownsAuth";
+import { authorizeGodownTransfer } from "@/lib/godownsAuth";
 import { logUserActivity } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
-  authorizeGodowns(user, "POST");
+  authorizeGodownTransfer(user, "POST");
 
   const { sourceGodownId, destinationGodownId, serialIds, itemVariantId, quantity, modelName } = await parseJsonBody(request);
   if (!sourceGodownId || !destinationGodownId) throw new ApiError(400, "Missing required fields");

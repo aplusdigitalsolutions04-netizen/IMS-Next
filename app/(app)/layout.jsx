@@ -163,7 +163,7 @@ export default function AppLayout({ children }) {
   const isAdmin = currentUser.role === "Admin";
 
   return (
-    <AppDataProvider>
+    <AppDataProvider currentUser={currentUser}>
       <CompanyProvider>
         <AppLayoutInner
           currentUser={currentUser}

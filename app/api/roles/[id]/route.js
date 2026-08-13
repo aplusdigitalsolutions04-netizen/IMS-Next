@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requirePermission, invalidateUserCache, ApiError } from "@/lib/auth";
+import { authenticateRequest, authorizeMasterWrite, authorizeMasterDelete, invalidateUserCache, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requirePermission(user, "users", "User management access required.");
+  authorizeMasterWrite(user, "roles", { isCreate: false, denyMessage: "You do not have permission to edit roles." });
   const { id } = await params;
 
   const { name, permissions, editPermissions } = await parseJsonBody(request);
@@ -50,7 +50,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 
 export const DELETE = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requirePermission(user, "users", "User management access required.");
+  authorizeMasterDelete(user, "roles", "You do not have permission to delete roles.");
   const { id } = await params;
 
   const [existing] = await mysqlPool.query("SELECT guid FROM roles WHERE guid=? AND isDeleted=0", [id]);

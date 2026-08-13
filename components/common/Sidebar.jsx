@@ -55,42 +55,43 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
 
   const navItems = [
     // Contracts
-    { id: "contracts-upload", label: "Upload Contract", icon: UploadCloud, group: "contracts", path: "/contracts/upload" },
-    { id: "contracts-list", label: "Saved Contracts", icon: FileText, group: "contracts", path: "/contracts" },
-    { id: "contracts-cancelled", label: "Cancelled Contracts", icon: Ban, group: "contracts", path: "/contracts/cancelled" },
+    { id: "contracts-upload", label: "Upload Contract", icon: UploadCloud, group: "contracts", path: "/contracts/upload", permission: "contracts" },
+    { id: "contracts-list", label: "Saved Contracts", icon: FileText, group: "contracts", path: "/contracts", permission: "contracts" },
+    { id: "contracts-cancelled", label: "Cancelled Contracts", icon: Ban, group: "contracts", path: "/contracts/cancelled", permission: "contracts" },
 
     // Masters
-    { id: "categoryMaster", label: "Category Master", icon: Tags, group: "masters" },
-    { id: "brandMaster", label: "Brand Master", icon: Barcode, group: "masters" },
-    { id: "vendorMaster", label: "Vendor Master", icon: UsersIcon, group: "masters" },
-    { id: "categoryBrandMapping", label: "Cate-Brand Mapping", icon: FileText, group: "masters" },
-    { id: "unitMaster", label: "Unit Master", icon: Ruler, group: "masters" },
-    { id: "itemMaster", label: "Item Master", icon: Package, group: "masters" },
-    { id: "comboMaster", label: "Combos Master", icon: Layers, group: "masters" },
-    { id: "godownMaster", label: "Godown Master", icon: Warehouse, group: "masters" },
-    { id: "fbfFbaMaster", label: "FBF / FBA Master", icon: Layers, group: "masters" },
+    { id: "categoryMaster", label: "Category Master", icon: Tags, group: "masters", permission: "stat_category" },
+    { id: "brandMaster", label: "Brand Master", icon: Barcode, group: "masters", permission: "stat_brand" },
+    { id: "vendorMaster", label: "Vendor Master", icon: UsersIcon, group: "masters", permission: "stat_vendor" },
+    { id: "categoryBrandMapping", label: "Cate-Brand Mapping", icon: FileText, group: "masters", permission: "stat_mapping" },
+    { id: "unitMaster", label: "Unit Master", icon: Ruler, group: "masters", permission: "stat_unit" },
+    { id: "itemMaster", label: "Item Master", icon: Package, group: "masters", permission: "stat_item" },
+    { id: "comboMaster", label: "Combos Master", icon: Layers, group: "masters", permission: "stat_combo" },
+    { id: "godownMaster", label: "Godown Master", icon: Warehouse, group: "masters", permission: "godownMaster" },
+    { id: "fbfFbaMaster", label: "FBF / FBA Master", icon: Layers, group: "masters", permission: "fbfFbaMaster" },
 
     // Inventory
-    { id: "currentStock", label: "Current Stock", icon: Package, group: "inventory" },
-    { id: "stockIn", label: "Stock In", icon: Truck, group: "inventory" }, // Using ShieldAlert for ShieldCheck as fallback
-    { id: "fbfFbaManagement", label: "FBF / FBA Stock", icon: Package, group: "inventory" },
-    { id: "godownTransfer", label: "Godown Transfer", icon: ArrowRightLeft, group: "inventory" },
-   
+    { id: "currentStock", label: "Current Stock", icon: Package, group: "inventory", permission: "stat_current_stock" },
+    { id: "stockIn", label: "Stock In", icon: Truck, group: "inventory", permission: "stat_stock_in" },
+    { id: "fbfFbaManagement", label: "FBF / FBA Stock", icon: Package, group: "inventory", permission: "fbfFbaManagement" },
+    { id: "godownTransfer", label: "Godown Transfer", icon: ArrowRightLeft, group: "inventory", permission: "godownTransfer" },
 
     // Order Processing
-    { id: "orderTracking", label: "Order Processing", icon: Package, group: "orders" },
-    { id: "dispatch", label: " Dispatch", icon: Truck, group: "orders" },
-    { id: "stockOut", label: "Stock Out", icon: Receipt, group: "orders" },
+    { id: "orderTracking", label: "Order Processing", icon: Package, group: "orders", permission: "orders" },
+    { id: "dispatch", label: " Dispatch", icon: Truck, group: "orders", permission: "dispatch" },
+    { id: "stockOut", label: "Stock Out", icon: Receipt, group: "orders", permission: "stat_stock_out" },
 
     // Operations
-    { id: "returns", label: "Returns", icon: RotateCcw, group: "operations" },
-    { id: "damaged", label: "Damaged", icon: Bell, group: "operations" }, // Using Bell or AlertOctagon if imported. Wait, I imported Bell.
+    { id: "returns", label: "Returns", icon: RotateCcw, group: "operations", permission: "returns" },
+    { id: "damaged", label: "Damaged", icon: Bell, group: "operations", permission: "damage" },
 
     // Independent
-    { id: "billing", label: "Billing", icon: Receipt },
-    { id: "warranty", label: "Warranty Certs", icon: ShieldAlert },
-    { id: "installations", label: "Installations", icon: Wrench, badgeColor: "orange" }, // Badge value can be passed if needed
-  ];
+    { id: "billing", label: "Billing", icon: Receipt, permission: "billing" },
+    { id: "warranty", label: "Warranty Certs", icon: ShieldAlert, permission: "warranty" },
+    { id: "installations", label: "Installations", icon: Wrench, badgeColor: "orange", permission: "installation" },
+  ].filter((item) => hasPermission(item.permission));
+
+  const hasGroup = (group) => navItems.some((i) => i.group === group);
 
   if (!isSidebarVisible) {
     const mastersGroup = ["categoryMaster","brandMaster","vendorMaster","categoryBrandMapping","unitMaster","itemMaster","comboMaster","godownMaster","fbfFbaMaster"];
@@ -109,69 +110,87 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logoSrc} alt="Logo" className="h-8 w-auto object-contain mb-3 logo-invert" />
         <nav className="flex-1 flex flex-col items-center gap-1.5 overflow-y-auto w-full px-2 py-1">
-          <button
-            onClick={() => router.push("/")}
-            title="Dashboard"
-            className={`p-2.5 rounded-xl transition-colors ${activeTab === "dashboard" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-          >
-            <LayoutDashboard size={20} />
-          </button>
-          <button
-            onClick={() => expandTo("contracts")}
-            title="Contracts"
-            className={`p-2.5 rounded-xl transition-colors ${activeTab === "contracts" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-          >
-            <FileText size={20} />
-          </button>
-          <button
-            onClick={() => expandTo("masters")}
-            title="Masters"
-            className={`p-2.5 rounded-xl transition-colors ${mastersGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-          >
-            <Tags size={20} />
-          </button>
-          <button
-            onClick={() => expandTo("inventory")}
-            title="Inventory"
-            className={`p-2.5 rounded-xl transition-colors ${inventoryGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-          >
-            <Warehouse size={20} />
-          </button>
-          <button
-            onClick={() => expandTo("orders")}
-            title="Order Processing"
-            className={`p-2.5 rounded-xl transition-colors ${ordersGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-          >
-            <ShoppingCart size={20} />
-          </button>
-          <button
-            onClick={() => router.push("/billing")}
-            title="Billing"
-            className={`p-2.5 rounded-xl transition-colors ${activeTab === "billing" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-          >
-            <Receipt size={20} />
-          </button>
-          <button
-            onClick={() => router.push("/warranty")}
-            title="Warranty Certs"
-            className={`p-2.5 rounded-xl transition-colors ${activeTab === "warranty" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-          >
-            <ShieldAlert size={20} />
-          </button>
-          <button
-            onClick={() => router.push("/installations")}
-            title="Installations"
-            className={`p-2.5 rounded-xl transition-colors ${activeTab === "installations" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-          >
-            <Wrench size={20} />
-          </button>
-          <button
-            onClick={() => expandTo("operations")}
-            title="Returns & Damaged"
-            className={`p-2.5 rounded-xl transition-colors ${operationsGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-          >
-            <RotateCcw size={20} />
-          </button>
+          {hasPermission('dashboard') && (
+            <button
+              onClick={() => router.push("/")}
+              title="Dashboard"
+              className={`p-2.5 rounded-xl transition-colors ${activeTab === "dashboard" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <LayoutDashboard size={20} />
+            </button>
+          )}
+          {hasGroup("contracts") && (
+            <button
+              onClick={() => expandTo("contracts")}
+              title="Contracts"
+              className={`p-2.5 rounded-xl transition-colors ${activeTab === "contracts" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <FileText size={20} />
+            </button>
+          )}
+          {hasGroup("masters") && (
+            <button
+              onClick={() => expandTo("masters")}
+              title="Masters"
+              className={`p-2.5 rounded-xl transition-colors ${mastersGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <Tags size={20} />
+            </button>
+          )}
+          {hasGroup("inventory") && (
+            <button
+              onClick={() => expandTo("inventory")}
+              title="Inventory"
+              className={`p-2.5 rounded-xl transition-colors ${inventoryGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <Warehouse size={20} />
+            </button>
+          )}
+          {hasGroup("orders") && (
+            <button
+              onClick={() => expandTo("orders")}
+              title="Order Processing"
+              className={`p-2.5 rounded-xl transition-colors ${ordersGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <ShoppingCart size={20} />
+            </button>
+          )}
+          {hasPermission('billing') && (
+            <button
+              onClick={() => router.push("/billing")}
+              title="Billing"
+              className={`p-2.5 rounded-xl transition-colors ${activeTab === "billing" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <Receipt size={20} />
+            </button>
+          )}
+          {hasPermission('warranty') && (
+            <button
+              onClick={() => router.push("/warranty")}
+              title="Warranty Certs"
+              className={`p-2.5 rounded-xl transition-colors ${activeTab === "warranty" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <ShieldAlert size={20} />
+            </button>
+          )}
+          {hasPermission('installation') && (
+            <button
+              onClick={() => router.push("/installations")}
+              title="Installations"
+              className={`p-2.5 rounded-xl transition-colors ${activeTab === "installations" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <Wrench size={20} />
+            </button>
+          )}
+          {hasGroup("operations") && (
+            <button
+              onClick={() => expandTo("operations")}
+              title="Returns & Damaged"
+              className={`p-2.5 rounded-xl transition-colors ${operationsGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <RotateCcw size={20} />
+            </button>
+          )}
           <button
             onClick={() => router.push("/profile")}
             title="Settings"
@@ -224,21 +243,31 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               <Globe size={18} /> <span>Selling Platforms</span>
             </button>
           )}
-          <button onClick={() => router.push('/users')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <UsersIcon size={18} /> <span>User Management</span>
-          </button>
-          <button onClick={() => router.push('/roles')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'roles' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <Briefcase size={18} /> <span>Manage Roles</span>
-          </button>
-          <button onClick={() => router.push('/userActivity')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'userActivity' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <History size={18} /> <span>User Activity</span>
-          </button>
-          <button onClick={() => router.push('/reports')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'reports' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <FileText size={18} /> <span>Reports</span>
-          </button>
-          <button onClick={() => router.push('/notifications')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'notifications' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <Bell size={18} /> <span>Notifications</span>
-          </button>
+          {hasPermission('users') && (
+            <button onClick={() => router.push('/users')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <UsersIcon size={18} /> <span>User Management</span>
+            </button>
+          )}
+          {hasPermission('roles') && (
+            <button onClick={() => router.push('/roles')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'roles' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <Briefcase size={18} /> <span>Manage Roles</span>
+            </button>
+          )}
+          {hasPermission('userActivity') && (
+            <button onClick={() => router.push('/userActivity')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'userActivity' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <History size={18} /> <span>User Activity</span>
+            </button>
+          )}
+          {hasPermission('reports') && (
+            <button onClick={() => router.push('/reports')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'reports' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <FileText size={18} /> <span>Reports</span>
+            </button>
+          )}
+          {hasPermission('notifications') && (
+            <button onClick={() => router.push('/notifications')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'notifications' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <Bell size={18} /> <span>Notifications</span>
+            </button>
+          )}
           {(hasPermission('emailAccounts') || hasPermission('emailTemplates') || hasPermission('sentEmails') || hasPermission('emailInbox')) && (
             <div className="space-y-1">
               <button onClick={() => toggleSubmenu('email')} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
@@ -315,16 +344,18 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
       </div>
       <div className="p-4 font-bold text-indigo-600 text-lg text-center">Inventory Management</div>
       <nav className="flex-1 px-2 space-y-1 overflow-y-auto pb-4">
-        <button
-          onClick={() => router.push("/")}
-          className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === "dashboard" ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-100"}`}
-        >
-          <LayoutDashboard size={18} />
-          <span>Dashboard</span>
-        </button>
+        {hasPermission('dashboard') && (
+          <button
+            onClick={() => router.push("/")}
+            className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === "dashboard" ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-100"}`}
+          >
+            <LayoutDashboard size={18} />
+            <span>Dashboard</span>
+          </button>
+        )}
 
         {/* CONTRACTS */}
-        {hasPermission("contracts") && (
+        {hasGroup("contracts") && (
           <div className="space-y-1">
             <button onClick={() => toggleSubmenu("contracts")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
               <div className="flex items-center gap-3"><FileText size={18} /><span>Contracts</span></div>
@@ -343,93 +374,107 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
         )}
 
         {/* MASTERS */}
-        <div className="space-y-1">
-          <button onClick={() => toggleSubmenu("masters")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
-            <div className="flex items-center gap-3"><Package size={18} /><span>Masters</span></div>
-            {expandedMenus.masters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </button>
-          {expandedMenus.masters && (
-            <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
-              {navItems.filter(i => i.group === "masters").map(item => (
-                <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-                  {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {hasGroup("masters") && (
+          <div className="space-y-1">
+            <button onClick={() => toggleSubmenu("masters")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+              <div className="flex items-center gap-3"><Package size={18} /><span>Masters</span></div>
+              {expandedMenus.masters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {expandedMenus.masters && (
+              <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
+                {navItems.filter(i => i.group === "masters").map(item => (
+                  <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* INVENTORY */}
-        <div className="space-y-1">
-          <button onClick={() => toggleSubmenu("inventory")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
-            <div className="flex items-center gap-3"><Warehouse size={18} /><span>Inventory</span></div>
-            {expandedMenus.inventory ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </button>
-          {expandedMenus.inventory && (
-            <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
-              {navItems.filter(i => i.group === "inventory").map(item => (
-                <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-                  {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {hasGroup("inventory") && (
+          <div className="space-y-1">
+            <button onClick={() => toggleSubmenu("inventory")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+              <div className="flex items-center gap-3"><Warehouse size={18} /><span>Inventory</span></div>
+              {expandedMenus.inventory ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {expandedMenus.inventory && (
+              <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
+                {navItems.filter(i => i.group === "inventory").map(item => (
+                  <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ORDER PROCESSING */}
-        <div className="space-y-1">
-          <button onClick={() => toggleSubmenu("orders")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
-            <div className="flex items-center gap-3"><ShoppingCart size={18} /><span>Order Processing</span></div>
-            {expandedMenus.orders ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </button>
-          {expandedMenus.orders && (
-            <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
-              {navItems.filter(i => i.group === "orders").map(item => (
-                <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-                  {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {hasGroup("orders") && (
+          <div className="space-y-1">
+            <button onClick={() => toggleSubmenu("orders")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+              <div className="flex items-center gap-3"><ShoppingCart size={18} /><span>Order Processing</span></div>
+              {expandedMenus.orders ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {expandedMenus.orders && (
+              <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
+                {navItems.filter(i => i.group === "orders").map(item => (
+                  <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* BILLING */}
-        <button onClick={() => router.push('/billing')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'billing' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-          <Receipt size={18} /> <span>Billing</span>
-        </button>
+        {hasPermission('billing') && (
+          <button onClick={() => router.push('/billing')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'billing' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <Receipt size={18} /> <span>Billing</span>
+          </button>
+        )}
 
         {/* WARRANTY */}
-        <button onClick={() => router.push('/warranty')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'warranty' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-          <ShieldAlert size={18} /> <span>Warranty Certs</span>
-        </button>
+        {hasPermission('warranty') && (
+          <button onClick={() => router.push('/warranty')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'warranty' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <ShieldAlert size={18} /> <span>Warranty Certs</span>
+          </button>
+        )}
 
         {/* INSTALLATIONS */}
-        <button onClick={() => router.push('/installations')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'installations' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-          <Wrench size={18} /> <span>Installations</span>
-        </button>
+        {hasPermission('installation') && (
+          <button onClick={() => router.push('/installations')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'installations' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <Wrench size={18} /> <span>Installations</span>
+          </button>
+        )}
 
         {/* OPERATIONS */}
-        <div className="space-y-1">
-          <button onClick={() => toggleSubmenu("operations")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
-            <div className="flex items-center gap-3"><RotateCcw size={18} /><span>Returns & Damaged</span></div>
-            {expandedMenus.operations ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </button>
-          {expandedMenus.operations && (
-            <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
-              {navItems.filter(i => i.group === "operations").map(item => (
-                <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors relative ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-                  {item.icon && <item.icon size={14} />}
-                  <span>{item.label}</span>
-                  {item.badge && (
-                    <span className={`ml-auto text-xs font-bold px-1.5 py-0.5 rounded-full ${item.badgeColor === 'orange' ? 'bg-orange-100 text-orange-600' : 'bg-indigo-100 text-indigo-600'}`}>
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {hasGroup("operations") && (
+          <div className="space-y-1">
+            <button onClick={() => toggleSubmenu("operations")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+              <div className="flex items-center gap-3"><RotateCcw size={18} /><span>Returns & Damaged</span></div>
+              {expandedMenus.operations ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {expandedMenus.operations && (
+              <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
+                {navItems.filter(i => i.group === "operations").map(item => (
+                  <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors relative ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    {item.icon && <item.icon size={14} />}
+                    <span>{item.label}</span>
+                    {item.badge && (
+                      <span className={`ml-auto text-xs font-bold px-1.5 py-0.5 rounded-full ${item.badgeColor === 'orange' ? 'bg-orange-100 text-orange-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* SETTINGS */}
         <button onClick={() => router.push('/profile')} className="w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">

@@ -12,6 +12,7 @@ import {
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Legend, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { format } from "date-fns";
 import { getStoredUser } from "@/lib/client/auth";
+import { hasPermission } from "@/lib/client/rbac";
 import { useAppData } from "@/lib/client/AppDataContext";
 import { useCompany } from "@/lib/client/CompanyContext";
 import { inventoryService } from "@/lib/services/inventoryService";
@@ -204,6 +205,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchStationeryValue = async () => {
+      if (!hasPermission(currentUser, "stat_current_stock")) {
+        setLoadingStationery(false);
+        return;
+      }
       try {
         const response = await inventoryService.getCurrentStock({ limit: 1 });
         setStationeryStockValue(Number(response.totalValue) || 0);
@@ -214,19 +219,23 @@ export default function DashboardPage() {
       }
     };
     fetchStationeryValue();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Re-fetch whenever the active company changes — this list is scoped
   // server-side to the session's companyGuid, so switching companies must
   // refetch it or a previous company's categories linger in the filter.
   useEffect(() => {
+    if (!hasPermission(currentUser, "stat_category")) return;
     legacyApi
       .get("/Inventory/GetCategoryList", { params: { page: 1, limit: 1000 } })
       .then((res) => setCategoryMasterList(res.data?.data || []))
       .catch((error) => console.error("Failed to load categories:", error));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompany?.guid]);
 
   useEffect(() => {
+    if (!hasPermission(currentUser, "stat_stock_in")) return;
     if (dayFilter === "custom" && (!customStart || !customEnd)) return;
     const startStr = periodStart.toLocaleDateString("en-CA");
     const endStr = periodEnd.toLocaleDateString("en-CA");

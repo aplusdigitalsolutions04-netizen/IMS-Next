@@ -6,7 +6,7 @@ import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
 
 const EDITABLE_FIELDS = [
   "bidNumber", "contractNumber", "generatedDate", "buyerContact", "products", "buyerEmail", "buyerGstin",
-  "buyerAddress", "deliveryStartAfter", "deliveryCompletedBy", "ministry", "department", "organisation",
+  "buyerAddress", "deliveryStartAfter", "deliveryCompletedBy", "deliveryInstructions", "ministry", "department", "organisation",
   "officeZone", "sellerCompany", "sellerContact", "sellerGstin", "consigneeDesignation", "consigneeEmail",
   "consigneeContact", "consigneeAddress", "status", "cancelReason", "cancelRemarks",
 ];

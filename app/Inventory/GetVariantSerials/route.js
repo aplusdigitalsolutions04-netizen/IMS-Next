@@ -19,9 +19,13 @@ export const GET = withErrorHandling(async (request) => {
   // s.landingPrice is unreliable (often left at 0 by the Stock-In finalize
   // flow — see app/api/reports/route.js for the same issue) — fall back to
   // the item's current purchasePrice from Item Master when that happens.
+  // purchasePrice itself is also returned separately (it's a single
+  // per-variant value from Item Master, not per-serial) so the UI can show
+  // both instead of only the coalesced landingPrice.
   const [rows] = await mysqlPool.query(
     `SELECT s.guid, s.serialNumber as value, s.serialStatus as status,
-       COALESCE(NULLIF(s.landingPrice, 0), iv.purchasePrice, 0) as landingPrice, s.createdAt
+       COALESCE(NULLIF(s.landingPrice, 0), iv.purchasePrice, 0) as landingPrice,
+       iv.purchasePrice as purchasePrice, s.createdAt
      FROM inventorystockinserial s
      LEFT JOIN inventoryitemvariant iv ON s.itemVariantId = iv.itemVariantId AND iv.isDeleted = 0
      WHERE s.itemVariantId = ? AND s.isDeleted = 0 AND s.companyGuid = ?

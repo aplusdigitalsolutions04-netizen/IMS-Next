@@ -108,7 +108,7 @@ export default function UserFormPage({ currentUser, onCurrentUserUpdate, editUse
 
       {/* ── Form content ── */}
       <div className="flex-1 py-6 px-6 overflow-auto">
-        <div className="w-full max-w-4xl mx-auto space-y-5">
+        <div className="w-full space-y-5">
 
           {error && (
             <div className="flex items-center gap-3 p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-sm font-medium">
@@ -304,7 +304,7 @@ export default function UserFormPage({ currentUser, onCurrentUserUpdate, editUse
         </div>
 
         {/* ── Navigation buttons ── */}
-        <div className="w-full max-w-4xl mx-auto flex items-center justify-between gap-4 pt-6 pb-4">
+        <div className="w-full flex items-center justify-between gap-4 pt-6 pb-4">
           <button
             type="button"
             onClick={() => navigate("/users")}

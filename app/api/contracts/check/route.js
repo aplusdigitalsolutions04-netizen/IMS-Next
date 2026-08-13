@@ -16,5 +16,21 @@ export const GET = withErrorHandling(async (request) => {
     "SELECT guid FROM contracts WHERE contractNumber=? AND companyGuid=? AND isDeleted=0",
     [contractNumber, user.companyId]
   );
-  return NextResponse.json({ exists: rows.length > 0 });
+  if (rows.length > 0) {
+    return NextResponse.json({ exists: true, reason: "duplicate" });
+  }
+
+  // Same lookup as POST /api/contracts (orderid == contractNumber) — a
+  // contract already turned into an order can't be uploaded again, so this
+  // is checked here too, up front, before the caller spends an AI extraction
+  // call on a contract number that will be rejected at save time anyway.
+  const [existingOrder] = await mysqlPool.query(
+    "SELECT status FROM orders WHERE orderid=? AND companyGuid=? AND isDeleted=0 LIMIT 1",
+    [contractNumber, user.companyId]
+  );
+  if (existingOrder.length > 0) {
+    return NextResponse.json({ exists: true, reason: "order", orderStatus: existingOrder[0].status });
+  }
+
+  return NextResponse.json({ exists: false });
 });

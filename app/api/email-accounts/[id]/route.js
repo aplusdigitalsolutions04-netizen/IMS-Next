@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
+import { authenticateRequest, authorizeMasterWrite, authorizeMasterDelete, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 async function validatePurpose(purpose) {
@@ -10,7 +10,7 @@ async function validatePurpose(purpose) {
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requirePermission(user, "emailAccounts", "Only Admin can manage email accounts.");
+  authorizeMasterWrite(user, "emailAccounts", { isCreate: false, denyMessage: "You do not have permission to edit email accounts." });
   const { id } = await params;
 
   const body = await parseJsonBody(request);
@@ -53,7 +53,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 
 export const DELETE = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requirePermission(user, "emailAccounts", "Only Admin can manage email accounts.");
+  authorizeMasterDelete(user, "emailAccounts", "You do not have permission to delete email accounts.");
   const { id } = await params;
 
   const [result] = await mysqlPool.query("DELETE FROM email_accounts WHERE guid = ?", [id]);

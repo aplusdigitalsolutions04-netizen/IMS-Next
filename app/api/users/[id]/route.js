@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requirePermission, isSuperUser, invalidateUserCache, resolveRole, ApiError } from "@/lib/auth";
+import { authenticateRequest, authorizeMasterWrite, authorizeMasterDelete, isSuperUser, invalidateUserCache, resolveRole, ApiError } from "@/lib/auth";
 import { sanitizeUser, safeStr, hashPassword } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requirePermission(user, "users", "User management access required.");
+  authorizeMasterWrite(user, "users", { isCreate: false, denyMessage: "You do not have permission to edit users." });
   const { id } = await params;
 
   const {
@@ -58,7 +58,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 
 export const DELETE = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requirePermission(user, "users", "User management access required.");
+  authorizeMasterDelete(user, "users", "You do not have permission to delete users.");
   const { id } = await params;
 
   if (String(id) === String(user.id)) throw new ApiError(400, "You cannot delete your own account.");

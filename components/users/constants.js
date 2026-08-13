@@ -3,7 +3,7 @@ import {
   Wrench, AlertOctagon, Tags, Layers, History, FileText, Bell, Shield, Database,
   Ruler, ArrowDownCircle, ArrowUpCircle, Plus, Truck, Settings2, Users,
   Building2, Globe, UploadCloud, Mail, Inbox, Send, ShieldAlert, DatabaseBackup,
-  ShieldHalf, HardDrive, Pencil, Trash2,
+  ShieldHalf, HardDrive, Pencil, Trash2, ArrowRightLeft, Briefcase,
 } from "lucide-react";
 
 // Each Master Data entry below (Category/Brand/Vendor/Item/Combo/Unit/Mapping)
@@ -24,6 +24,21 @@ const MASTER_EDIT_ENTRIES = [
   { key: `allow_delete_${key}`, label: `Delete ${label}`, icon: Trash2,  group: "Master Data" },
 ]);
 
+// Tabs that previously had one bundled permission with no create/edit/delete
+// split — each gets the same Add/Edit/Delete triple as Master Data above.
+const FULL_CRUD_ENTRIES = [
+  { key: "roles",           label: "Role",            group: "Admin & Analytics" },
+  { key: "companyMaster",   label: "Company",         group: "Master Data" },
+  { key: "platformMaster",  label: "Selling Platform", group: "Master Data" },
+  { key: "users",           label: "User",            group: "Admin & Analytics" },
+  { key: "emailAccounts",   label: "Email Account",   group: "Email" },
+  { key: "emailTemplates",  label: "Email Template",  group: "Email" },
+].flatMap(({ key, label, group }) => [
+  { key: `allow_add_${key}`,    label: `Add ${label}`,    icon: Plus,    group },
+  { key: `allow_edit_${key}`,   label: `Edit ${label}`,   icon: Pencil,  group },
+  { key: `allow_delete_${key}`, label: `Delete ${label}`, icon: Trash2,  group },
+]);
+
 // print_models_view/print_models_edit/print_serials_view/print_serials_edit and
 // create_order used to exist here as separate "view" entries, but nothing
 // server-side ever checked them — the real gates are print_models/print_serials
@@ -32,8 +47,8 @@ const MASTER_EDIT_ENTRIES = [
 // the Manage Roles checkbox UI with no functional difference, so they were removed.
 export const PERMISSIONS_LIST = [
   { id: "dashboard",          label: "Dashboard",              icon: BarChart3 },
-  { id: "print_models",       label: "Printer Models",         icon: Printer },
-  { id: "print_serials",      label: "Printer Serials",        icon: Barcode },
+  { id: "print_models",       label: "Model Pricing (Dispatch)", icon: Printer },
+  { id: "print_serials",      label: "Serial Number Operations", icon: Barcode },
   { id: "warranty",           label: "Warranty Certificates",  icon: ShieldCheck },
   { id: "orders",             label: "Order Processing",       icon: ShoppingCart },
   { id: "billing",            label: "Billing",                icon: Receipt },
@@ -53,8 +68,11 @@ export const PERMISSIONS_LIST = [
   { id: "returns",            label: "Returns",                icon: History },
   { id: "notifications",      label: "Notifications",          icon: Bell },
   { id: "users",              label: "User Management",        icon: Shield },
+  { id: "roles",              label: "Manage Roles",           icon: Briefcase },
+  { id: "userActivity",       label: "User Activity",          icon: History },
   { id: "reports",            label: "System Reports",         icon: FileText },
   { id: "godownMaster",       label: "Godown Master",          icon: Database },
+  { id: "godownTransfer",     label: "Godown Transfer",        icon: ArrowRightLeft },
   { id: "fbfFbaMaster",       label: "FBF/FBA Master",         icon: Database },
   { id: "fbfFbaManagement",   label: "FBF/FBA Stock",          icon: Database },
   { id: "companyMaster",      label: "Company Master",         icon: Building2 },
@@ -73,16 +91,17 @@ export const PERMISSIONS_LIST = [
 export const PERMISSION_GROUPS = [
   { name: "Sales & Orders",   icon: ShoppingCart, color: "indigo",  permissions: ["orders", "billing", "dispatch", "installation", "stat_stock_out", "returns", "damage"] },
   { name: "Master Data",      icon: Database,     color: "violet",  permissions: ["stat_category", "stat_brand", "stat_vendor", "stat_item", "stat_combo", "stat_mapping", "stat_unit", "godownMaster", "fbfFbaMaster", "companyMaster", "platformMaster"] },
-  { name: "Inventory",        icon: History,      color: "sky",     permissions: ["print_models", "print_serials", "warranty", "stat_stock_in", "stat_current_stock", "fbfFbaManagement"] },
-  { name: "Admin & Analytics",icon: BarChart3,    color: "emerald", permissions: ["dashboard", "notifications", "users", "reports", "contracts"] },
+  { name: "Inventory",        icon: History,      color: "sky",     permissions: ["print_models", "print_serials", "warranty", "stat_stock_in", "stat_current_stock", "fbfFbaManagement", "godownTransfer"] },
+  { name: "Admin & Analytics",icon: BarChart3,    color: "emerald", permissions: ["dashboard", "notifications", "users", "roles", "userActivity", "reports", "contracts"] },
   { name: "Email",            icon: Mail,         color: "amber",   permissions: ["emailAccounts", "emailTemplates", "emailInbox", "sentEmails"] },
   { name: "System Admin",     icon: ShieldAlert,  color: "rose",    permissions: ["apiLogs", "backupRestore", "rateLimitSettings", "googleDrive"] },
 ];
 
 export const EDIT_PERMISSIONS = [
-  { key: "allow_edit_models",           label: "Edit Printer Models",       icon: Printer,      group: "Printers" },
-  { key: "allow_edit_serials",          label: "Edit Printer Serials",      icon: Barcode,      group: "Printers" },
+  { key: "allow_edit_models",           label: "Edit Model Pricing (Dispatch)", icon: Printer,  group: "Serials & Pricing" },
+  { key: "allow_edit_serials",          label: "Edit Serial Numbers (Bulk Upload/Delete)", icon: Barcode, group: "Serials & Pricing" },
   { key: "allow_edit_godown",           label: "Edit Godown Master",        icon: Database,     group: "Inventory" },
+  { key: "allow_transfer_godown",       label: "Perform Godown Transfer",   icon: ArrowRightLeft, group: "Inventory" },
   { key: "allow_edit_fbf_fba",          label: "Edit FBF/FBA Master & Stock",icon: Database,    group: "Inventory" },
   { key: "allow_create_order",          label: "Create Orders",             icon: Plus,         group: "Orders" },
   { key: "allow_edit_order_processing", label: "Edit Orders",               icon: ShoppingCart, group: "Orders" },
@@ -93,6 +112,7 @@ export const EDIT_PERMISSIONS = [
   { key: "allow_edit_damaged",          label: "Edit Damaged",              icon: AlertOctagon, group: "Operations" },
   { key: "allow_edit_warranty",         label: "Edit Warranty Certificates",icon: Shield,       group: "Operations" },
   ...MASTER_EDIT_ENTRIES,
+  ...FULL_CRUD_ENTRIES,
 ];
 
 export const INITIAL_FORM = {

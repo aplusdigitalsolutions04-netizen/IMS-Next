@@ -31,7 +31,7 @@ export const GET = withErrorHandling(async (request) => {
   // update inventoryvariantstock.availablePCS, so it drifts stale for these).
   const [rows] = await mysqlPool.query(
     `SELECT v.itemVariantId, v.variantName as variantCode, v.sellingPrice as mrp,
-            IFNULL(s.avgPurchaseRate, 0) as avgPurchaseRate,
+            COALESCE(NULLIF(s.avgPurchaseRate, 0), v.purchasePrice, 0) as avgPurchaseRate,
             ${isTrackable ? "IFNULL(sc.availableCount, 0)" : "IFNULL(s.availablePCS, 0)"} as availablePCS
      FROM inventoryitemvariant v
      LEFT JOIN inventoryvariantstock s ON v.itemVariantId = s.itemVariantId

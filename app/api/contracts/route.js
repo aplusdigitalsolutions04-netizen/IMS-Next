@@ -40,7 +40,7 @@ export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
   const {
     bidNumber, contractNumber, generatedDate, buyerContact, products, buyerEmail, buyerGstin,
-    buyerAddress, deliveryStartAfter, deliveryCompletedBy, ministry, department, organisation,
+    buyerAddress, deliveryStartAfter, deliveryCompletedBy, deliveryInstructions, ministry, department, organisation,
     officeZone, sellerCompany, sellerContact, sellerGstin, consigneeDesignation, consigneeEmail,
     consigneeContact, consigneeAddress, pdfFilename,
   } = body;
@@ -73,14 +73,14 @@ export const POST = withErrorHandling(async (request) => {
     await mysqlPool.query(
       `INSERT INTO contracts (
         guid, companyGuid, bidNumber, contractNumber, generatedDate, buyerContact, products, buyerEmail, buyerGstin,
-        buyerAddress, deliveryStartAfter, deliveryCompletedBy, ministry, department, organisation,
+        buyerAddress, deliveryStartAfter, deliveryCompletedBy, deliveryInstructions, ministry, department, organisation,
         officeZone, sellerCompany, sellerContact, sellerGstin, consigneeDesignation, consigneeEmail,
         consigneeContact, consigneeAddress, pdfFilename, isDeleted, createdBy, modifiedBy
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`,
       [
         guid, user.companyId, bidNumber || null, contractNumber.trim(), generatedDate || null,
         buyerContact || null, products || null, buyerEmail || null, buyerGstin || null,
-        buyerAddress || null, deliveryStartAfter || null, deliveryCompletedBy || null,
+        buyerAddress || null, deliveryStartAfter || null, deliveryCompletedBy || null, deliveryInstructions || null,
         ministry || null, department || null, organisation || null, officeZone || null,
         sellerCompany || null, sellerContact || null, sellerGstin || null, consigneeDesignation || null,
         consigneeEmail || null, consigneeContact || null, consigneeAddress || null, pdfFilename || null,

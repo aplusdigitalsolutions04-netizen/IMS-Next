@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { printerService } from "@/lib/services/api";
 import api, { API_URL } from "@/lib/client/apiClient";
 import { getStoredToken } from "@/lib/client/auth";
+import { hasPermission } from "@/lib/client/rbac";
 
 // Fallback used until the real value loads (and if the request ever fails)
 // — matches the value every call site used to have hardcoded, so behavior
@@ -24,7 +25,18 @@ const getReturnsArray = (payload) => {
   return [];
 };
 
-export function AppDataProvider({ children }) {
+// Core-data fetches that only make sense (and are only authorized) if the
+// current role has the matching permission — a role missing e.g. "returns"
+// would otherwise 403 on every single page load, forever, since this
+// provider wraps the whole app and never unmounts between navigations.
+const CORE_KEYS = [
+  { key: "models", permission: "print_models", fetch: () => printerService.getModels(), transform: (v) => (Array.isArray(v) ? v : []) },
+  { key: "serials", permission: "print_serials", fetch: () => printerService.getSerials(), transform: (v) => (Array.isArray(v) ? v : []) },
+  { key: "dispatches", permission: "dispatch", fetch: () => printerService.getDispatches(true), transform: (v) => (Array.isArray(v) ? v : []) },
+  { key: "returns", permission: "returns", fetch: () => printerService.getReturns(), transform: getReturnsArray },
+];
+
+export function AppDataProvider({ children, currentUser }) {
   const [models, setModels] = useState([]);
   const [serials, setSerials] = useState([]);
   const [dispatches, setDispatches] = useState([]);
@@ -50,55 +62,43 @@ export function AppDataProvider({ children }) {
     setDataStatus((prev) => ({ ...prev, ...nextStatus }));
   }, []);
 
+  const coreSetters = { models: setModels, serials: setSerials, dispatches: setDispatches, returns: setReturns };
+
   const loadCoreData = useCallback(async () => {
-    const results = await Promise.allSettled([
-      printerService.getModels(),
-      printerService.getSerials(),
-      printerService.getDispatches(true),
-      printerService.getReturns(),
-    ]);
+    const allowed = CORE_KEYS.filter((c) => hasPermission(currentUser, c.permission));
+    const results = await Promise.allSettled(allowed.map((c) => c.fetch()));
 
     let hasFailure = false;
     const loadedKeys = {};
 
-    if (results[0].status === "fulfilled") {
-      setModels(Array.isArray(results[0].value) ? results[0].value : []);
-      loadedKeys.models = true;
-    } else {
-      hasFailure = true;
-      console.error("Failed to load models:", results[0].reason);
-    }
+    allowed.forEach((c, i) => {
+      if (results[i].status === "fulfilled") {
+        coreSetters[c.key](c.transform(results[i].value));
+        loadedKeys[c.key] = true;
+      } else {
+        hasFailure = true;
+        console.error(`Failed to load ${c.key}:`, results[i].reason);
+      }
+    });
 
-    if (results[1].status === "fulfilled") {
-      setSerials(Array.isArray(results[1].value) ? results[1].value : []);
-      loadedKeys.serials = true;
-    } else {
-      hasFailure = true;
-      console.error("Failed to load serials:", results[1].reason);
-    }
-
-    if (results[2].status === "fulfilled") {
-      setDispatches(Array.isArray(results[2].value) ? results[2].value : []);
-      loadedKeys.dispatches = true;
-    } else {
-      hasFailure = true;
-      console.error("Failed to load dispatches:", results[2].reason);
-    }
-
-    if (results[3].status === "fulfilled") {
-      setReturns(getReturnsArray(results[3].value));
-      loadedKeys.returns = true;
-    } else {
-      hasFailure = true;
-      console.error("Failed to load returns:", results[3].reason);
-    }
+    // Nothing to fetch for permissions the role doesn't have — mark them
+    // "loaded" (with whatever empty default state already holds) rather
+    // than leaving dataStatus stuck at false forever.
+    CORE_KEYS.filter((c) => !hasPermission(currentUser, c.permission)).forEach((c) => {
+      loadedKeys[c.key] = true;
+    });
 
     markDataLoaded(loadedKeys);
     setCoreLoading(false);
     return !hasFailure;
-  }, [markDataLoaded]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markDataLoaded, currentUser]);
 
   const loadOrdersData = useCallback(async () => {
+    if (!hasPermission(currentUser, "orders")) {
+      markDataLoaded({ orders: true });
+      return true;
+    }
     try {
       const data = await printerService.getOrders();
       setOrders(Array.isArray(data) ? data : []);
@@ -108,9 +108,13 @@ export function AppDataProvider({ children }) {
       console.error("Failed to load orders:", error);
       return false;
     }
-  }, [markDataLoaded]);
+  }, [markDataLoaded, currentUser]);
 
   const loadInstallationData = useCallback(async () => {
+    if (!hasPermission(currentUser, "installation")) {
+      markDataLoaded({ installations: true, installationStats: true });
+      return true;
+    }
     const results = await Promise.allSettled([
       printerService.getInstallations(),
       printerService.getInstallationStats(),
@@ -137,7 +141,7 @@ export function AppDataProvider({ children }) {
 
     markDataLoaded(loadedKeys);
     return !hasFailure;
-  }, [markDataLoaded]);
+  }, [markDataLoaded, currentUser]);
 
   const refreshData = useCallback(
     async ({ includeOrders = dataStatus.orders, includeInstallations = dataStatus.installations || dataStatus.installationStats } = {}) => {

@@ -34,7 +34,7 @@ const VariantBarcode = () => {
 
   const fetchUnits = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/Inventory/GetUnitList`, {
+      const response = await axios.get(`${API_BASE_URL}/Inventory/GetUnitDropdown`, {
         headers: getHeaders(),
       });
       setUnits(response.data?.data || []);

@@ -9,6 +9,7 @@ import {
 import * as XLSX from 'xlsx';
 import StockInModals from "./StockInModals";
 import { inventoryService } from "@/lib/services/inventoryService";
+import { legacyApi } from "@/lib/client/http";
 import { printerService } from "@/lib/services/api";
 import DayFilterSelect from "@/components/common/DayFilterSelect";
 import { getDayFilterRange } from "@/lib/client/dayFilter";
@@ -130,7 +131,8 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
 
   const fetchVendors = async (selectedId = null) => {
     try {
-      const data = await inventoryService.getVendors();
+      const res = await legacyApi.get("/Inventory/GetVendorDropdown");
+      const data = res.data?.data || [];
       setVendors(data || []);
       if (selectedId) setVendorId(selectedId);
     } catch (e) {
@@ -149,7 +151,8 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
 
   const fetchUnits = async () => {
     try {
-      const data = await inventoryService.getUnits();
+      const res = await legacyApi.get("/Inventory/GetUnitDropdown");
+      const data = res.data?.data || [];
       setUnits(data || []);
     } catch (e) {
       console.error("Failed to load units:", e);

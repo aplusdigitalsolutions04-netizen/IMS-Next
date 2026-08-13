@@ -63,6 +63,16 @@ export const POST = withErrorHandling(async (request) => {
                lastPurchaseRate = VALUES(lastPurchaseRate)`,
             [item.itemVariantId, qty, item.purchaseRate, item.purchaseRate]
           );
+          // inventoryitemvariant.purchasePrice was never updated by Stock-In —
+          // it stayed at whatever it was set to at variant creation (often 0)
+          // while landingPrice/lastPurchaseRate kept moving, which is why
+          // "Purchase Price" looked missing/stale next to a correct "Landing
+          // Price". Keep it in sync with the latest purchase rate, same as
+          // lastPurchaseRate above.
+          await connection.execute(
+            "UPDATE inventoryitemvariant SET purchasePrice = ? WHERE itemVariantId = ?",
+            [item.purchaseRate || 0, item.itemVariantId]
+          );
         } else {
           const qty = item.stockInQty * item.defaultPcsQty;
           await connection.execute(
@@ -72,6 +82,10 @@ export const POST = withErrorHandling(async (request) => {
                availablePCS = availablePCS + VALUES(availablePCS),
                lastPurchaseRate = VALUES(lastPurchaseRate)`,
             [item.itemVariantId, qty, item.purchaseRate, item.purchaseRate]
+          );
+          await connection.execute(
+            "UPDATE inventoryitemvariant SET purchasePrice = ? WHERE itemVariantId = ?",
+            [item.purchaseRate || 0, item.itemVariantId]
           );
 
           // Godown-wise breakdown for non-serialized stock (separate from the

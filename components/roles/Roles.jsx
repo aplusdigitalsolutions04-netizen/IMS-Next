@@ -1,11 +1,39 @@
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
-import { Briefcase, Plus, Loader2, Shield, Pencil, Trash2, X, Save, Users as UsersIcon, ChevronDown, ChevronRight, KeyRound, Check } from "lucide-react";
+import { Briefcase, Plus, Loader2, Shield, Pencil, Trash2, X, Save, Users as UsersIcon, ChevronDown, ChevronRight, KeyRound, Check, CheckSquare, Square } from "lucide-react";
 import Swal from "sweetalert2";
 import { printerService } from "@/lib/services/api";
 import { PERMISSIONS_LIST, PERMISSION_GROUPS, EDIT_PERMISSIONS, GROUP_COLORS } from "@/components/users/constants";
 import { RoleBadge, Avatar } from "@/components/users/parts";
 import { ADMIN_ROLE_ID } from "@/lib/client/rbac";
+
+// Edit Rights has no groups of its own (EDIT_PERMISSIONS is a flat list) —
+// bucket it the same way View Access is, reusing PERMISSION_GROUPS' names/
+// colors where they line up so the two sections read as one system.
+const EDIT_GROUP_COLOR_KEY = {
+  "Serials & Pricing": "indigo", Inventory: "sky", Orders: "violet", Operations: "rose",
+  "Master Data": "violet", "Admin & Analytics": "emerald", Email: "amber",
+};
+const EDIT_GROUP_ORDER = ["Serials & Pricing", "Inventory", "Orders", "Operations", "Master Data", "Admin & Analytics", "Email"];
+const EDIT_PERMISSION_GROUPS = EDIT_GROUP_ORDER
+  .map((name) => ({ name, color: EDIT_GROUP_COLOR_KEY[name], items: EDIT_PERMISSIONS.filter((ep) => ep.group === name) }))
+  .filter((g) => g.items.length > 0);
+
+// Small text toggle shown in every group header — selects everything in
+// that group if anything's still unchecked, otherwise clears the whole
+// group. Avoids needing two separate buttons per group.
+function SelectAllToggle({ allChecked, onClick, className }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider hover:underline shrink-0 ${className}`}
+    >
+      {allChecked ? <CheckSquare size={11} /> : <Square size={11} />}
+      {allChecked ? "Clear All" : "Select All"}
+    </button>
+  );
+}
 
 export default function Roles() {
   const [roles, setRoles] = useState([]);
@@ -137,6 +165,20 @@ export default function Roles() {
 
   const togglePerm = (id) => setPermsSelected((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
   const toggleEditPerm = (key) => setEditPermsSelected((prev) => (prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]));
+
+  // Group-level select all/clear — if everything in the group is already
+  // checked, clicking clears the group; otherwise it fills in whatever's
+  // still missing (never toggles an already-checked item off by accident).
+  const toggleGroupPerms = (ids) =>
+    setPermsSelected((prev) => {
+      const allChecked = ids.every((id) => prev.includes(id));
+      return allChecked ? prev.filter((p) => !ids.includes(p)) : [...new Set([...prev, ...ids])];
+    });
+  const toggleGroupEditPerms = (keys) =>
+    setEditPermsSelected((prev) => {
+      const allChecked = keys.every((k) => prev.includes(k));
+      return allChecked ? prev.filter((p) => !keys.includes(p)) : [...new Set([...prev, ...keys])];
+    });
 
   const handleSavePerms = async () => {
     setSavingPerms(true);
@@ -339,7 +381,7 @@ export default function Roles() {
 
       {permsRole && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl overflow-hidden flex flex-col max-h-[85vh]">
             <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
               <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
                 <KeyRound size={18} className="text-emerald-600" /> {permsRole.name} — Permissions
@@ -350,18 +392,33 @@ export default function Roles() {
             </div>
             <div className="p-5 space-y-6 overflow-y-auto">
               <div>
-                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">View Access</h4>
-                <div className="space-y-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">View Access</h4>
+                  <SelectAllToggle
+                    allChecked={PERMISSIONS_LIST.every((p) => permsSelected.includes(p.id))}
+                    onClick={() => toggleGroupPerms(PERMISSIONS_LIST.map((p) => p.id))}
+                    className="text-slate-500"
+                  />
+                </div>
+                <div className="space-y-3">
                   {PERMISSION_GROUPS.map((group) => {
                     const gc = GROUP_COLORS[group.color];
                     const groupItems = group.permissions.map((id) => PERMISSIONS_LIST.find((p) => p.id === id)).filter(Boolean);
+                    const groupIds = groupItems.map((p) => p.id);
                     return (
-                      <div key={group.name}>
-                        <div className={`flex items-center gap-1.5 mb-2 px-2 py-1 rounded-lg ${gc.header}`}>
-                          <group.icon size={12} className={gc.icon} />
-                          <span className={`text-[11px] font-bold uppercase tracking-wider ${gc.text}`}>{group.name}</span>
+                      <div key={group.name} className={`rounded-xl border ${gc.border} overflow-hidden`}>
+                        <div className={`flex items-center justify-between gap-2 px-3 py-2 ${gc.header}`}>
+                          <div className="flex items-center gap-1.5">
+                            <group.icon size={12} className={gc.icon} />
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${gc.text}`}>{group.name}</span>
+                          </div>
+                          <SelectAllToggle
+                            allChecked={groupIds.every((id) => permsSelected.includes(id))}
+                            onClick={() => toggleGroupPerms(groupIds)}
+                            className={gc.text}
+                          />
                         </div>
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap gap-1.5 p-2.5 bg-white">
                           {groupItems.map((p) => {
                             const checked = permsSelected.includes(p.id);
                             return (
@@ -370,10 +427,12 @@ export default function Roles() {
                                 type="button"
                                 onClick={() => togglePerm(p.id)}
                                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                                  checked ? gc.checked + " border-transparent" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+                                  checked
+                                    ? gc.checked + " border-transparent shadow-sm"
+                                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
                                 }`}
                               >
-                                {checked && <Check size={12} />}
+                                {checked && <Check size={12} strokeWidth={3} />}
                                 {p.label}
                               </button>
                             );
@@ -386,22 +445,50 @@ export default function Roles() {
               </div>
 
               <div>
-                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Edit Rights</h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {EDIT_PERMISSIONS.map((ep) => {
-                    const checked = editPermsSelected.includes(ep.key);
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Edit Rights</h4>
+                  <SelectAllToggle
+                    allChecked={EDIT_PERMISSIONS.every((ep) => editPermsSelected.includes(ep.key))}
+                    onClick={() => toggleGroupEditPerms(EDIT_PERMISSIONS.map((ep) => ep.key))}
+                    className="text-slate-500"
+                  />
+                </div>
+                <div className="space-y-3">
+                  {EDIT_PERMISSION_GROUPS.map((group) => {
+                    const gc = GROUP_COLORS[group.color];
+                    const groupKeys = group.items.map((ep) => ep.key);
                     return (
-                      <button
-                        key={ep.key}
-                        type="button"
-                        onClick={() => toggleEditPerm(ep.key)}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                          checked ? "bg-amber-600 text-white border-transparent" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        <ep.icon size={12} />
-                        {ep.label}
-                      </button>
+                      <div key={group.name} className={`rounded-xl border ${gc.border} overflow-hidden`}>
+                        <div className={`flex items-center justify-between gap-2 px-3 py-2 ${gc.header}`}>
+                          <span className={`text-[11px] font-bold uppercase tracking-wider ${gc.text}`}>{group.name}</span>
+                          <SelectAllToggle
+                            allChecked={groupKeys.every((k) => editPermsSelected.includes(k))}
+                            onClick={() => toggleGroupEditPerms(groupKeys)}
+                            className={gc.text}
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 p-2.5 bg-white">
+                          {group.items.map((ep) => {
+                            const checked = editPermsSelected.includes(ep.key);
+                            return (
+                              <button
+                                key={ep.key}
+                                type="button"
+                                onClick={() => toggleEditPerm(ep.key)}
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                                  checked
+                                    ? "bg-amber-500 text-white border-transparent shadow-sm"
+                                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+                                }`}
+                              >
+                                {checked && <Check size={12} strokeWidth={3} className="-ml-0.5" />}
+                                <ep.icon size={12} />
+                                {ep.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>

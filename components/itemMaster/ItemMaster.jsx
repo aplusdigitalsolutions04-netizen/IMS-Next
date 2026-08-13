@@ -41,10 +41,12 @@ export default function ItemMaster() {
   const fetchDependencies = async () => {
     try {
       const [catRes, unitRes] = await Promise.all([
-        legacyApi.get("/Inventory/GetCategoryList"),
-        legacyApi.get("/Inventory/GetUnitList"),
+        legacyApi.get("/Inventory/GetCategoryDropdown"),
+        legacyApi.get("/Inventory/GetUnitDropdown"),
       ]);
-      setCategories(catRes.data?.data || []);
+      setCategories(
+        (catRes.data?.data || []).map((c) => ({ categoryId: c.Value, categoryName: c.Text }))
+      );
       setUnits(unitRes.data?.data || []);
     } catch (error) {
       console.error("Error fetching dependencies", error);

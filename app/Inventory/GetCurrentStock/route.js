@@ -36,11 +36,16 @@ export const GET = withErrorHandling(async (request) => {
   // time. Live-count Available serials instead for those; non-trackable
   // variants keep using inventoryvariantstock.availablePCS, which dispatch's
   // non-serialized path does keep in sync.
+  // "Purchase Rate" here now shows Landing Price — for trackable variants
+  // that's the average landingPrice across their currently-Available serials
+  // (the real per-unit cost), falling back to inventoryvariantstock's
+  // lastPurchaseRate/avgPurchaseRate only when no serial landingPrice exists
+  // (e.g. non-trackable variants, which never get serial rows at all).
   const [rows] = await mysqlPool.query(`
     SELECT v.itemVariantId, v.variantName, i.itemName, i.brandId, u.unitName, i.isTrackable,
            IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) as availablePCS,
-           IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(s.avgPurchaseRate, 0)) as avgPurchaseRate,
-           (IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(s.avgPurchaseRate, 0))) as totalValue
+           IFNULL(NULLIF(lp.avgLandingPrice, 0), IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(s.avgPurchaseRate, 0))) as avgPurchaseRate,
+           (IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * IFNULL(NULLIF(lp.avgLandingPrice, 0), IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(s.avgPurchaseRate, 0)))) as totalValue
     FROM inventoryitemvariant v
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
     LEFT JOIN inventoryunitmaster u ON i.unitId = u.unitId
@@ -49,6 +54,10 @@ export const GET = withErrorHandling(async (request) => {
       SELECT itemVariantId, COUNT(*) as availableCount FROM inventorystockinserial
       WHERE serialStatus = 'Available' AND isDeleted = 0 GROUP BY itemVariantId
     ) sc ON v.itemVariantId = sc.itemVariantId
+    LEFT JOIN (
+      SELECT itemVariantId, AVG(NULLIF(landingPrice, 0)) as avgLandingPrice FROM inventorystockinserial
+      WHERE serialStatus = 'Available' AND isDeleted = 0 GROUP BY itemVariantId
+    ) lp ON v.itemVariantId = lp.itemVariantId
     ${whereClause}
     LIMIT ? OFFSET ?
   `, [...params, limit, offset]);
@@ -56,7 +65,7 @@ export const GET = withErrorHandling(async (request) => {
   const [[{ total, totalValue, lowStockCount }]] = await mysqlPool.query(`
     SELECT
       COUNT(*) as total,
-      SUM(IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(s.avgPurchaseRate, 0))) as totalValue,
+      SUM(IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * IFNULL(NULLIF(lp.avgLandingPrice, 0), IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(s.avgPurchaseRate, 0)))) as totalValue,
       COUNT(CASE WHEN IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) < 10 THEN 1 END) as lowStockCount
     FROM inventoryitemvariant v
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
@@ -65,6 +74,10 @@ export const GET = withErrorHandling(async (request) => {
       SELECT itemVariantId, COUNT(*) as availableCount FROM inventorystockinserial
       WHERE serialStatus = 'Available' AND isDeleted = 0 GROUP BY itemVariantId
     ) sc ON v.itemVariantId = sc.itemVariantId
+    LEFT JOIN (
+      SELECT itemVariantId, AVG(NULLIF(landingPrice, 0)) as avgLandingPrice FROM inventorystockinserial
+      WHERE serialStatus = 'Available' AND isDeleted = 0 GROUP BY itemVariantId
+    ) lp ON v.itemVariantId = lp.itemVariantId
     ${whereClause}
   `, params);
 

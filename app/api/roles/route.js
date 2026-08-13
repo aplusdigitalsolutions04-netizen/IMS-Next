@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
+import { authenticateRequest, authorizeMasterRead, authorizeMasterWrite, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requirePermission(user, "users", "User management access required.");
+  authorizeMasterRead(user, "roles", "Manage Roles access required.");
 
   // Every role the admin has created — Admin itself never appears here (not
   // a DB row, hardcoded full-access everywhere).
@@ -18,7 +18,7 @@ export const GET = withErrorHandling(async (request) => {
 
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requirePermission(user, "users", "User management access required.");
+  authorizeMasterWrite(user, "roles", { isCreate: true, denyMessage: "You do not have permission to add roles." });
 
   const { name } = await parseJsonBody(request);
   const trimmedName = String(name || "").trim();

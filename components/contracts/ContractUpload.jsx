@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { FileText, Loader2, Sparkles, Save, Plus, Trash2, UploadCloud, Hash, CheckCircle2 } from "lucide-react";
 import Swal from "sweetalert2";
 import { contractsService } from "@/lib/services/contractsService";
+import { useCompany } from "@/lib/client/CompanyContext";
 import AddProductWizard from "./AddProductWizard";
 
 const SECTIONS = [
@@ -45,6 +46,7 @@ const FIELDS_AFTER_PRODUCTS = [
   { key: "consigneeAddress", label: "Consignee Address" },
   { key: "deliveryStartAfter", label: "Delivery Start After", type: "date" },
   { key: "deliveryCompletedBy", label: "Delivery To Be Completed By", type: "date" },
+  { key: "deliveryInstructions", label: "Delivery Instructions" },
 ];
 
 const ALL_FIELDS = [...SECTIONS.flatMap((s) => s.fields), ...FIELDS_AFTER_PRODUCTS];
@@ -96,8 +98,12 @@ function FieldRow({ label, value, onChange, type, readOnly, zebra }) {
   );
 }
 
+const normText = (v) => String(v || "").trim().toLowerCase();
+const normGstin = (v) => String(v || "").replace(/\s+/g, "").toUpperCase();
+
 export default function ContractUpload() {
   const router = useRouter();
+  const { activeCompany, availableCompanies } = useCompany();
   const [file, setFile] = useState(null);
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -108,6 +114,7 @@ export default function ContractUpload() {
   const [contractNumber, setContractNumber] = useState("");
   const [checkingNumber, setCheckingNumber] = useState(false);
   const [numberExists, setNumberExists] = useState(false);
+  const [numberExistsMessage, setNumberExistsMessage] = useState("");
   const [pdfContractNumber, setPdfContractNumber] = useState(null);
   const [wizardProduct, setWizardProduct] = useState(null);
   const wizardResolveRef = React.useRef(null);
@@ -121,15 +128,58 @@ export default function ContractUpload() {
   const handleContractNumberBlur = async () => {
     if (!contractNumber.trim()) {
       setNumberExists(false);
+      setNumberExistsMessage("");
       return;
     }
     setCheckingNumber(true);
     try {
-      const exists = await contractsService.checkContractNumberExists(contractNumber);
-      setNumberExists(exists);
+      const result = await contractsService.checkContractNumberExists(contractNumber);
+      setNumberExists(!!result.exists);
+      setNumberExistsMessage(
+        result.reason === "order"
+          ? `This Contract Number is already in Order Processing (status: ${result.orderStatus}) — it can't be uploaded again.`
+          : result.exists
+          ? "This Contract Number already exists"
+          : ""
+      );
     } finally {
       setCheckingNumber(false);
     }
+  };
+
+  // Warns when the contract's extracted seller company/GSTIN doesn't match
+  // the company currently active for this session — otherwise the contract
+  // silently saves under whichever company the user happens to be logged
+  // into, regardless of who it was actually issued to. GSTIN is checked
+  // first since it's the reliable identifier; company name (which can be
+  // written inconsistently across documents) is only a fallback.
+  const checkSellerCompanyMatch = async (sellerCompany, sellerGstin) => {
+    if (!activeCompany || (!sellerCompany && !sellerGstin)) return;
+
+    const sameByGstin = sellerGstin && activeCompany.gstNumber && normGstin(sellerGstin) === normGstin(activeCompany.gstNumber);
+    const sameByName = sellerCompany && activeCompany.name &&
+      (normText(sellerCompany).includes(normText(activeCompany.name)) || normText(activeCompany.name).includes(normText(sellerCompany)));
+
+    const hasComparableData = (sellerGstin && activeCompany.gstNumber) || sellerCompany;
+    const matches = (sellerGstin && activeCompany.gstNumber) ? sameByGstin : sameByName;
+    if (!hasComparableData || matches) return;
+
+    const matchesOther = (c) =>
+      (sellerGstin && c.gstNumber && normGstin(c.gstNumber) === normGstin(sellerGstin)) ||
+      (sellerCompany && c.name && (normText(sellerCompany).includes(normText(c.name)) || normText(c.name).includes(normText(sellerCompany))));
+    const suggested = (availableCompanies || []).find((c) => c.guid !== activeCompany.guid && matchesOther(c));
+
+    await Swal.fire({
+      title: "Seller company mismatch",
+      html:
+        `This contract's seller is <b>${sellerCompany || "Unknown"}</b>${sellerGstin ? ` (GSTIN ${sellerGstin})` : ""}, ` +
+        `which does not match your currently active company <b>${activeCompany.name}</b>${activeCompany.gstNumber ? ` (GSTIN ${activeCompany.gstNumber})` : ""}.` +
+        (suggested
+          ? `<br/><br/>This looks like it belongs to <b>"${suggested.name}"</b> instead — switch to that company (via the company switcher) before saving, or continue only if this is correct.`
+          : `<br/><br/>Please double-check before saving — continue only if this is correct.`),
+      icon: "warning",
+      confirmButtonText: "I understand, continue",
+    });
   };
 
   const handleExtract = async () => {
@@ -141,10 +191,26 @@ export default function ContractUpload() {
       Swal.fire("Contract Number required", "Please enter a unique Contract Number before uploading.", "warning");
       return;
     }
-    if (numberExists) {
-      Swal.fire("Already exists", "A contract with this Contract Number already exists.", "error");
+    // Re-check right before spending an AI call — the on-blur check may not
+    // have finished yet (e.g. paste + immediate click), so `numberExists`
+    // alone isn't reliable here; this is the actual gate for whether
+    // extraction is allowed to run at all.
+    setCheckingNumber(true);
+    const check = await contractsService.checkContractNumberExists(contractNumber);
+    setCheckingNumber(false);
+    if (check.exists) {
+      const message =
+        check.reason === "order"
+          ? `This Contract Number is already in Order Processing (status: ${check.orderStatus}) — it can't be uploaded again.`
+          : "A contract with this Contract Number already exists.";
+      setNumberExists(true);
+      setNumberExistsMessage(message);
+      Swal.fire("Already exists", message, "error");
       return;
     }
+    setNumberExists(false);
+    setNumberExistsMessage("");
+
     setExtracting(true);
     try {
       const { extracted: extractedData, pdfFilename: savedFilename } = await contractsService.parseContractFile(file);
@@ -153,6 +219,8 @@ export default function ContractUpload() {
       setProducts(Array.isArray(extractedProducts) ? extractedProducts.map((p) => ({ ...EMPTY_PRODUCT, ...p })) : []);
       setPdfFilename(savedFilename);
       setExtractedFlag(true);
+
+      await checkSellerCompanyMatch(rest.sellerCompany, rest.sellerGstin);
 
       const normalize = (v) => String(v || "").trim().toLowerCase();
       if (extractedContractNumber && normalize(extractedContractNumber) !== normalize(contractNumber)) {
@@ -166,16 +234,37 @@ export default function ContractUpload() {
           cancelButtonText: "No, keep mine",
         });
         if (confirmResult.isConfirmed) {
+          setCheckingNumber(true);
+          const result = await contractsService.checkContractNumberExists(extractedContractNumber);
+          setCheckingNumber(false);
+
+          if (result.exists) {
+            // The PDF's real contract number (only known now, post-extraction)
+            // turns out to already be taken — there's nothing left to review or
+            // save, so abort cleanly instead of leaving a dead-end filled form
+            // with Save permanently disabled.
+            const message =
+              result.reason === "order"
+                ? `This contract's actual Contract Number ("${extractedContractNumber}") is already in Order Processing (status: ${result.orderStatus}) — it can't be uploaded again.`
+                : `This contract's actual Contract Number ("${extractedContractNumber}") already exists.`;
+            await Swal.fire("Already exists", message, "error");
+            setForm(EMPTY_FORM);
+            setProducts([]);
+            setPdfFilename(null);
+            setExtractedFlag(false);
+            setPdfContractNumber(null);
+            setContractNumber("");
+            setNumberExists(false);
+            setNumberExistsMessage("");
+            setFile(null);
+            return;
+          }
+
           setContractNumber(extractedContractNumber);
           setForm((prev) => ({ ...prev, contractNumber: extractedContractNumber }));
           setPdfContractNumber(null);
-          setCheckingNumber(true);
-          try {
-            const exists = await contractsService.checkContractNumberExists(extractedContractNumber);
-            setNumberExists(exists);
-          } finally {
-            setCheckingNumber(false);
-          }
+          setNumberExists(false);
+          setNumberExistsMessage("");
         }
       } else {
         setPdfContractNumber(null);
@@ -298,7 +387,7 @@ export default function ContractUpload() {
       return;
     }
     if (numberExists) {
-      Swal.fire("Already exists", "A contract with this Contract Number already exists.", "error");
+      Swal.fire("Already exists", numberExistsMessage || "A contract with this Contract Number already exists.", "error");
       return;
     }
     const invalidProducts = products.filter((p) => isInvalidHsn(p.hsnCode));
@@ -368,7 +457,7 @@ export default function ContractUpload() {
               <input
                 type="text"
                 value={contractNumber}
-                onChange={(e) => { setContractNumber(e.target.value); setNumberExists(false); setPdfContractNumber(null); }}
+                onChange={(e) => { setContractNumber(e.target.value); setNumberExists(false); setNumberExistsMessage(""); setPdfContractNumber(null); }}
                 onBlur={handleContractNumberBlur}
                 placeholder="Enter a unique Contract Number"
                 className={`w-full bg-white border rounded-xl px-3 py-2.5 pr-9 text-sm font-medium outline-none focus:ring-2 transition-all ${
@@ -381,7 +470,7 @@ export default function ContractUpload() {
               )}
             </div>
             {!checkingNumber && numberExists && (
-              <p className="text-xs font-bold text-rose-600 mt-1.5 flex items-center gap-1">This Contract Number already exists</p>
+              <p className="text-xs font-bold text-rose-600 mt-1.5 flex items-center gap-1">{numberExistsMessage}</p>
             )}
             {pdfContractNumber && (
               <p className="text-xs font-bold text-rose-600 mt-1.5">

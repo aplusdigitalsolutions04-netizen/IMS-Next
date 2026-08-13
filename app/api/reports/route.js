@@ -1,12 +1,22 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest } from "@/lib/auth";
+import { authenticateRequest, requireCompany, resolveScopedCompanyGuid } from "@/lib/auth";
 import { authorizeReports } from "@/lib/reportsAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   authorizeReports(user, "GET");
+  requireCompany(user);
+
+  // Every query below previously had no companyGuid filter at all — it
+  // scanned every tenant's rows and merged them together, so switching the
+  // active company never actually changed what Reports showed. `companyGuid`
+  // is null only for Admin explicitly requesting the "All Companies" view
+  // (see resolveScopedCompanyGuid) — everyone else always gets scoped.
+  const companyGuid = resolveScopedCompanyGuid(user, request);
+  const companyClause = (alias) => (companyGuid ? ` AND ${alias}.companyGuid = ?` : "");
+  const companyParam = companyGuid ? [companyGuid] : [];
 
   const { searchParams } = new URL(request.url);
   const startDate = searchParams.get("startDate");
@@ -14,14 +24,14 @@ export const GET = withErrorHandling(async (request) => {
   const sDate = startDate ? startDate.split("T")[0] : null;
   const eDate = endDate ? endDate.split("T")[0] : null;
 
-  const buildWhere = (base, col, prefix) => {
-    const params = [];
-    let w = base;
+  const buildWhere = (base, col, prefix, companyAlias) => {
+    const params = [...companyParam];
+    let w = base + companyClause(companyAlias);
     if (sDate && eDate) { w += ` AND ${col} BETWEEN ? AND ?`; params.push(`${prefix ? sDate + " 00:00:00" : sDate}`, `${prefix ? eDate + " 23:59:59" : eDate}`); }
     return { w, params };
   };
 
-  const s1 = buildWhere(" WHERE s.isDeleted=0", "s.invoiceDate", false);
+  const s1 = buildWhere(" WHERE s.isDeleted=0", "s.invoiceDate", false, "s");
   const [stationeryRows] = await mysqlPool.query(`
     SELECT s.stockInId as _id, s.invoiceNo as orderId, s.invoiceDate as dispatchDate,
            'Stock In' as status, IF(s.status=1,'Finalized','Draft') as logisticsStatus,
@@ -39,7 +49,7 @@ export const GET = withErrorHandling(async (request) => {
     ${s1.w} GROUP BY s.stockInId,v.vendorFirmName,s.invoiceNo,s.invoiceDate,s.status,s.invoiceFile
   `, s1.params);
 
-  const s2 = buildWhere(" WHERE o.isDeleted=0", "o.dispatchDate", true);
+  const s2 = buildWhere(" WHERE o.isDeleted=0", "o.dispatchDate", true, "o");
   const [printerRows] = await mysqlPool.query(`
     SELECT oi.guid as _id, o.invoiceNumber as orderId, o.dispatchDate,
            o.status, ol.logisticsStatus, oi.sellingPrice,
@@ -53,7 +63,7 @@ export const GET = withErrorHandling(async (request) => {
     ${s2.w}
   `, s2.params);
 
-  const s3 = buildWhere(" WHERE s.isDeleted=0", "s.createdAt", true);
+  const s3 = buildWhere(" WHERE s.isDeleted=0", "s.createdAt", true, "s");
   const [stockInRows] = await mysqlPool.query(`
     SELECT s.guid as _id, IFNULL(st.invoiceNo,'Stock In') as orderId, s.createdAt as dispatchDate,
            'Stock In' as status, 'Finalized' as logisticsStatus,
@@ -69,7 +79,7 @@ export const GET = withErrorHandling(async (request) => {
     ${s3.w} GROUP BY s.guid,s.createdAt,s.landingPrice,itv.variantName,itv.purchasePrice,s.serialNumber,st.invoiceNo,v.vendorFirmName
   `, s3.params);
 
-  const s4 = buildWhere(" WHERE o.isDeleted=0", "o.issueDate", true);
+  const s4 = buildWhere(" WHERE o.isDeleted=0", "o.issueDate", true, "o");
   const [stockOutRows] = await mysqlPool.query(`
     SELECT o.stockOutId as _id, COALESCE(o.orderId,o.refNo) as orderId, o.issueDate as dispatchDate,
            'Stock Out' as status, 'Finalized' as logisticsStatus,
@@ -86,7 +96,10 @@ export const GET = withErrorHandling(async (request) => {
   `, s4.params);
 
   const [statStock] = await mysqlPool.query(
-    "SELECT SUM(availablePCS*IFNULL(NULLIF(lastPurchaseRate,0),IFNULL(avgPurchaseRate,0))) as total FROM inventoryvariantstock ivs JOIN inventoryitemvariant iv ON ivs.itemVariantId=iv.itemVariantId WHERE iv.isDeleted=0"
+    `SELECT SUM(availablePCS*IFNULL(NULLIF(lastPurchaseRate,0),IFNULL(avgPurchaseRate,0))) as total
+     FROM inventoryvariantstock ivs JOIN inventoryitemvariant iv ON ivs.itemVariantId=iv.itemVariantId
+     WHERE iv.isDeleted=0${companyClause("iv")}`,
+    companyParam
   );
   // inventorystockinserial.landingPrice is unreliable (often left at 0 by the
   // Stock-In finalize flow) — inventoryitemvariant.purchasePrice is the
@@ -96,7 +109,8 @@ export const GET = withErrorHandling(async (request) => {
     `SELECT SUM(iv.purchasePrice) as total
      FROM inventorystockinserial s
      JOIN inventoryitemvariant iv ON s.itemVariantId = iv.itemVariantId AND iv.isDeleted = 0
-     WHERE s.serialStatus = 'Available' AND s.isDeleted = 0`
+     WHERE s.serialStatus = 'Available' AND s.isDeleted = 0${companyClause("s")}`,
+    companyParam
   );
 
   const transactions = [...stationeryRows, ...printerRows, ...stockInRows, ...stockOutRows].sort((a, b) => new Date(b.dispatchDate) - new Date(a.dispatchDate));

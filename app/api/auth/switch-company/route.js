@@ -16,9 +16,9 @@ export const POST = withErrorHandling(async (request) => {
   // flagged users) can switch into any active company without a
   // user_companies row.
   const [rows] = hasAllCompaniesAccess(user)
-    ? await mysqlPool.query(`SELECT guid, name, allowedPlatforms FROM companies WHERE guid = ? AND isActive = 1`, [companyGuid])
+    ? await mysqlPool.query(`SELECT guid, name, gstNumber, allowedPlatforms FROM companies WHERE guid = ? AND isActive = 1`, [companyGuid])
     : await mysqlPool.query(
-        `SELECT c.guid, c.name, c.allowedPlatforms
+        `SELECT c.guid, c.name, c.gstNumber, c.allowedPlatforms
          FROM user_companies uc
          JOIN companies c ON uc.companyGuid = c.guid
          WHERE uc.userGuid = ? AND c.guid = ? AND c.isActive = 1`,

@@ -194,7 +194,7 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
       const [b, c, u] = await Promise.all([
         legacyApi.get("/Inventory/GetBrandDropdown"),
         legacyApi.get("/Inventory/GetCategoryDropdown"),
-        legacyApi.get("/Inventory/GetUnitList"),
+        legacyApi.get("/Inventory/GetUnitDropdown"),
       ]);
       const brandList = b.data?.data || [];
       const categoryList = c.data?.data || [];
@@ -247,7 +247,7 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
     const res = await legacyApi.post("/Inventory/SaveOrUpdateUnit", {
       UnitId: "", UnitName: name, UnitDesc: extra.UnitDesc || "", BaseUnitQty: extra.BaseUnitQty || 1,
     });
-    const unitRes = await legacyApi.get("/Inventory/GetUnitList");
+    const unitRes = await legacyApi.get("/Inventory/GetUnitDropdown");
     setUnits(unitRes.data?.data || []);
     const created = (unitRes.data?.data || []).find((u) => u.unitId === res.data.unitId) || { unitId: res.data.unitId, unitName: name };
     setUnit(created);
@@ -256,12 +256,10 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
   const ensureMapping = async () => {
     setMappingBusy(true);
     try {
-      // Needs the complete list to reliably check "does this mapping already
-      // exist" — the endpoint paginates by default now, so ask for a high
-      // limit explicitly rather than relying on an unbounded default.
-      const res = await legacyApi.get("/Inventory/GetCategoryBrandMappingList", { params: { limit: 5000 } });
-      const list = res.data?.data || [];
-      const already = list.some((m) => m.categoryId === category.Value && m.brandId === brand.Value);
+      const res = await legacyApi.get("/Inventory/CheckCategoryBrandMapping", {
+        params: { categoryId: category.Value, brandId: brand.Value },
+      });
+      const already = res.data?.exists;
       if (!already) {
         await legacyApi.post("/Inventory/SaveOrUpdateCategoryBrandMapping", {
           MappingId: "", CategoryId: category.Value, BrandId: brand.Value,
@@ -277,9 +275,8 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
 
   const loadItemsForCategory = async () => {
     try {
-      const res = await legacyApi.get("/Inventory/GetItemList", { params: { categoryId: category.Value, limit: 1000 } });
-      const list = (res.data?.data || []).filter((it) => it.brandId === brand.Value);
-      setItems(list);
+      const res = await legacyApi.get("/Inventory/GetItemDropdown", { params: { categoryId: category.Value, brandId: brand.Value } });
+      setItems(res.data?.data || []);
     } catch (err) {
       console.error("Failed to load items:", err);
     }

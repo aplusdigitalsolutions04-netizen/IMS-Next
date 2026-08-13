@@ -33,8 +33,9 @@ export const POST = withErrorHandling(async (request) => {
   requireAuth(user);
   requireCompany(user);
 
-  const { ItemVariantId, ItemId, VariantCode, Mrp, Specs } = body;
+  const { ItemVariantId, ItemId, VariantCode, Mrp, Specs, PurchaseRate } = body;
   const safeMrp = Mrp !== undefined && Mrp !== null && Mrp !== "" ? Number(Mrp) : null;
+  const safePurchaseRate = PurchaseRate !== undefined && PurchaseRate !== null && PurchaseRate !== "" ? Number(PurchaseRate) : null;
   let finalItemVariantId = ItemVariantId;
   const isCreate = !(ItemVariantId && ItemVariantId !== "0" && ItemVariantId !== "");
   authorizeMasterWrite(user, "item", { isCreate });
@@ -43,16 +44,17 @@ export const POST = withErrorHandling(async (request) => {
     await mysqlPool.execute(
       `UPDATE inventoryitemvariant SET
          variantName = ?,
-         sellingPrice = COALESCE(?, sellingPrice)
+         sellingPrice = COALESCE(?, sellingPrice),
+         purchasePrice = COALESCE(?, purchasePrice)
        WHERE itemVariantId = ? AND companyGuid = ?`,
-      [VariantCode, safeMrp, ItemVariantId, user.companyId]
+      [VariantCode, safeMrp, safePurchaseRate, ItemVariantId, user.companyId]
     );
   } else {
     finalItemVariantId = uuidv4();
     await mysqlPool.execute(
-      `INSERT INTO inventoryitemvariant (itemVariantId, companyGuid, itemId, variantName, sellingPrice)
-       VALUES (?, ?, ?, ?, ?)`,
-      [finalItemVariantId, user.companyId, ItemId, VariantCode, safeMrp || 0]
+      `INSERT INTO inventoryitemvariant (itemVariantId, companyGuid, itemId, variantName, sellingPrice, purchasePrice)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [finalItemVariantId, user.companyId, ItemId, VariantCode, safeMrp || 0, safePurchaseRate || 0]
     );
   }
 
