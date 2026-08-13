@@ -86,9 +86,17 @@ function getUploadFileUrl(filename) {
 
 function getEffectiveDispatchStatus(item) {
   const logStatus = String(item?.logisticsStatus || "").trim();
-  if (logStatus) return logStatus;
+  if (logStatus) {
+    if ((logStatus === "Delivered" || logStatus === "Completed") && (!item.podFilename || String(item.podFilename).trim() === "")) {
+      return "POD Pending";
+    }
+    return logStatus;
+  }
   const status = String(item?.status || "").trim();
   if (status === "Billed") return "Packing in Process";
+  if ((status === "Delivered" || status === "Completed") && (!item.podFilename || String(item.podFilename).trim() === "")) {
+    return "POD Pending";
+  }
   return status;
 }
 
@@ -303,12 +311,13 @@ export default function Dispatch({
 
     Object.values(groupedStats).forEach((group) => {
       const d = group[0];
+      const effStatus = getEffectiveDispatchStatus(d);
       if (activeSet.has(d) || inTransitSet.has(d)) totalDispatch++;
-      if (d.logisticsStatus === "Ready for Pickup") readyCount++;
-      if (d.logisticsStatus === "In Transit") inTransitCount++;
-      if (d.logisticsStatus === "Delivered") deliveredCount++;
-      if (d.logisticsStatus === "RTO") rtoCount++;
-      if (d.logisticsStatus === "POD Pending") podPendingCount++;
+      if (effStatus === "Ready for Pickup") readyCount++;
+      if (effStatus === "In Transit") inTransitCount++;
+      if (effStatus === "Delivered" || effStatus === "Completed") deliveredCount++;
+      if (effStatus === "RTO") rtoCount++;
+      if (effStatus === "POD Pending") podPendingCount++;
       group.forEach(item => {
         totalRevenue += (Number(item.sellingPrice) || 0);
       });
@@ -964,7 +973,7 @@ export default function Dispatch({
                       {isSelectionMode && <td className="p-3 text-center"><input type="checkbox" checked={isSelected} onChange={() => handleSelectOne(index)} onClick={(e) => e.stopPropagation()} className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500" /></td>}
                       <td className="p-3 text-center text-slate-400 font-medium">{(currentPage - 1) * itemsPerPage + index + 1}</td>
                       <td className="p-3">
-                        <button onClick={(e) => handleViewOrder(e, group)} className={`text-xs font-mono font-bold text-left hover:underline ${isCancelled ? "text-slate-400 line-through" : "text-indigo-600"}`}>{item.customerName || item.customer || "-"}</button>
+                        <button onClick={(e) => handleViewOrder(e, group)} className={`text-xs font-mono font-bold text-left hover:underline ${isCancelled ? "text-slate-400 line-through" : "text-indigo-600"}`}>{item.orderid || item.customerName || item.customer || "-"}</button>
                       </td>
                       <td className="p-3"><span className={`text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md ${isCancelled ? "line-through text-slate-400 bg-slate-100" : ""}`}>{item.firmName}</span></td>
                       <td className="p-3"><span className="text-xs text-slate-600 font-medium">{isMultiple ? `Multiple (${group.length})` : displayModel}</span></td>
@@ -1318,7 +1327,7 @@ export default function Dispatch({
                 </h2>
                 <div className="flex items-center gap-3 mt-1 text-sm text-slate-500 font-medium">
                   <span className="font-mono bg-white border px-2 py-0.5 rounded-lg shadow-sm text-slate-700">
-                    {viewOrder[0].customerName || viewOrder[0].customer}
+                    {viewOrder[0].orderid || viewOrder[0].customerName || viewOrder[0].customer}
                   </span>
                   <span className="text-slate-300">•</span>
                   <span>Order: {viewOrder[0].orderDate ? format(new Date(viewOrder[0].orderDate), "dd MMM yyyy") : "-"}</span>
@@ -1362,6 +1371,7 @@ export default function Dispatch({
                             <td className="px-6 py-4">
                               <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
                                 getEffectiveDispatchStatus(item) === "Delivered" || getEffectiveDispatchStatus(item) === "Completed" ? "bg-green-50 text-green-700 border-green-200" :
+                                getEffectiveDispatchStatus(item) === "POD Pending" ? "bg-amber-50 text-amber-700 border-amber-200" :
                                 getEffectiveDispatchStatus(item) === "Packing in Process" ? "bg-cyan-50 text-cyan-700 border-cyan-200" :
                                 getEffectiveDispatchStatus(item) === "Ready for Pickup" ? "bg-amber-50 text-amber-700 border-amber-200" :
                                 getEffectiveDispatchStatus(item) === "Delivery in Process" || getEffectiveDispatchStatus(item) === "In Transit" || getEffectiveDispatchStatus(item) === "Pickup Scheduled" ? "bg-blue-50 text-blue-700 border-blue-200" :
@@ -1551,7 +1561,7 @@ export default function Dispatch({
                         <div className="bg-white/5 rounded-2xl p-5 border border-white/10 hover:bg-white/10 transition-colors group">
                           <p className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-3">Gate Pass</p>
                           <button
-                            onClick={() => downloadGatepass(viewOrder[0]._orderId, viewOrder[0].orderid || viewOrder[0].customerName)}
+                            onClick={() => downloadGatepass(viewOrder[0]._orderId, viewOrder[0].orderid || viewOrder[0].customerName || viewOrder[0].customer)}
                             className="w-full inline-flex items-center justify-center gap-2 text-xs font-black bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-900/20 active:scale-95"
                           >
                             <FileText size={14} /> Download Gate Pass

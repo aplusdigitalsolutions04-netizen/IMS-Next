@@ -159,13 +159,21 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  // `chosen` excludes serials already picked by OTHER unit slots (so the
+  // same serial can't be double-assigned) — but a slot's *own* already-
+  // picked serial must stay in its own options list, otherwise
+  // SerialSearchSelect can never find it in `options` to display it, and
+  // the input goes blank right after selecting (and stays unselectable on
+  // re-open, since the "selected" serial isn't there to re-pick either).
   const availableSerialsByModel = useMemo(() => {
     const chosen = new Set();
     Object.values(selections).forEach((units) => units.forEach((u) => u.serialGuid && chosen.add(u.serialGuid)));
-    return (modelGuid) => serials.filter((s) => {
+    return (modelGuid, ownSerialGuid) => serials.filter((s) => {
       const status = String(s.status || "").trim().toLowerCase();
       const serialModelId = s.modelId || s.modelGuid || s.itemVariantId;
-      return String(serialModelId) === String(modelGuid) && status === "available" && !chosen.has(String(s.id || s.guid));
+      const sId = String(s.id || s.guid);
+      const isOwn = ownSerialGuid && sId === String(ownSerialGuid);
+      return String(serialModelId) === String(modelGuid) && status === "available" && (isOwn || !chosen.has(sId));
     });
   }, [serials, selections]);
 
@@ -303,7 +311,7 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
                           <SerialSearchSelect
                             value={unit.serialGuid}
                             disabled={!unit.modelGuid}
-                            options={availableSerialsByModel(unit.modelGuid)}
+                            options={availableSerialsByModel(unit.modelGuid, unit.serialGuid)}
                             onChange={(serialGuid) => updateUnit(itemKey, idx, "serialGuid", serialGuid)}
                           />
                         </div>

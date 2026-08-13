@@ -8,7 +8,7 @@ import { AlertTriangle } from "lucide-react";
 export function getDeadlineUrgency(lastDeliveryDate, status) {
   if (!lastDeliveryDate) return { level: "none", label: "", daysLeft: null };
 
-  const cancelledStatuses = ["Order Cancelled", "Delivered", "Completed", "RTO"];
+  const cancelledStatuses = ["Order Cancelled", "Delivered", "Completed", "RTO", "POD Pending"];
   if (cancelledStatuses.includes(status)) return { level: "none", label: "", daysLeft: null };
 
   try {

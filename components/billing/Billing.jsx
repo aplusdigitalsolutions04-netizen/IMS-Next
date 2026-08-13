@@ -707,7 +707,7 @@ export default function Billing({
                                                     className={`text-xs font-bold hover:underline font-mono px-2 py-1 rounded transition-colors text-left ${activeTab === 'payment' ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' : 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'}`}
                                                     title="Click to view full order details"
                                                 >
-                                                    {item.customerName || item.customer || "N/A"}
+                                                     {item.orderid || item.orderId || item.customerName || item.customer || "N/A"}
                                                 </button>
                                                 {/* Tags Display */}
                                                 {(() => {

@@ -173,7 +173,12 @@ export function calculateBatchFinancials(items, returns = []) {
   let replacedCount = 0;
 
   items.forEach((item) => {
-    const price = Number(item.sellingPrice || 0);
+    // sellingPrice is a per-unit price. Confirmed/serialized order_items get
+    // one row per unit (quantity defaults to 1, so this is a no-op there),
+    // but a Draft order's item is still a single row covering its whole
+    // `quantity` — multiplying was missing, so a draft with e.g. qty 11
+    // showed only the per-unit price as if it were the line's total.
+    const price = Number(item.sellingPrice || 0) * (Number(item.quantity) || 1);
     totalValue += price;
 
     if (isItemReturned(item, returns)) {

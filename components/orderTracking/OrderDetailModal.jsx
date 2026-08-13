@@ -1761,7 +1761,17 @@ export default function OrderDetailModal({
                                   value={newStatus}
                                   onChange={(e) => setNewStatus(e.target.value)}
                                 >
-                                  {UPDATE_STATUS_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                  {/* A Draft order has no real serials/confirmed items yet — jumping
+                                      straight to "Send for Billing" or "On Hold" from here (bypassing
+                                      the dedicated Confirm/Send-to-Billing flows) left it stuck with
+                                      status="Send for Billing" but none of the structure that status
+                                      implies, which surfaced it in Billing's "Pending Invoice" tab
+                                      instead of staying in Draft. Only Confirm/Cancel are valid direct
+                                      transitions out of Draft. */}
+                                  {(selectedBatch.status === "Draft"
+                                    ? UPDATE_STATUS_OPTIONS.filter((opt) => ["Draft", "Order Confirmed", "Order Cancelled"].includes(opt.value))
+                                    : UPDATE_STATUS_OPTIONS
+                                  ).map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                                 </select>
                               </div>
                               {newStatus === "Order Cancelled" && (

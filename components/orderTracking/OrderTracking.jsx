@@ -260,6 +260,7 @@ export default function OrderTracking({
         groups[key] = {
           batchKey: key,
           id: order.id,
+          orderid: order.orderid,
           firmName: order.firmName,
           customerName: order.customerName,
           bidNumber: order.bidNumber,
@@ -287,6 +288,12 @@ export default function OrderTracking({
           invoiceFilename: order.invoiceFilename,
           ewayBillFilename: order.ewayBillFilename,
           gemBillUploaded: order.gemBillUploaded,
+          // Never copied here before — the "Send for Billing" button for a
+          // draft order could never switch to "Sent to Billing", even right
+          // after a successful send (the API call always succeeded, but
+          // batch.draftSentToBilling was always undefined, so it looked like
+          // nothing happened and the button stayed clickable forever).
+          draftSentToBilling: order.draftSentToBilling,
           podFilename: order.podFilename,
           installationRequired: isInstallationRequired(order.installationRequired) || false,
           paymentReceivedDate: order.paymentReceivedDate,
@@ -893,7 +900,11 @@ export default function OrderTracking({
   const handleSaveEdits = async () => {
     // Validate serials and find their IDs before saving
     for (let item of editItems) {
-      const matchedSerial = localSerials.find(s => normalizeSerial(s.value) === normalizeSerial(item.serialValue));
+      // serialsService.getSerials() never sets a `.value` field on its
+      // mapped objects — only `.serialNumber` — so comparing against
+      // `s.value` here always came back undefined and made every typed
+      // serial number look "not found", regardless of validity.
+      const matchedSerial = localSerials.find(s => normalizeSerial(s.serialNumber) === normalizeSerial(item.serialValue));
       if (!matchedSerial) {
         showToast(`Serial number ${item.serialValue} not found in inventory!`, "error");
         return;
@@ -1687,7 +1698,7 @@ export default function OrderTracking({
                                 }`}
                               title="View Contract"
                             >
-                              {batch.customerName || `Order #${batch.id}`}
+                              {batch.orderid || batch.customerName || `Order #${batch.id}`}
                               <ExternalLink size={10} className="mb-0.5 flex-shrink-0" />
                             </button>
                           ) : (
@@ -1695,7 +1706,7 @@ export default function OrderTracking({
                                 isOnHold ? "text-yellow-700" :
                                   "text-slate-800"
                               }`}>
-                              {batch.customerName || `Order #${batch.id}`}
+                              {batch.orderid || batch.customerName || `Order #${batch.id}`}
                             </div>
                           )}
                           <div className="text-xs text-slate-500 truncate max-w-[180px] flex items-center gap-1">

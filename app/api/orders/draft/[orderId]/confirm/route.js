@@ -94,7 +94,12 @@ export const POST = withErrorHandling(async (request, { params }) => {
       if (serialGuids.length !== quantity) {
         throw new ApiError(400, `Expected ${quantity} serial number(s) for this item, got ${serialGuids.length}.`);
       }
-      const perUnitPrice = (Number(draftItem.sellingPrice) || 0) / quantity;
+      // order_items.sellingPrice is already a PER-UNIT price — it's written
+      // straight from the contract's unitPrice at draft creation (see
+      // app/api/orders/draft/route.js), never a total. Dividing it by
+      // quantity again here treated it as a total and silently shrank the
+      // real unit price by a factor of `quantity`.
+      const perUnitPrice = Number(draftItem.sellingPrice) || 0;
 
       // `modelGuid` here may be a real legacy `models` row's guid — resolve it
       // to its migrated itemVariantId (same convention used elsewhere) since

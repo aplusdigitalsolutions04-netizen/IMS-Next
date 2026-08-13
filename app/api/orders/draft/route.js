@@ -126,7 +126,13 @@ export const POST = withErrorHandling(async (request) => {
 
     const orderId = randomUUID();
     const displayName = safeStr(organisation) || safeStr(contractNumber) || `DRAFT-${Date.now()}`;
-    const orderid = safeStr(contractNumber) || displayName;
+    // orderid must never fall back to the organisation name — it's the
+    // Order ID shown throughout Order Processing/Dispatch/Billing, and
+    // silently reusing displayName (which IS the organisation name when
+    // contractNumber is missing) made it indistinguishable from the
+    // customer name there, and risked orderid collisions between different
+    // draft orders from the same organisation.
+    const orderid = safeStr(contractNumber) || `DRAFT-${Date.now()}`;
 
     await conn.query(
       `INSERT INTO orders
