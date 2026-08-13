@@ -164,7 +164,8 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
     Object.values(selections).forEach((units) => units.forEach((u) => u.serialGuid && chosen.add(u.serialGuid)));
     return (modelGuid) => serials.filter((s) => {
       const status = String(s.status || "").trim().toLowerCase();
-      return String(s.modelGuid) === String(modelGuid) && status === "available" && !chosen.has(String(s.id || s.guid));
+      const serialModelId = s.modelId || s.modelGuid || s.itemVariantId;
+      return String(serialModelId) === String(modelGuid) && status === "available" && !chosen.has(String(s.id || s.guid));
     });
   }, [serials, selections]);
 

@@ -882,7 +882,7 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
                                 />
                               </td>
                               <td className="p-3 font-medium text-slate-600">
-                                {models.find(m => String(m.guid) === String(s.modelGuid))?.name || 'Unknown'}
+                               {models.find(m => String(m.guid || m.id) === String(s.modelId || s.modelGuid || s.itemVariantId))?.name || 'Unknown'}
                               </td>
                               <td className="p-3 font-mono font-bold text-slate-800">{val}</td>
                               <td className="p-3"><StatusBadge status={s.status} /></td>

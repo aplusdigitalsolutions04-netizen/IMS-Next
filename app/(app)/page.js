@@ -319,7 +319,7 @@ export default function DashboardPage() {
     if (categoryFilter === "All") return true;
     const s = serials.find((x) => (x.guid || x.id) === serialId);
     if (!s) return false;
-    const m = models.find((x) => (x.guid || x.id) === s.modelGuid);
+    const m = models.find((x) => (x.guid || x.id) === (s.modelId || s.modelGuid || s.itemVariantId));
     if (!m) return false;
     return m.mainCategory === categoryFilter || m.category === categoryFilter;
   };
