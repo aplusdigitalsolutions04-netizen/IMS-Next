@@ -13,6 +13,10 @@ export const POST = withErrorHandling(async (request) => {
 
   const { stockInDetailId, itemVariantId, serialNumbers } = body;
 
+  if (!Array.isArray(serialNumbers) || !serialNumbers.length) {
+    throw new ApiError(400, "No serial numbers provided");
+  }
+
   const dedupedInput = new Set(serialNumbers);
   if (dedupedInput.size !== serialNumbers.length) {
     throw new ApiError(400, "Duplicate serial numbers within the submitted batch");
