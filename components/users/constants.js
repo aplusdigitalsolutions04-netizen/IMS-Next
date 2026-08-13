@@ -111,6 +111,7 @@ export const EDIT_PERMISSIONS = [
   { key: "allow_edit_returns",          label: "Edit Returns",              icon: History,      group: "Operations" },
   { key: "allow_edit_damaged",          label: "Edit Damaged",              icon: AlertOctagon, group: "Operations" },
   { key: "allow_edit_warranty",         label: "Edit Warranty Certificates",icon: Shield,       group: "Operations" },
+  { key: "allow_manage_platform_fields",label: "Manage Platform Fields",    icon: Settings2,    group: "Master Data" },
   ...MASTER_EDIT_ENTRIES,
   ...FULL_CRUD_ENTRIES,
 ];

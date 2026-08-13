@@ -37,6 +37,7 @@ const bodySchema = z.object({
   deliveryCompletedBy: z.string().nullish(),
   pdfFilename: z.string().nullish(),
   products: z.array(productSchema).min(1, "At least one product is required to create an order draft."),
+  platformFields: z.record(z.any()).nullish(),
 });
 
 // Contract-extracted dates arrive as full ISO timestamps (e.g. "2026-07-08T18:30:00.000Z")
@@ -127,14 +128,15 @@ export const POST = withErrorHandling(async (request) => {
       `INSERT INTO orders
          (guid,companyGuid,orderid,platform,customerName,buyerEmail,consigneeEmail,
           address,shippingAddress,buyerAddress,dispatchedBy,status,gemOrderType,bidNumber,
-          orderDate,gstNumber,contactNumber,paymentAuthorityEmail,orderVerified,remarks,dispatchDate)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
+          orderDate,gstNumber,contactNumber,paymentAuthorityEmail,orderVerified,remarks,dispatchDate,platformFields)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW(),?)`,
       [orderId, user.companyId, orderid, "GeM", displayName, buyerEmail || null,
         consigneeEmail || null, buyerAddress || null, consigneeAddress || null, buyerAddress || null,
         user.username || "System", "Draft", "Direct Order", bidNumber || null,
         toDateOnly(generatedDate), buyerGstin || null, buyerContact || null, buyerEmail || null,
         "No",
-        `Draft created from Contract #${contractNumber || orderId}${deliveryStartAfter ? ` — delivery window ${deliveryStartAfter} to ${deliveryCompletedBy || "?"}` : ""}`]
+        `Draft created from Contract #${contractNumber || orderId}${deliveryStartAfter ? ` — delivery window ${deliveryStartAfter} to ${deliveryCompletedBy || "?"}` : ""}`,
+        rawBody.platformFields ? JSON.stringify(rawBody.platformFields) : null]
     );
     await conn.query(
       `INSERT INTO order_logistics (orderGuid, companyGuid, lastDeliveryDate, logisticsStatus) VALUES (?, ?, ?, NULL)`,

@@ -33,18 +33,18 @@ export default function SidePanel({
               </div>
 
               <div className="p-4 space-y-4">
-                {/* Company Selector */}
+                {/* Brand Selector */}
                 <div className="space-y-2">
                   <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                     <Building2 size={11} className="text-slate-400" />
-                    Company Name
+                    Brand Name
                   </label>
                   <SearchableSelect
                     value={selectedCompany}
                     onChange={(val) => { setSelectedCompany(val); setSelectedItemName(""); setSelectedModelId(""); }}
                     options={companyOptions.map(c => ({ label: c, value: c }))}
-                    placeholder="Select company"
-                    emptyMsg="No companies found"
+                    placeholder="Select brand"
+                    emptyMsg="No brands found"
                   />
                 </div>
 
@@ -58,7 +58,7 @@ export default function SidePanel({
                     value={selectedItemName}
                     onChange={(val) => { setSelectedItemName(val); setSelectedModelId(""); }}
                     options={itemNameOptions.map(n => ({ label: n, value: n }))}
-                    placeholder={selectedCompany ? "Select item" : "Select company first"}
+                    placeholder={selectedCompany ? "Select item" : "Select brand first"}
                     disabled={!selectedCompany}
                     emptyMsg="No items found"
                   />
@@ -98,7 +98,7 @@ export default function SidePanel({
                         <Database size={20} className="text-slate-300" />
                       </div>
                       <p className="text-sm font-bold text-slate-400">
-                        Select company & model
+                        Select brand & model
                       </p>
                       <p className="text-[11px] text-slate-400 mt-1">to view serial numbers</p>
                     </div>

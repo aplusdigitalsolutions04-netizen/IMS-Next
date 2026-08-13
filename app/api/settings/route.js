@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest } from "@/lib/auth";
+import { authenticateRequest, requireAuth } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 // Read-only for any authenticated user — these are business rules (e.g. the
@@ -9,7 +9,8 @@ import { withErrorHandling } from "@/lib/apiResponse";
 // them. Returned as a plain {key: typedValue} map so callers don't need to
 // know about settingValue/valueType — just `settings.eway_bill_threshold`.
 export const GET = withErrorHandling(async (request) => {
-  await authenticateRequest(request);
+  const user = await authenticateRequest(request);
+  requireAuth(user);
 
   const [rows] = await mysqlPool.query("SELECT settingKey, settingValue, valueType FROM app_settings");
   const settings = {};

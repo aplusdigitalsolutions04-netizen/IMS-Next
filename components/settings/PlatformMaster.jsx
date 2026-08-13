@@ -1,8 +1,9 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { Globe, Plus, Loader2, Trash2, Lock, ToggleLeft, ToggleRight, Pencil, X, Check } from "lucide-react";
+import { Globe, Plus, Loader2, Trash2, Lock, ToggleLeft, ToggleRight, Pencil, X, Check, Settings2 } from "lucide-react";
 import Swal from "sweetalert2";
 import { platformsService } from "@/lib/services/platformsService";
+import { getStoredUser } from "@/lib/client/auth";
 
 const COLOR_THEMES = [
   "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal",
@@ -37,6 +38,7 @@ function ColorSwatchPicker({ value, onPick }) {
 }
 
 export default function PlatformMaster() {
+  const currentUser = getStoredUser();
   const [platforms, setPlatforms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
@@ -46,6 +48,7 @@ export default function PlatformMaster() {
   const [editValue, setEditValue] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [colorPickerId, setColorPickerId] = useState(null);
+  const [managingFieldsFor, setManagingFieldsFor] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -233,6 +236,15 @@ export default function PlatformMaster() {
                 >
                   {p.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
                 </button>
+                {(currentUser?.role === 'Admin' || currentUser?.allow_manage_platform_fields) && (
+                  <button
+                    onClick={() => setManagingFieldsFor(p)}
+                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                    title="Manage Fields"
+                  >
+                    <Settings2 size={14} />
+                  </button>
+                )}
                 {!p.isSystem && (
                   <button onClick={() => handleDelete(p)} disabled={busyId === p.guid} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                     <Trash2 size={14} />
@@ -243,6 +255,128 @@ export default function PlatformMaster() {
           ))}
         </div>
       )}
+
+      {managingFieldsFor && (
+        <ManageFieldsModal platform={managingFieldsFor} onClose={() => setManagingFieldsFor(null)} />
+      )}
+    </div>
+  );
+}
+function ManageFieldsModal({ platform, onClose }) {
+  const [fields, setFields] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [newFieldName, setNewFieldName] = React.useState("");
+  const [newFieldType, setNewFieldType] = React.useState("text");
+  const [newIsRequired, setNewIsRequired] = React.useState(false);
+  const [busyId, setBusyId] = React.useState(null);
+
+  const loadFields = async () => {
+    setLoading(true);
+    try {
+      const data = await platformsService.getPlatformFields(platform.guid);
+      setFields(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => { loadFields(); }, []);
+
+  const handleAddField = async (e) => {
+    e.preventDefault();
+    if (!newFieldName.trim()) return;
+    setBusyId("add");
+    try {
+      await platformsService.addPlatformField(platform.guid, {
+        fieldName: newFieldName.trim(),
+        fieldType: newFieldType,
+        isRequired: newIsRequired,
+        sortOrder: fields.length
+      });
+      setNewFieldName("");
+      setNewIsRequired(false);
+      setNewFieldType("text");
+      await loadFields();
+    } catch (err) {
+      Swal.fire("Error", err?.response?.data?.message || "Failed to add field", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleDeleteField = async (fieldGuid) => {
+    if (!confirm("Delete this field?")) return;
+    setBusyId(fieldGuid);
+    try {
+      await platformsService.deletePlatformField(platform.guid, fieldGuid);
+      await loadFields();
+    } catch (err) {
+      Swal.fire("Error", "Failed to delete field", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800">Manage Fields: {platform.name}</h2>
+            <p className="text-sm text-slate-500 mt-1">Define custom fields that will appear during New Dispatch.</p>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
+        </div>
+
+        <div className="p-6 flex-1 overflow-y-auto">
+          <form onSubmit={handleAddField} className="flex gap-3 mb-8 items-end">
+            <div className="flex-1">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Field Name</label>
+              <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="e.g. AWB Number" required className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300" />
+            </div>
+            <div className="w-32">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Type</label>
+              <select value={newFieldType} onChange={e => setNewFieldType(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300">
+                <option value="text">Text</option>
+                <option value="number">Number</option>
+                <option value="date">Date</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 mb-3 px-2">
+              <input type="checkbox" id="req" checked={newIsRequired} onChange={e => setNewIsRequired(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" />
+              <label htmlFor="req" className="text-sm font-medium text-slate-700">Required</label>
+            </div>
+            <button type="submit" disabled={busyId === "add" || !newFieldName.trim()} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all">
+              {busyId === "add" ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />} Add
+            </button>
+          </form>
+
+          {loading ? (
+            <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-indigo-600" size={24} /></div>
+          ) : fields.length === 0 ? (
+            <div className="text-center py-10 text-slate-400 text-sm">No custom fields defined for {platform.name}.</div>
+          ) : (
+            <div className="space-y-2">
+              {fields.map(f => (
+                <div key={f.guid} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
+                  <div>
+                    <div className="font-bold text-slate-700 flex items-center gap-2">
+                      {f.fieldName}
+                      {f.isRequired === 1 && <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full uppercase tracking-wide">Required</span>}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1 uppercase tracking-wide">{f.fieldType} Input</div>
+                  </div>
+                  <button type="button" onClick={() => handleDeleteField(f.guid)} disabled={busyId === f.guid} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                    {busyId === f.guid ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -79,9 +79,14 @@ export const POST = withErrorHandling(async (request) => {
     if (finalCondition === "InStock" || finalCondition === "Good") { finalCondition = "Good"; newStatus = "Available"; }
     else if (finalCondition === "Damaged") { newStatus = "Damaged"; }
 
+    // 'Partially Returned' must NOT be excluded here — an order gets that
+    // status the moment its *first* item is returned, so excluding it would
+    // wrongly block returning any of the order's other still-dispatched
+    // items. The per-serial duplicate check below (dupCheck) is what
+    // actually prevents returning the same serial twice.
     let dQuery = `SELECT oi.guid, o.dispatchDate, o.platform AS firmName, o.orderid AS customerName, o.invoiceNumber, o.status as orderStatus, ol.logisticsStatus
       FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid AND o.companyGuid=? LEFT JOIN order_logistics ol ON o.guid=ol.orderGuid AND ol.companyGuid=?
-      WHERE oi.serialNumberGuid=? AND o.isDeleted=0 AND oi.companyGuid=? AND o.status NOT IN ('Returned','Order Cancelled','Partially Returned')`;
+      WHERE oi.serialNumberGuid=? AND o.isDeleted=0 AND oi.companyGuid=? AND o.status NOT IN ('Returned','Order Cancelled')`;
     const dParams = [cid, cid, serial.guid, cid];
     if (dispatchId) { dQuery += " AND oi.guid=?"; dParams.push(dispatchId); }
     dQuery += " ORDER BY o.dispatchDate DESC, oi.guid DESC LIMIT 1";

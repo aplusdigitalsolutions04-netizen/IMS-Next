@@ -79,6 +79,7 @@ export const POST = withErrorHandling(async (request) => {
         logisticsStatus: finalLogisticsStatus, podFilename: item.podFilename || null,
         ewayBillFilename: item.ewayBillFilename || null, remarks: item.remarks || null,
         warranty: item.warranty || null, buyerAddress: safeStr(item.buyerAddress, null),
+        platformFields: item.platformFields ? JSON.stringify(item.platformFields) : null,
       });
 
       if (!result.success) {
@@ -119,6 +120,7 @@ export const POST = withErrorHandling(async (request) => {
     return NextResponse.json({ message: "Bulk Dispatch Successful" });
   } catch (err) {
     await connection.rollback();
+    if (err instanceof ApiError) throw err;
     return NextResponse.json({ message: "Bulk dispatch failed.", error: err.message }, { status: 500 });
   } finally {
     connection.release();

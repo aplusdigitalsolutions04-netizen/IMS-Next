@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { PackageSearch, Search, Layers, TrendingUp, AlertTriangle, FileDown, Loader2, Hash, X, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -18,6 +18,10 @@ const CurrentStock = () => {
   const [totalRecords, setTotalRecords] = useState(0);
   const [globalValue, setGlobalValue] = useState(0);
   const [globalLowStock, setGlobalLowStock] = useState(0);
+  // Guards against a slower, older request overwriting a faster, newer one
+  // when the user types/filters quickly — fetchCurrentStock only applies a
+  // response if it's still the most recently *issued* request.
+  const latestRequestId = useRef(0);
 
   // Click a serialized variant to open a popup with its serial numbers
   const [serialModalVariant, setSerialModalVariant] = useState(null); // { itemVariantId, variantName }
@@ -102,26 +106,29 @@ const CurrentStock = () => {
   };
 
   const fetchCurrentStock = async (page = currentPage, limit = pageSize) => {
+    const requestId = ++latestRequestId.current;
     setLoading(true);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || ""}/Inventory/GetCurrentStock`, {
-        params: { 
-          page, 
+        params: {
+          page,
           limit,
           brandId: activeBrandId,
           search: searchTerm
         },
         headers: { Authorization: `Bearer ${sessionStorage.getItem("pt_auth_token")}` }
       });
+      if (requestId !== latestRequestId.current) return; // a newer request has since been issued — drop this stale response
       setStockData(response.data?.data || []);
       setTotalRecords(response.data?.total || 0);
       setGlobalValue(response.data?.totalValue || 0);
       setGlobalLowStock(response.data?.lowStockCount || 0);
     } catch (error) {
+      if (requestId !== latestRequestId.current) return;
       console.error("Error fetching stock:", error);
       Swal.fire("Error", "Failed to load current stock", "error");
     } finally {
-      setLoading(false);
+      if (requestId === latestRequestId.current) setLoading(false);
     }
   };
 

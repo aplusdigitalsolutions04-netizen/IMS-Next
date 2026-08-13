@@ -131,6 +131,7 @@ export const POST = withErrorHandling(async (request) => {
       courierPartner, logisticsDispatchDate, trackingId,
       freightCharges, logisticsStatus: finalLogisticsStatus, podFilename, ewayBillFilename,
       remarks, warranty, buyerAddress,
+      platformFields: body.platformFields ? JSON.stringify(body.platformFields) : null,
     });
 
     if (!result.success) {

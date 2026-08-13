@@ -128,7 +128,11 @@ export default function Dispatch({
   const [searchTerm, setSearchTerm] = useState("");
   const [platformFilter, setPlatformFilter] = useState("All");
   const [platformOptions, setPlatformOptions] = useState([]);
-  useEffect(() => { platformsService.getPlatforms().then(setPlatformOptions); }, []);
+  useEffect(() => {
+    platformsService.getPlatforms()
+      .then(setPlatformOptions)
+      .catch((err) => console.error("Failed to load platforms:", err));
+  }, []);
   const [dayFilter, setDayFilter] = useState(initialDayFilter);
   const [customStart, setCustomStart] = useState(initialCustomStart);
   const [customEnd, setCustomEnd] = useState(initialCustomEnd);

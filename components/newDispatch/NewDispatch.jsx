@@ -49,6 +49,13 @@ export default function NewDispatch({
   const [batchList, setBatchList] = useState([]);
   const inputRef = useRef(null);
   const debounceRef = useRef(null);
+  // processSerial closes over activeTab/batchList/form.quantity/serials/models
+  // from render scope — the debounced setTimeout below schedules a call to it
+  // ahead of time, so without this ref it would run against whatever those
+  // values were *when scheduled*, not when the timer actually fires (e.g. if
+  // the user switches Single/Bulk tabs within the debounce window). Kept in
+  // sync every render so the timeout always invokes the latest closure.
+  const processSerialRef = useRef(null);
 
   const [autoSubmitDelay] = useState(300);
   const [modelPrices, setModelPrices] = useState({});
@@ -89,6 +96,7 @@ export default function NewDispatch({
     modelName: "",
     companyName: "",
     platform: "",
+    platformFields: {},
     orderId: "",
     sellingPrice: "",
     landingPrice: 0,
@@ -199,10 +207,12 @@ export default function NewDispatch({
   // Reset manual flag when platform changes
   useEffect(() => {
     setLastDateManuallySet(false);
-    // ✅ Reset status to "Order Confirmed" when switching to Amazon/Flipkart
+    // Auto-set E-Commerce platform fields if missing
     // so it always sends a valid default for platforms that don't show the picker
     if (form.platform === "Amazon" || form.platform === "Flipkart") {
-      setForm(prev => ({ ...prev, status: "Order Confirmed" }));
+      setForm(f => ({ ...f, status: "Order Confirmed", platformFields: {} }));
+    } else {
+      setForm(f => ({ ...f, platformFields: {} }));
     }
   }, [form.platform]);
 
@@ -214,8 +224,12 @@ export default function NewDispatch({
   // Settings > Selling Platforms falls back to a generic storefront icon.
   const PLATFORM_ICONS = { Amazon: "🛒", Flipkart: "📦", GeM: "🏛️", Other: "🔗" };
   const [allPlatformRows, setAllPlatformRows] = useState([]);
-  useEffect(() => { platformsService.getPlatforms().then(setAllPlatformRows); }, []);
-  const allPlatforms = allPlatformRows.map((p) => ({ value: p.name, icon: PLATFORM_ICONS[p.name] || "🏬" }));
+  useEffect(() => {
+    platformsService.getPlatforms()
+      .then(setAllPlatformRows)
+      .catch((err) => console.error("Failed to load platforms:", err));
+  }, []);
+  const allPlatforms = allPlatformRows.map((p) => ({ value: p.name, icon: PLATFORM_ICONS[p.name] || "🛒", fields: p.fields || [] }));
 
   const platforms = allowed ? allPlatforms.filter(p => allowed.includes(p.value)) : allPlatforms;
 
@@ -453,6 +467,10 @@ export default function NewDispatch({
     setError("");
   };
 
+  useEffect(() => {
+    processSerialRef.current = processSerial;
+  });
+
   const handleSerialChange = (value) => {
     setForm((prev) => ({ ...prev, serialInput: value }));
     setError("");
@@ -478,7 +496,7 @@ export default function NewDispatch({
 
     if (autoSubmitDelay > 0) {
       debounceRef.current = setTimeout(() => {
-        processSerial(value);
+        processSerialRef.current?.(value);
       }, autoSubmitDelay);
     }
   };
@@ -718,6 +736,7 @@ export default function NewDispatch({
             : "N/A",
         user: currentUser?.username || "Unknown",
         sellingPrice: price,
+        platformFields: form.platformFields,
         ...additionalDetails
       });
 
@@ -1761,6 +1780,35 @@ export default function NewDispatch({
                             </div>
                           )}
                         </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dynamic Platform Fields */}
+                  {form.platform && getSelectedPlatformConfig()?.fields?.length > 0 && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4 mt-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-lg">⚙️</span>
+                        <span className="text-xs font-extrabold text-slate-600 uppercase tracking-widest">Additional {form.platform} Details</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {getSelectedPlatformConfig().fields.map(f => (
+                          <div key={f.guid} className="space-y-1.5">
+                            <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                              {f.fieldName} {f.isRequired === 1 && <span className="text-red-500">*</span>}
+                            </label>
+                            <input
+                              type={f.fieldType}
+                              required={f.isRequired === 1}
+                              className="w-full border border-slate-300/80 p-2.5 rounded-xl text-sm bg-white focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 outline-none transition-all"
+                              value={form.platformFields?.[f.guid] || ""}
+                              onChange={e => setForm(prev => ({
+                                ...prev,
+                                platformFields: { ...prev.platformFields, [f.guid]: e.target.value }
+                              }))}
+                            />
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}

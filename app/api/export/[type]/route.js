@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, authorizeReadWrite, ApiError } from "@/lib/auth";
+import { authenticateRequest, authorizeReadWrite, requireCompany, ApiError } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
+  requireCompany(user);
   authorizeReadWrite(user, "GET", { permission: "dashboard", denyMessage: "You do not have access to exports." });
   const { type } = await params;
 
@@ -12,7 +13,10 @@ export const GET = withErrorHandling(async (request, { params }) => {
   const format = searchParams.get("format") || "csv";
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
-  const sqlParams = [];
+  // Every branch below starts its WHERE with this same company filter — kept
+  // as the first bound param throughout, since the export queries previously
+  // had no tenant scoping at all and could return every company's data.
+  const sqlParams = [user.companyId];
   let query, filename;
 
   switch (type) {
@@ -30,7 +34,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
         LEFT JOIN inventorybrandmaster b ON i.brandId=b.brandId
         LEFT JOIN inventorycategorymaster c ON i.categoryId=c.categoryId
         LEFT JOIN inventorystockinserial s ON s.itemVariantId=itv.itemVariantId AND s.isDeleted=0
-        WHERE itv.isDeleted=0 GROUP BY itv.itemVariantId, itv.variantName, b.brandName, c.categoryName, i.itemName, itv.sellingPrice
+        WHERE itv.isDeleted=0 AND itv.companyGuid=? GROUP BY itv.itemVariantId, itv.variantName, b.brandName, c.categoryName, i.itemName, itv.sellingPrice
         ORDER BY itv.variantName
       `;
       filename = "models";
@@ -46,7 +50,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
         LEFT JOIN inventoryitemvariant fbiv ON s.itemVariantId=fbiv.itemVariantId AND fbiv.isDeleted=0
         LEFT JOIN inventoryitemmaster fbim ON fbiv.itemId=fbim.itemId AND fbim.isDeleted=0
         LEFT JOIN inventorybrandmaster fbbm ON fbim.brandId=fbbm.brandId AND fbbm.isDeleted=0
-        WHERE s.isDeleted=0 ORDER BY s.createdAt DESC
+        WHERE s.isDeleted=0 AND s.companyGuid=? ORDER BY s.createdAt DESC
       `;
       filename = "serials";
       break;
@@ -65,7 +69,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
         LEFT JOIN inventoryitemvariant fbiv ON s.itemVariantId=fbiv.itemVariantId AND fbiv.isDeleted=0
         LEFT JOIN inventoryitemmaster fbim ON fbiv.itemId=fbim.itemId AND fbim.isDeleted=0
         LEFT JOIN inventorybrandmaster fbbm ON fbim.brandId=fbbm.brandId AND fbbm.isDeleted=0
-        WHERE o.isDeleted=0
+        WHERE o.isDeleted=0 AND o.companyGuid=?
       `;
       if (startDate && endDate) {
         query += " AND o.dispatchDate>=? AND o.dispatchDate<=?";
@@ -82,7 +86,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
         FROM returns r
         JOIN inventorystockinserial s ON r.serialNumberGuid=s.guid
         LEFT JOIN inventoryitemvariant fbiv ON s.itemVariantId=fbiv.itemVariantId AND fbiv.isDeleted=0
-        WHERE r.isDeleted=0 ORDER BY r.returnDate DESC
+        WHERE r.isDeleted=0 AND r.companyGuid=? ORDER BY r.returnDate DESC
       `;
       filename = "returns";
       break;

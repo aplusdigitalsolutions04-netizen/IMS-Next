@@ -61,9 +61,23 @@ export const POST = withErrorHandling(async (request) => {
         throw new ApiError(400, globalStock ? `Not enough stock — only ${globalStock.availablePCS} available in total.` : "Stock record not found for this item.");
       }
 
-      // Ensure a source row exists, then floor the per-godown decrement at 0
-      // (rather than hard-failing) since historical stock may not have been
-      // attributed to any specific godown yet.
+      // Historical stock may never have been attributed to any specific
+      // godown yet, so a *missing* source row is treated as "unknown,
+      // trust the global total" and allowed through. But a source row that
+      // DOES exist with a real tracked value is a trustworthy signal — if
+      // it's less than the requested qty, this specific godown genuinely
+      // doesn't have enough, and letting the transfer proceed anyway would
+      // silently fabricate stock (destination gets the full qty while the
+      // source only loses what little it actually had), inflating the sum
+      // of per-godown stock beyond the true global total.
+      const [[existingSourceRow]] = await conn.query(
+        "SELECT availablePCS FROM inventorygodownstock WHERE itemVariantId=? AND godownGuid=? FOR UPDATE",
+        [itemVariantId, sourceGodownId]
+      );
+      if (existingSourceRow && Number(existingSourceRow.availablePCS) < qty) {
+        throw new ApiError(400, `Not enough stock in the source godown — only ${existingSourceRow.availablePCS} available there.`);
+      }
+
       await conn.query(
         "INSERT INTO inventorygodownstock (itemVariantId, godownGuid, availablePCS) VALUES (?, ?, 0) ON DUPLICATE KEY UPDATE availablePCS = availablePCS",
         [itemVariantId, sourceGodownId]
