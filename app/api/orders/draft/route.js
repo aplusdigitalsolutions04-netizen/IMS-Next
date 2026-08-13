@@ -133,7 +133,7 @@ export const POST = withErrorHandling(async (request) => {
          (guid,companyGuid,orderid,platform,customerName,buyerEmail,consigneeEmail,
           address,shippingAddress,buyerAddress,dispatchedBy,status,gemOrderType,bidNumber,
           orderDate,gstNumber,contactNumber,paymentAuthorityEmail,orderVerified,remarks,dispatchDate,platformFields)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW(),?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW(),?)`,
       [orderId, user.companyId, orderid, "GeM", displayName, buyerEmail || null,
         consigneeEmail || null, buyerAddress || null, consigneeAddress || null, buyerAddress || null,
         user.username || "System", "Draft", "Direct Order", bidNumber || null,
