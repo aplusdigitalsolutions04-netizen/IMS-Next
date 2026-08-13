@@ -20,7 +20,7 @@ function SerialSearchSelect({ value, options, onChange, disabled }) {
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return options;
-    return options.filter((o) => String(o.value || "").toLowerCase().includes(term));
+    return options.filter((o) => String(o.value || o.serialNumber || "").toLowerCase().includes(term));
   }, [options, query]);
 
   useLayoutEffect(() => {
@@ -59,7 +59,7 @@ function SerialSearchSelect({ value, options, onChange, disabled }) {
           ref={inputRef}
           type="text"
           disabled={disabled}
-          value={open ? query : (selected?.value || "")}
+          value={open ? query : (selected?.value || selected?.serialNumber || "")}
           placeholder={disabled ? "Select model first" : "Search serial no."}
           onFocus={handleFocus}
           onBlur={handleBlur}
@@ -84,7 +84,7 @@ function SerialSearchSelect({ value, options, onChange, disabled }) {
                 onClick={() => handleSelect(o)}
                 className="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 text-slate-700"
               >
-                {o.value}
+                {o.value || o.serialNumber}
               </button>
             ))
           )}
