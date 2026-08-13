@@ -1,15 +1,17 @@
 import {
   BarChart3, Printer, Barcode, ShieldCheck, ShoppingCart, Receipt, Package,
   Wrench, AlertOctagon, Tags, Layers, History, FileText, Bell, Shield, Database,
-  Ruler, ArrowDownCircle, ArrowUpCircle, Plus, Truck, Settings2, Users,
+  Ruler, ArrowDownCircle, ArrowUpCircle, Plus, Truck, Users,
   Building2, Globe, UploadCloud, Mail, Inbox, Send, ShieldAlert, DatabaseBackup,
-  ShieldHalf, HardDrive, Pencil, Trash2, ArrowRightLeft, Briefcase,
+  ShieldHalf, HardDrive, Trash2, ArrowRightLeft, Briefcase,
 } from "lucide-react";
 
-// Each Master Data entry below (Category/Brand/Vendor/Item/Combo/Unit/Mapping)
-// gets its own Add/Edit/Delete edit-rights — masterKey must match the suffix
-// used by allow_add_<key>/allow_edit_<key>/allow_delete_<key> in lib/auth.js's
-// authorizeMasterWrite/authorizeMasterDelete and lib/helpers.js's MASTER_KEYS.
+// Having view access to a tab is enough to add/edit everything in it, except
+// Order Processing/Billing/Dispatch (see PROTECTED_EDIT_PERMISSIONS in
+// lib/auth.js) — so these tabs only need a Delete checkbox here; Add/Edit no
+// longer have their own toggle since view access already covers them.
+// masterKey must match the suffix used by allow_delete_<key> in
+// lib/auth.js's authorizeMasterDelete and lib/helpers.js's MASTER_KEYS.
 const MASTER_EDIT_ENTRIES = [
   { key: "category", label: "Category" },
   { key: "brand",    label: "Brand" },
@@ -18,14 +20,11 @@ const MASTER_EDIT_ENTRIES = [
   { key: "combo",    label: "Combo" },
   { key: "unit",     label: "Unit" },
   { key: "mapping",  label: "Cate-Brand Mapping" },
-].flatMap(({ key, label }) => [
-  { key: `allow_add_${key}`,    label: `Add ${label}`,    icon: Plus,    group: "Master Data" },
-  { key: `allow_edit_${key}`,   label: `Edit ${label}`,   icon: Pencil,  group: "Master Data" },
-  { key: `allow_delete_${key}`, label: `Delete ${label}`, icon: Trash2,  group: "Master Data" },
-]);
+].map(({ key, label }) => ({ key: `allow_delete_${key}`, label: `Delete ${label}`, icon: Trash2, group: "Master Data" }));
 
 // Tabs that previously had one bundled permission with no create/edit/delete
-// split — each gets the same Add/Edit/Delete triple as Master Data above.
+// split — same "view access covers Add/Edit, only Delete needs its own
+// toggle" rule as Master Data above.
 const FULL_CRUD_ENTRIES = [
   { key: "roles",           label: "Role",            group: "Admin & Analytics" },
   { key: "companyMaster",   label: "Company",         group: "Master Data" },
@@ -33,11 +32,7 @@ const FULL_CRUD_ENTRIES = [
   { key: "users",           label: "User",            group: "Admin & Analytics" },
   { key: "emailAccounts",   label: "Email Account",   group: "Email" },
   { key: "emailTemplates",  label: "Email Template",  group: "Email" },
-].flatMap(({ key, label, group }) => [
-  { key: `allow_add_${key}`,    label: `Add ${label}`,    icon: Plus,    group },
-  { key: `allow_edit_${key}`,   label: `Edit ${label}`,   icon: Pencil,  group },
-  { key: `allow_delete_${key}`, label: `Delete ${label}`, icon: Trash2,  group },
-]);
+].map(({ key, label, group }) => ({ key: `allow_delete_${key}`, label: `Delete ${label}`, icon: Trash2, group }));
 
 // print_models_view/print_models_edit/print_serials_view/print_serials_edit and
 // create_order used to exist here as separate "view" entries, but nothing
@@ -97,21 +92,19 @@ export const PERMISSION_GROUPS = [
   { name: "System Admin",     icon: ShieldAlert,  color: "rose",    permissions: ["apiLogs", "backupRestore", "rateLimitSettings", "googleDrive"] },
 ];
 
+// Order Processing, Billing, and Dispatch are the only tabs where view
+// access does NOT automatically grant edit rights — everywhere else (Model
+// Pricing, Serials, Godown, FBF/FBA, Installations, Returns, Damaged,
+// Warranty, Platform Fields, Master Data, Roles, Company/Platform Master,
+// Users, Email) the tab's own view checkbox above already covers add/edit,
+// so those no longer need a separate entry here. Only Delete (still
+// flag-gated everywhere, see lib/auth.js) and these 4 protected edit-flags
+// remain.
 export const EDIT_PERMISSIONS = [
-  { key: "allow_edit_models",           label: "Edit Model Pricing (Dispatch)", icon: Printer,  group: "Serials & Pricing" },
-  { key: "allow_edit_serials",          label: "Edit Serial Numbers (Bulk Upload/Delete)", icon: Barcode, group: "Serials & Pricing" },
-  { key: "allow_edit_godown",           label: "Edit Godown Master",        icon: Database,     group: "Inventory" },
-  { key: "allow_transfer_godown",       label: "Perform Godown Transfer",   icon: ArrowRightLeft, group: "Inventory" },
-  { key: "allow_edit_fbf_fba",          label: "Edit FBF/FBA Master & Stock",icon: Database,    group: "Inventory" },
   { key: "allow_create_order",          label: "Create Orders",             icon: Plus,         group: "Orders" },
   { key: "allow_edit_order_processing", label: "Edit Orders",               icon: ShoppingCart, group: "Orders" },
   { key: "allow_edit_billing",          label: "Edit Billing",              icon: Receipt,      group: "Orders" },
   { key: "allow_edit_dispatch",         label: "Edit Dispatch",             icon: Truck,        group: "Orders" },
-  { key: "allow_edit_installations",    label: "Edit Installations",        icon: Wrench,       group: "Operations" },
-  { key: "allow_edit_returns",          label: "Edit Returns",              icon: History,      group: "Operations" },
-  { key: "allow_edit_damaged",          label: "Edit Damaged",              icon: AlertOctagon, group: "Operations" },
-  { key: "allow_edit_warranty",         label: "Edit Warranty Certificates",icon: Shield,       group: "Operations" },
-  { key: "allow_manage_platform_fields",label: "Manage Platform Fields",    icon: Settings2,    group: "Master Data" },
   ...MASTER_EDIT_ENTRIES,
   ...FULL_CRUD_ENTRIES,
 ];

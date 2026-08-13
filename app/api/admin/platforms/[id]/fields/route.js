@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth, requireEditPermission, ApiError } from "@/lib/auth";
+import { authenticateRequest, requireAuth, requirePermissionOrEditFlag, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 // Get fields for a specific platform
@@ -21,7 +21,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
 // Add a new field
 export const POST = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireEditPermission(user, "allow_manage_platform_fields");
+  requirePermissionOrEditFlag(user, "platformMaster", "allow_manage_platform_fields", "You do not have permission to manage platform fields.");
   const { id: platformGuid } = await params;
   const { fieldName, fieldType = "text", isRequired = false, sortOrder = 0 } = await parseJsonBody(request);
 

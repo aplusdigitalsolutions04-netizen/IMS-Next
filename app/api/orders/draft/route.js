@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, authorizeOrdersRequest, requireCompany, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, requireCompany, ApiError } from "@/lib/auth";
 import { safeStr } from "@/lib/helpers";
 import { validateBody } from "@/lib/validate";
 
@@ -61,7 +61,11 @@ import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
-  authorizeOrdersRequest(user, "POST", new URL(request.url).pathname, null);
+  // Creating a draft straight from a contract is Contracts-tab work, not
+  // general Order Processing — "contracts" view access is enough on its own
+  // (unlike the rest of Order Processing, which stays gated behind the
+  // separate allow_create_order/allow_edit_order_processing edit-flags).
+  requirePermission(user, "contracts", "You do not have permission to create order drafts.");
 
   const rawBody = await parseJsonBody(request);
   const {

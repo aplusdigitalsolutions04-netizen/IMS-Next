@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, requireCompany, requirePermission } from "@/lib/auth";
-import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 // Called right after a contract is saved — checks each product on the
@@ -16,9 +15,14 @@ import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
   const user = await authenticateRequest(request);
-  authorizeInventory(user, "POST");
   requireAuth(user);
   requireCompany(user);
+  // This is a read-only lookup (does products on the contract already exist
+  // in Item Master?), not an inventory write — it was previously gated by
+  // authorizeInventory's allow_edit_inventory edit-flag, which blocked any
+  // role (e.g. Supervisor) that can create contract drafts but was never
+  // meant to have full Inventory-edit rights. The "contracts" permission
+  // below is the correct gate for this.
   requirePermission(user, "contracts", "You do not have permission to access contracts.");
 
   const products = Array.isArray(body.products)

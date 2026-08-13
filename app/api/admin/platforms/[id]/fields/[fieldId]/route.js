@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireEditPermission } from "@/lib/auth";
+import { authenticateRequest, requirePermissionOrEditFlag } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireEditPermission(user, "allow_manage_platform_fields");
+  requirePermissionOrEditFlag(user, "platformMaster", "allow_manage_platform_fields", "You do not have permission to manage platform fields.");
   const { fieldId } = await params;
   const { fieldName, fieldType, isRequired, sortOrder } = await parseJsonBody(request);
 
@@ -41,7 +41,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 
 export const DELETE = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireEditPermission(user, "allow_manage_platform_fields");
+  requirePermissionOrEditFlag(user, "platformMaster", "allow_manage_platform_fields", "You do not have permission to manage platform fields.");
   const { fieldId } = await params;
 
   await mysqlPool.query("DELETE FROM selling_platform_fields WHERE guid = ?", [fieldId]);
