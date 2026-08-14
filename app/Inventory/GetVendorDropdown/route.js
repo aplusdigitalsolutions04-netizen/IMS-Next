@@ -15,7 +15,7 @@ export const GET = withErrorHandling(async (request) => {
   requireCompany(user);
 
   const [rows] = await mysqlPool.query(
-    "SELECT vendorId, vendorFirmName, status FROM inventoryvendor WHERE isDeleted = 0 AND companyGuid = ?",
+    "SELECT vendorId, vendorFirmName, isActive AS status FROM inventoryvendor WHERE isDeleted = 0 AND companyGuid = ?",
     [user.companyId]
   );
   return NextResponse.json({ data: rows, message: "Success" });
