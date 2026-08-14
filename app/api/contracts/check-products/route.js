@@ -39,23 +39,35 @@ export const POST = withErrorHandling(async (request) => {
   );
   const byName = new Map(rows.map((r) => [String(r.variantName || "").trim().toLowerCase(), r]));
   const norm = (v) => String(v || "").trim().toLowerCase();
-  const tokenize = (v) => norm(v).split(/[^a-z0-9]+/).filter(Boolean);
+  // Alphanumeric-only, no separators — "M208dw" and "208dw" both collapse to
+  // a plain digit/letter run, so a model number embedded inside a longer word
+  // (contract's "M208dw" containing Item Master's "208dw") still matches via
+  // substring instead of requiring the two to be identical whitespace-split
+  // tokens. Mirrors matchModelGuid in app/api/orders/draft/route.js, which
+  // already matched this way — this endpoint's stricter exact-token check
+  // was the one out of sync, causing it to report "not in inventory" for
+  // products the draft-creation step would have matched just fine.
+  const alnum = (v) => norm(v).replace(/[^a-z0-9]/g, "");
+  const tokenizeWords = (v) => norm(v).split(/\s+/).map(alnum).filter(Boolean);
 
   // The contract's "model" field is often a long free-text description (e.g.
   // "HP LASER 1008A printer with 1 year Warranty") rather than the bare model
   // number Item Master stores ("HP 1008a") — an exact-string match almost
-  // never hits. Instead, treat it as a match when every word/number token of
-  // the inventory variant name appears somewhere in the model text. Among
-  // multiple such matches, prefer the one with the most tokens (most specific).
+  // never hits. Instead, treat it as a match when every word of the inventory
+  // variant name appears as a substring somewhere in the model text. Among
+  // multiple such matches, prefer the one with the most words (most specific).
   const findModelMatch = (model) => {
-    const modelTokens = new Set(tokenize(model));
-    if (modelTokens.size === 0) return null;
+    const blob = alnum(model);
+    if (!blob) return null;
     let best = null;
+    let bestWordCount = 0;
     for (const r of rows) {
-      const nameTokens = tokenize(r.variantName);
-      if (nameTokens.length === 0) continue;
-      if (nameTokens.every((t) => modelTokens.has(t))) {
-        if (!best || nameTokens.length > tokenize(best.variantName).length) best = r;
+      const words = tokenizeWords(r.variantName);
+      if (words.length > 0 && words.every((w) => blob.includes(w))) {
+        if (!best || words.length > bestWordCount) {
+          best = r;
+          bestWordCount = words.length;
+        }
       }
     }
     return best;

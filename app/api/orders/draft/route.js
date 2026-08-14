@@ -75,6 +75,22 @@ export const POST = withErrorHandling(async (request) => {
     pdfFilename, products,
   } = validateBody(bodySchema, rawBody);
 
+  // Draft orders link back to their contract only by orderid == contractNumber
+  // (set below) — same convention app/api/contracts/route.js already enforces
+  // on upload. The client-side double-click guard in ContractsList.jsx only
+  // covers one request in flight; it doesn't stop a second "Create Draft
+  // Order" click after a page reload or from a different tab, which would
+  // otherwise insert a second order with the same orderid.
+  if (contractNumber && contractNumber.trim()) {
+    const [existingOrder] = await mysqlPool.query(
+      "SELECT guid, status FROM orders WHERE orderid = ? AND companyGuid = ? AND isDeleted = 0 LIMIT 1",
+      [contractNumber.trim(), user.companyId]
+    );
+    if (existingOrder.length > 0) {
+      throw new ApiError(400, `Order is already in draft for Contract #${contractNumber.trim()} (status: ${existingOrder[0].status}).`);
+    }
+  }
+
   // Try to match each contract product against an existing catalog model (by
   // name) so the Confirm-Order step can pre-select it instead of forcing the
   // user to pick it manually every time.
