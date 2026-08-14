@@ -219,12 +219,12 @@ export default function Billing({
         return groupedBilling.slice(start, start + pageSize);
     }, [groupedBilling, currentPage, pageSize]);
 
-    const totalBillingRevenue = billingDispatches.reduce((sum, d) => sum + (Number(d.sellingPrice) || 0), 0);
+    const totalBillingRevenue = billingDispatches.reduce((sum, d) => sum + (Number(d.sellingPrice) || 0) * (Number(d.quantity) || 1), 0);
 
     // ✅ NEW: Calculate batch order value for E-Way Bill validation
     const editingBatchOrderValue = useMemo(() => {
         if (!editingBatch || !Array.isArray(editingBatch)) return 0;
-        return editingBatch.reduce((sum, item) => sum + (Number(item.sellingPrice) || 0), 0);
+        return editingBatch.reduce((sum, item) => sum + (Number(item.sellingPrice) || 0) * (Number(item.quantity) || 1), 0);
     }, [editingBatch]);
 
     // ✅ NEW: E-Way Bill required if order value > 50,000 and NOT an Amazon/Flipkart batch
@@ -241,7 +241,11 @@ export default function Billing({
         return editingBatch[0] && String(editingBatch[0].firmName || "").trim() === "GeM";
     }, [editingBatch]);
 
-    const isEwayBillRequired = !editingBatchIsMarketplace && editingBatchOrderValue > 50000;
+    // E-Way Bill only applies once an order is actually being billed/shipped —
+    // a Draft order hasn't been confirmed with real serials/dispatch yet, so
+    // it shouldn't show as E-Way Bill "required" just for crossing ₹50,000
+    // in the editor.
+    const isEwayBillRequired = editingBatch?.[0]?.status !== "Draft" && !editingBatchIsMarketplace && editingBatchOrderValue > 50000;
 
     // Handle Edit Invoice Click
     const handleEditClick = (group) => {
@@ -277,7 +281,7 @@ export default function Billing({
     // Handle Payment Click
     const handlePaymentClick = (group) => {
         setPaymentBatch(group);
-        const totalAmount = group.reduce((sum, item) => sum + (Number(item.sellingPrice) || 0), 0);
+        const totalAmount = group.reduce((sum, item) => sum + (Number(item.sellingPrice) || 0) * (Number(item.quantity) || 1), 0);
 
         setPaymentForm({
             paymentDate: toLocalDateStr(new Date()),
@@ -679,7 +683,7 @@ export default function Billing({
                                     const item = group[0];
                                     const isMultiple = group.length > 1;
                                     const { model } = getDetails(item);
-                                    const totalAmount = group.reduce((sum, i) => sum + (Number(i.sellingPrice) || 0), 0);
+                                    const totalAmount = group.reduce((sum, i) => sum + (Number(i.sellingPrice) || 0) * (Number(i.quantity) || 1), 0);
 
                                     // ✅ NEW: Show E-Way Bill indicator for high-value orders
                                     const needsEway = totalAmount > 50000;
@@ -1170,7 +1174,7 @@ export default function Billing({
                                                         <td className="px-4 py-3 font-medium text-slate-700">{model}</td>
                                                         <td className="px-4 py-3 font-mono text-slate-600">{serial}</td>
                                                         <td className="px-4 py-3 text-right font-bold text-emerald-600">
-                                                            ₹{Number(item.sellingPrice || 0).toLocaleString('en-IN')}
+                                                            ₹{(Number(item.sellingPrice || 0) * (Number(item.quantity) || 1)).toLocaleString('en-IN')}
                                                         </td>
                                                     </tr>
                                                 );
@@ -1180,7 +1184,7 @@ export default function Billing({
                                             <tr>
                                                 <td colSpan="3" className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase">Total Amount</td>
                                                 <td className="px-4 py-3 text-right font-bold text-indigo-700 text-base">
-                                                    ₹{viewingOrder.reduce((sum, i) => sum + Number(i.sellingPrice || 0), 0).toLocaleString('en-IN')}
+                                                    ₹{viewingOrder.reduce((sum, i) => sum + Number(i.sellingPrice || 0) * (Number(i.quantity) || 1), 0).toLocaleString('en-IN')}
                                                 </td>
                                             </tr>
                                         </tfoot>

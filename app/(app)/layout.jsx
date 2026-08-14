@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { LayoutDashboard, User, Loader2, Clock, Search, X } from "lucide-react";
 import { getStoredUser, clearSession } from "@/lib/client/auth";
@@ -123,7 +123,12 @@ export default function AppLayout({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [checked, setChecked] = useState(false);
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so the sessionStorage check — and the
+  // redirect it triggers — runs before the browser paints, instead of after.
+  // Combined with rendering null (no spinner) below while unauthenticated,
+  // an unauthenticated visitor never sees a loading screen: this component
+  // never paints anything before the app router hands off to /login.
+  useLayoutEffect(() => {
     const userStr = typeof window !== "undefined" ? window.sessionStorage.getItem("pt_user") : null;
     if (!userStr) {
       router.replace("/login");
@@ -152,12 +157,10 @@ export default function AppLayout({ children }) {
     router.replace("/login");
   };
 
+  // No session and no logged-in user: render nothing while the redirect
+  // (triggered above) hands off to /login — no spinner, no wait.
   if (!checked || !currentUser) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <Loader2 className="animate-spin text-indigo-600" size={32} />
-      </div>
-    );
+    return null;
   }
 
   const isAdmin = currentUser.role === "Admin";
