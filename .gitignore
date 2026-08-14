@@ -40,14 +40,17 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.next.zip
+.next
+.next/
+.claude
+.claude/
+*.zip
 
 # local uploads
 uploads/
+uploads
 
 # temp database exports and text logs
 *.sql
 *.txt
 *.log
-
-
