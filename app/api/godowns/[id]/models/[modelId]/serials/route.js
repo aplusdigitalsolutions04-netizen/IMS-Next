@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany } from "@/lib/auth";
-import { authorizeGodowns } from "@/lib/godownsAuth";
+import { authorizeGodownTransfer } from "@/lib/godownsAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
+// Same Transfer-picker-only scoping as ../models/route.js — godownTransfer,
+// not godownMaster.
 export const GET = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
-  authorizeGodowns(user, "GET");
+  authorizeGodownTransfer(user, "GET");
   const { id, modelId } = await params;
 
   const [rows] = await mysqlPool.query(

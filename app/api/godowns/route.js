@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, ApiError, requireCompany } from "@/lib/auth";
-import { authorizeGodowns } from "@/lib/godownsAuth";
+import { authorizeGodowns, authorizeGodownRead } from "@/lib/godownsAuth";
 import { safeStr, toBit, logUserActivity } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
-  authorizeGodowns(user, "GET");
+  authorizeGodownRead(user);
 
   const [rows] = await mysqlPool.query(
     "SELECT guid, godownName, godownAddress, isDefault, createdAt, updatedAt FROM godowns WHERE isDeleted=0 AND companyGuid=? ORDER BY isDefault DESC, godownName ASC",

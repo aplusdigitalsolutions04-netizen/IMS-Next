@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany } from "@/lib/auth";
-import { authorizeGodowns } from "@/lib/godownsAuth";
+import { authorizeGodownTransfer } from "@/lib/godownsAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 // Lists every item in Current Stock (serialized AND non-serialized) so the
@@ -10,9 +10,14 @@ import { withErrorHandling } from "@/lib/apiResponse";
 // godown (transferring only what's really there); non-serialized shows the
 // company's total available quantity, since non-serialized stock was never
 // tracked per-godown before this feature existed.
+//
+// This is Godown Transfer-specific data (per-godown stock breakdown), not
+// general Godown Master data, so it's gated on "godownTransfer" — a
+// godownMaster-only role can manage godowns themselves but shouldn't get to
+// browse stock-by-godown through this picker without transfer rights too.
 export const GET = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  authorizeGodowns(user, "GET");
+  authorizeGodownTransfer(user, "GET");
   requireCompany(user);
   const { id } = await params;
 

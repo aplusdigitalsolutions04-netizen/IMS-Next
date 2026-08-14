@@ -177,6 +177,22 @@ export default function GodownTransfer({ currentUser }) {
     }
   }, [activeTab]);
 
+  // Godown Transfer is gated on its own "godownTransfer" permission, not
+  // "godownMaster" — Godown Master access alone manages godowns themselves
+  // but shouldn't unlock this separate stock-transfer feature. The sidebar
+  // already hides this page's nav link without the permission, but a direct
+  // URL visit should get the same clear message instead of a page full of
+  // 403 errors from every API call.
+  const canView = currentUser?.role === 'Admin' || !!currentUser?.permissions?.includes('godownTransfer');
+  if (!canView) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500">
+        <ArrowRightLeft size={48} className="mb-4 text-slate-300" />
+        <p className="text-lg font-semibold">You do not have permission to access Godown Transfer.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 text-slate-900">
 

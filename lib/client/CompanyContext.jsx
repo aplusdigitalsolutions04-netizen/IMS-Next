@@ -79,10 +79,12 @@ export function CompanyProvider({ children }) {
       // change that's guaranteed to reach every one of those pages at once,
       // instead of hunting down and patching every fetch-on-mount effect.
       window.location.reload();
+      return true;
     } catch (err) {
       console.error("Error switching company:", err);
       alert(err.response?.data?.message || err.message);
       setIsSwitchingCompany(false);
+      return false;
     }
   };
 

@@ -4,7 +4,9 @@ import { useRouter } from "next/navigation";
 import { FileText, Loader2, Sparkles, Save, Plus, Trash2, UploadCloud, Hash, CheckCircle2 } from "lucide-react";
 import Swal from "sweetalert2";
 import { contractsService } from "@/lib/services/contractsService";
+import { companyService } from "@/lib/services/companyService";
 import { useCompany } from "@/lib/client/CompanyContext";
+import { getStoredUser } from "@/lib/client/auth";
 import AddProductWizard from "./AddProductWizard";
 
 const SECTIONS = [
@@ -103,7 +105,11 @@ const normGstin = (v) => String(v || "").replace(/\s+/g, "").toUpperCase();
 
 export default function ContractUpload() {
   const router = useRouter();
-  const { activeCompany, availableCompanies } = useCompany();
+  const { activeCompany, availableCompanies, switchCompany, setAvailableCompanies } = useCompany();
+  const currentUser = typeof window !== "undefined" ? getStoredUser() : null;
+  const canManageCompanies = currentUser?.role === "Admin"
+    || currentUser?.permissions?.includes("companyMaster")
+    || !!currentUser?.allow_add_companyMaster;
   const [file, setFile] = useState(null);
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -153,8 +159,15 @@ export default function ContractUpload() {
   // into, regardless of who it was actually issued to. GSTIN is checked
   // first since it's the reliable identifier; company name (which can be
   // written inconsistently across documents) is only a fallback.
+  //
+  // Returns true if the caller (handleExtract) should abort and reset the
+  // form — either because the user is being sent to a different company
+  // (new or existing) to continue there, or because they have no way to fix
+  // the mismatch themselves and must go through an Admin instead. Returns
+  // false when it's safe to keep going with the currently active company
+  // (no mismatch, or the user explicitly chose to continue anyway).
   const checkSellerCompanyMatch = async (sellerCompany, sellerGstin) => {
-    if (!activeCompany || (!sellerCompany && !sellerGstin)) return;
+    if (!activeCompany || (!sellerCompany && !sellerGstin)) return false;
 
     const sameByGstin = sellerGstin && activeCompany.gstNumber && normGstin(sellerGstin) === normGstin(activeCompany.gstNumber);
     const sameByName = sellerCompany && activeCompany.name &&
@@ -162,24 +175,97 @@ export default function ContractUpload() {
 
     const hasComparableData = (sellerGstin && activeCompany.gstNumber) || sellerCompany;
     const matches = (sellerGstin && activeCompany.gstNumber) ? sameByGstin : sameByName;
-    if (!hasComparableData || matches) return;
+    if (!hasComparableData || matches) return false;
 
     const matchesOther = (c) =>
       (sellerGstin && c.gstNumber && normGstin(c.gstNumber) === normGstin(sellerGstin)) ||
       (sellerCompany && c.name && (normText(sellerCompany).includes(normText(c.name)) || normText(c.name).includes(normText(sellerCompany))));
     const suggested = (availableCompanies || []).find((c) => c.guid !== activeCompany.guid && matchesOther(c));
 
+    // Case 1: this seller matches a company the user already has access to
+    // — offer to switch straight there instead of just warning.
+    if (suggested) {
+      const result = await Swal.fire({
+        title: "Seller company mismatch",
+        html:
+          `This contract's seller is <b>${sellerCompany || "Unknown"}</b>${sellerGstin ? ` (GSTIN ${sellerGstin})` : ""}, ` +
+          `which belongs to <b>"${suggested.name}"</b>, not your currently active company <b>${activeCompany.name}</b>.`,
+        icon: "warning",
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: `Switch to "${suggested.name}"`,
+        denyButtonText: "Continue anyway",
+        cancelButtonText: "Cancel upload",
+      });
+      if (result.isConfirmed) {
+        const switched = await switchCompany(suggested.guid);
+        // A successful switch reloads the page, so resetting local state is
+        // moot either way — but if it silently failed (switchCompany alerts
+        // and returns false instead of throwing), the user is still on this
+        // same page under the still-wrong company, so keep their already-
+        // extracted contract data instead of wiping it for nothing.
+        return switched;
+      }
+      if (result.isDenied) return false; // explicit "continue anyway"
+      return true; // cancelled
+    }
+
+    // Case 2: seller doesn't match any company the user has access to at
+    // all. Only a Company Master-permitted user can resolve this themselves
+    // (by creating the company here); everyone else has to go through an
+    // Admin — either way, saving under the wrong (currently active) company
+    // is blocked.
+    if (canManageCompanies) {
+      const result = await Swal.fire({
+        title: "Unknown seller company",
+        html:
+          `This contract's seller is <b>${sellerCompany || "Unknown"}</b>${sellerGstin ? ` (GSTIN ${sellerGstin})` : ""}, ` +
+          `which doesn't match any company you have access to, including the currently active <b>${activeCompany.name}</b>.` +
+          `<br/><br/>You can create <b>"${sellerCompany || "this company"}"</b> now and switch to it to upload this contract.`,
+        icon: "warning",
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: "Create company & switch",
+        denyButtonText: "Continue anyway",
+        cancelButtonText: "Cancel upload",
+      });
+      if (result.isConfirmed) {
+        try {
+          const created = await companyService.addCompany({ name: sellerCompany || "New Company", gstNumber: sellerGstin || null });
+          // switchCompany caches `availableCompanies` into sessionStorage as
+          // the post-reload source of truth — the freshly created company
+          // isn't in that list yet (it was only ever fetched at login), so
+          // without adding it here, the reload lands on a valid session
+          // scoped to the new company but with no matching entry to resolve
+          // `activeCompany` from, leaving company name/logo/GST blank
+          // everywhere until the next full login.
+          setAvailableCompanies((prev) => [...prev, { guid: created.guid, name: sellerCompany || "New Company", gstNumber: sellerGstin || null }]);
+          await Swal.fire("Company created", `"${sellerCompany}" has been added. Switching you there now — please re-upload the contract after the switch.`, "success");
+          const switched = await switchCompany(created.guid);
+          // Same reasoning as Case 1 — only treat this as handled (and clear
+          // the extracted data) if the switch actually went through.
+          return switched;
+        } catch (err) {
+          Swal.fire("Error", err?.response?.data?.message || "Failed to create the company.", "error");
+          // Creation itself failed — nothing changed, so keep the user's
+          // already-extracted contract data instead of throwing it away.
+          return false;
+        }
+      }
+      if (result.isDenied) return false; // explicit "continue anyway"
+      return true; // cancelled
+    }
+
     await Swal.fire({
-      title: "Seller company mismatch",
+      title: "Unknown seller company",
       html:
         `This contract's seller is <b>${sellerCompany || "Unknown"}</b>${sellerGstin ? ` (GSTIN ${sellerGstin})` : ""}, ` +
-        `which does not match your currently active company <b>${activeCompany.name}</b>${activeCompany.gstNumber ? ` (GSTIN ${activeCompany.gstNumber})` : ""}.` +
-        (suggested
-          ? `<br/><br/>This looks like it belongs to <b>"${suggested.name}"</b> instead — switch to that company (via the company switcher) before saving, or continue only if this is correct.`
-          : `<br/><br/>Please double-check before saving — continue only if this is correct.`),
+        `which doesn't match your currently active company <b>${activeCompany.name}</b> or any other company you have access to.` +
+        `<br/><br/>Please contact your Admin to add this company before uploading this contract.`,
       icon: "warning",
-      confirmButtonText: "I understand, continue",
+      confirmButtonText: "OK",
     });
+    return true;
   };
 
   const handleExtract = async () => {
@@ -220,7 +306,14 @@ export default function ContractUpload() {
       setPdfFilename(savedFilename);
       setExtractedFlag(true);
 
-      await checkSellerCompanyMatch(rest.sellerCompany, rest.sellerGstin);
+      const shouldAbort = await checkSellerCompanyMatch(rest.sellerCompany, rest.sellerGstin);
+      if (shouldAbort) {
+        setForm(EMPTY_FORM);
+        setProducts([]);
+        setPdfFilename(null);
+        setExtractedFlag(false);
+        return;
+      }
 
       const normalize = (v) => String(v || "").trim().toLowerCase();
       if (extractedContractNumber && normalize(extractedContractNumber) !== normalize(contractNumber)) {
