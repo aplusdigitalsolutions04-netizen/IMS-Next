@@ -4,6 +4,26 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeMasterRead, authorizeMasterWrite, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
+// mysql2 auto-parses a JSON-typed column into a real array/object — but if
+// this column was ever created (or migrated) as TEXT/VARCHAR instead, it
+// comes back as a raw JSON *string*, which silently broke the "already
+// granted" highlight in Manage Roles: Roles.jsx's Array.isArray(role.permissions)
+// check failed on a string, so the editor reopened with everything unchecked
+// even though the permissions were saved correctly. Normalizing here makes
+// the response correct regardless of the underlying column type.
+const parseJsonArray = (v) => {
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   authorizeMasterRead(user, "roles", "Manage Roles access required.");
@@ -13,7 +33,12 @@ export const GET = withErrorHandling(async (request) => {
   const [rows] = await mysqlPool.query(
     "SELECT guid, name, description, permissions, editPermissions FROM roles WHERE isDeleted=0 ORDER BY name ASC"
   );
-  return NextResponse.json(rows);
+  const normalized = rows.map((r) => ({
+    ...r,
+    permissions: parseJsonArray(r.permissions),
+    editPermissions: parseJsonArray(r.editPermissions),
+  }));
+  return NextResponse.json(normalized);
 });
 
 export const POST = withErrorHandling(async (request) => {
