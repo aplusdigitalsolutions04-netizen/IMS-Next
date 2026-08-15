@@ -11,7 +11,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   authorizeReturns(user, "PUT");
   const { id } = await params;
 
-  const { condition, repairCost, reason } = await parseJsonBody(request);
+  const { condition, repairCost, reason, refundStatus, refundAmount } = await parseJsonBody(request);
   const [existing] = await mysqlPool.query(`
     SELECT r.guid, r.serialNumberGuid, s.serialNumber as serialValue, r.condition, r.reason,
            r.platform AS firmName, r.orderid AS customerName, r.invoiceNumber, r.dispatchGuid
@@ -24,6 +24,20 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   if (condition !== undefined) { setClauses.push("`condition`=?"); sqlParams.push(condition); }
   if (repairCost !== undefined) { setClauses.push("repairCost=?"); sqlParams.push(repairCost); }
   if (reason !== undefined) { setClauses.push("reason=?"); sqlParams.push(reason); }
+  // Refund info often isn't known yet at return time (marketplace/customer
+  // confirms it later) — this is what lets it be filled in or corrected
+  // afterward instead of being stuck at whatever (or nothing) was entered
+  // during the original return.
+  if (refundStatus !== undefined) {
+    const VALID_REFUND_STATUSES = ["Full", "Partial", "None"];
+    if (!VALID_REFUND_STATUSES.includes(refundStatus)) throw new ApiError(400, `Invalid refund status. Must be one of: ${VALID_REFUND_STATUSES.join(", ")}`);
+    setClauses.push("refundStatus=?"); sqlParams.push(refundStatus);
+  }
+  if (refundAmount !== undefined) {
+    const safeAmount = refundStatus === "None" ? 0 : Number(refundAmount);
+    if (!Number.isFinite(safeAmount) || safeAmount < 0) throw new ApiError(400, "Refund amount must be a valid non-negative number");
+    setClauses.push("refundAmount=?"); sqlParams.push(safeAmount);
+  }
 
   if (setClauses.length) { sqlParams.push(id, user.companyId); await mysqlPool.query(`UPDATE returns SET ${setClauses.join(",")} WHERE guid=? AND companyGuid=?`, sqlParams); }
 
@@ -56,7 +70,24 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
 
     await conn.query("UPDATE returns SET isDeleted=1 WHERE guid=? AND companyGuid=?", [id, user.companyId]);
     const [cnt] = await conn.query("SELECT COUNT(*) as total FROM returns WHERE serialNumberGuid=? AND isDeleted=0 AND companyGuid=?", [rec.serialNumberGuid, user.companyId]);
-    await conn.query("UPDATE inventorystockinserial SET serialStatus='Dispatched', returnCount=? WHERE guid=? AND companyGuid=?", [cnt[0].total, rec.serialNumberGuid, user.companyId]);
+
+    // A return created via the FBF/FBA "Sold" path (app/api/returns/route.js)
+    // never has a dispatchGuid — that's the only way returns end up with one
+    // (the regular path always requires a real linked order, or fails).
+    // Blindly resetting to 'Dispatched' here was wrong for that case: the
+    // serial was never dispatched through Order Processing, so it'd end up
+    // 'Dispatched' with no order behind it. Restore it to 'Sold' instead,
+    // and recover its FBF/FBA type from the return's stored platform where
+    // possible (warehouseGuid isn't recoverable — never stored on the
+    // return record — so it stays cleared, same as it's been since the
+    // return was processed).
+    const isFbfFbaSoldReturn = !rec.dispatchGuid;
+    const restoredStatus = isFbfFbaSoldReturn ? "Sold" : "Dispatched";
+    const restoredFbfFbaType = isFbfFbaSoldReturn && ["FBF", "FBA"].includes(rec.firmName) ? rec.firmName : null;
+    await conn.query(
+      "UPDATE inventorystockinserial SET serialStatus=?, returnCount=?, fbfFbaType=? WHERE guid=? AND companyGuid=?",
+      [restoredStatus, cnt[0].total, restoredFbfFbaType, rec.serialNumberGuid, user.companyId]
+    );
 
     if (rec.dispatchGuid) {
       const [item] = await conn.query("SELECT orderGuid FROM order_items WHERE guid=? AND companyGuid=?", [rec.dispatchGuid, user.companyId]);
@@ -69,7 +100,7 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
       }
     }
 
-    await recordSerialMovement(conn, { companyGuid: user.companyId, serialNumberGuid: rec.serialNumberGuid, serialValue: rec.serialValue, dispatchGuid: rec.dispatchGuid, actionType: "ReturnDeleted", status: "Dispatched", condition: rec.condition, reason: rec.reason, firmName: rec.firmName, customerName: rec.customerName, invoiceNumber: rec.invoiceNumber, createdBy: "System", notes: `Return #${id} was deleted and order context restored` });
+    await recordSerialMovement(conn, { companyGuid: user.companyId, serialNumberGuid: rec.serialNumberGuid, serialValue: rec.serialValue, dispatchGuid: rec.dispatchGuid, actionType: "ReturnDeleted", status: restoredStatus, condition: rec.condition, reason: rec.reason, firmName: rec.firmName, customerName: rec.customerName, invoiceNumber: rec.invoiceNumber, createdBy: "System", notes: isFbfFbaSoldReturn ? `Return #${id} was deleted and FBF/FBA sold status restored` : `Return #${id} was deleted and order context restored` });
 
     await conn.commit();
   } catch (err) {

@@ -3,9 +3,16 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Search, MapPin, Loader2, Layers, Map } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { printerService } from '@/lib/services/api';
+import { hasPermission } from '@/lib/client/rbac';
 
 export default function FbfFbaMaster({ isAdmin, currentUser }) {
-  const canManage = isAdmin || !!currentUser?.allow_edit_fbf_fba;
+  // "fbfFbaMaster" isn't a PROTECTED_EDIT_PERMISSIONS tab (see lib/auth.js) —
+  // the backend already accepts add/edit with just the "fbfFbaMaster" view
+  // permission. This gate previously checked allow_edit_fbf_fba, which is
+  // actually the edit-flag for the unrelated "fbfFbaManagement" (Stock) tab
+  // — granting "FBF/FBA Master" alone left Add Warehouse/Platform/State
+  // disabled here even though the API would have accepted it.
+  const canManage = isAdmin || hasPermission(currentUser, 'fbfFbaMaster') || !!currentUser?.allow_edit_fbf_fba;
   const [activeTab, setActiveTab] = useState('Warehouses');
   const [warehouses, setWarehouses] = useState([]);
   const [platforms, setPlatforms] = useState([]);

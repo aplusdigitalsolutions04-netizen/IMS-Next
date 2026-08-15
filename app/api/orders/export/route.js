@@ -162,7 +162,14 @@ export const GET = withErrorHandling(async (request) => {
   // json_to_sheet only writes plain text — a filename column needs its cell
   // turned into an actual hyperlink after the fact (SheetJS has no option to
   // do this inline during the json_to_sheet call itself).
-  const backendBase = process.env.BACKEND_URI || `http://localhost:${process.env.PORT || 3011}`;
+  // Derived from the incoming request (works on whatever domain this is
+  // actually deployed to), not process.env.BACKEND_URI/localhost — see the
+  // matching comment in app/api/orders/[id]/upload/route.js. An exported
+  // .xlsx file's hyperlinks especially need this: unlike an <img> src
+  // resolved against the current page, this file can be opened later on a
+  // completely different machine, where a hardcoded localhost link is
+  // guaranteed to be dead.
+  const backendBase = new URL(request.url).origin;
   if (exportRows.length) {
     columns.forEach((col, colIndex) => {
       if (!LINKED_COLUMNS.has(col.key)) return;

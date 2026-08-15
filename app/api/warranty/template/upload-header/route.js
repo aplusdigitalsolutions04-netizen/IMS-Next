@@ -28,7 +28,6 @@ export const POST = withErrorHandling(async (request) => {
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const ext = path.extname(file.name).toLowerCase();
-  const backendBase = process.env.BACKEND_URI || `http://localhost:${process.env.PORT || 3011}`;
   const ip = request.headers.get("x-forwarded-for") || null;
 
   if (ext === ".docx") {
@@ -121,7 +120,12 @@ export const POST = withErrorHandling(async (request) => {
 
       await mysqlPool.query("UPDATE warranty_template SET headerImagePath=?, headerHtml=NULL WHERE companyGuid=?", [pngFilename, user.companyId]);
       await logUserActivity(mysqlPool, user, "Upload Warranty Header (PDF)", [], ip);
-      return NextResponse.json({ message: "PDF header uploaded and converted", type: "image", filePath: pngFilename, previewUrl: `${backendBase}/uploads/${pngFilename}` });
+      // Relative, not an absolute BACKEND_URI/localhost URL — the app serves
+      // uploads from its own origin (no separate backend domain), and a
+      // hardcoded localhost URL only ever resolved on whichever machine
+      // BACKEND_URI happened to point at, breaking the preview <img> for
+      // every other browser/deployment (broken-image icon).
+      return NextResponse.json({ message: "PDF header uploaded and converted", type: "image", filePath: pngFilename, previewUrl: `/uploads/${pngFilename}` });
     } catch (pdfErr) {
       console.error("[warranty] PDF conversion error:", pdfErr);
       throw new ApiError(500, "Failed to convert PDF file: " + pdfErr.message);
@@ -131,6 +135,6 @@ export const POST = withErrorHandling(async (request) => {
     const filename = saved.filename;
     await mysqlPool.query("UPDATE warranty_template SET headerImagePath=?, headerHtml=NULL WHERE companyGuid=?", [filename, user.companyId]);
     await logUserActivity(mysqlPool, user, "Upload Warranty Header (Image)", [], ip);
-    return NextResponse.json({ message: "Header image uploaded", type: "image", filePath: filename, previewUrl: `${backendBase}/uploads/${filename}` });
+    return NextResponse.json({ message: "Header image uploaded", type: "image", filePath: filename, previewUrl: `/uploads/${filename}` });
   }
 });

@@ -11,10 +11,14 @@ const EDITABLE_FIELDS = [
   "consigneeContact", "consigneeAddress", "status", "cancelReason", "cancelRemarks",
 ];
 
+// See the matching comment in app/api/contracts/route.js — this was
+// copy-pasted from an Order Processing route and gated on "orders" (a
+// PROTECTED_EDIT_PERMISSIONS tab), silently requiring the unrelated
+// allow_edit_order_processing edit-flag too. "contracts" view access alone
+// is enough, same as contract creation.
 const authorize = (user, method) =>
   authorizeReadWrite(user, method, {
-    permission: "orders",
-    editColumnName: "allow_edit_order_processing",
+    permission: "contracts",
     adminOnlyDelete: true,
     denyMessage: "You do not have permission to manage contracts.",
   });

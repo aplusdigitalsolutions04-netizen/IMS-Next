@@ -402,7 +402,13 @@ export default function NewDispatch({
       return;
     }
 
-    const model = models.find((m) => String(m.id) === String(foundSerial.modelGuid));
+    // /api/serials never actually returns a `modelGuid` field (only
+    // `modelId`/`itemVariantId`), so foundSerial.modelGuid is always
+    // undefined here — same gap already worked around a few lines up (see
+    // the availableSerials filter above) by also matching itemVariantId.
+    // Without this fallback every single serial scanned here failed with
+    // "Model not found", regardless of which one it was.
+    const model = models.find((m) => String(m.id) === String(foundSerial.modelGuid) || String(m.id) === String(foundSerial.itemVariantId));
 
     if (!model) {
       setError(`Model not found for serial ${serialDisplayValue}`);

@@ -6,10 +6,16 @@ import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
 import { createNotification } from "@/lib/notifications";
 
+// Was gated on "orders" (copy-pasted from an Order Processing route) —
+// "orders" is a PROTECTED_EDIT_PERMISSIONS tab, so that silently also
+// required the unrelated allow_edit_order_processing edit-flag on top of
+// "contracts" view access to upload/edit/delete a contract. "contracts"
+// isn't protected, so view access alone is enough here (matches
+// app/api/orders/draft/route.js's "contracts view access is enough on its
+// own" — the two routes should agree on that).
 const authorize = (user, method) =>
   authorizeReadWrite(user, method, {
-    permission: "orders",
-    editColumnName: "allow_edit_order_processing",
+    permission: "contracts",
     adminOnlyDelete: true,
     denyMessage: "You do not have permission to manage contracts.",
   });

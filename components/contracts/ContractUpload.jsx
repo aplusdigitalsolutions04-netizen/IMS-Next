@@ -7,6 +7,7 @@ import { contractsService } from "@/lib/services/contractsService";
 import { companyService } from "@/lib/services/companyService";
 import { useCompany } from "@/lib/client/CompanyContext";
 import { getStoredUser } from "@/lib/client/auth";
+import { normGstin, normText, isSameCompany } from "@/lib/companyMatch";
 import AddProductWizard from "./AddProductWizard";
 
 const SECTIONS = [
@@ -100,9 +101,6 @@ function FieldRow({ label, value, onChange, type, readOnly, zebra }) {
   );
 }
 
-const normText = (v) => String(v || "").trim().toLowerCase();
-const normGstin = (v) => String(v || "").replace(/\s+/g, "").toUpperCase();
-
 export default function ContractUpload() {
   const router = useRouter();
   const { activeCompany, availableCompanies, switchCompany, setAvailableCompanies } = useCompany();
@@ -166,8 +164,28 @@ export default function ContractUpload() {
   // the mismatch themselves and must go through an Admin instead. Returns
   // false when it's safe to keep going with the currently active company
   // (no mismatch, or the user explicitly chose to continue anyway).
-  const checkSellerCompanyMatch = async (sellerCompany, sellerGstin) => {
+  const checkSellerCompanyMatch = async (sellerCompany, sellerGstin, companyMatch) => {
     if (!activeCompany || (!sellerCompany && !sellerGstin)) return false;
+
+    // Server-side match against EVERY company in the system (not just this
+    // user's own availableCompanies) — only set when the seller matches a
+    // real, existing company. If that company isn't the active one and this
+    // user has no access to it, that's a clean "you don't have permission"
+    // case, distinct from "this seller doesn't match any company at all"
+    // (handled further down) — the latter wrongly invited an Admin to
+    // create a company that, in this case, already exists.
+    if (companyMatch && companyMatch.companyGuid !== activeCompany.guid && !companyMatch.userHasAccess) {
+      await Swal.fire({
+        title: "No access to this company",
+        html:
+          `This contract's seller is <b>${sellerCompany || "Unknown"}</b>${sellerGstin ? ` (GSTIN ${sellerGstin})` : ""}, ` +
+          `which belongs to <b>"${companyMatch.companyName}"</b> — a company that exists in the system, but you don't have access to it.` +
+          `<br/><br/>Please contact your Admin to get access, or ask them to upload this contract instead.`,
+        icon: "error",
+        confirmButtonText: "OK",
+      });
+      return true;
+    }
 
     const sameByGstin = sellerGstin && activeCompany.gstNumber && normGstin(sellerGstin) === normGstin(activeCompany.gstNumber);
     const sameByName = sellerCompany && activeCompany.name &&
@@ -177,10 +195,7 @@ export default function ContractUpload() {
     const matches = (sellerGstin && activeCompany.gstNumber) ? sameByGstin : sameByName;
     if (!hasComparableData || matches) return false;
 
-    const matchesOther = (c) =>
-      (sellerGstin && c.gstNumber && normGstin(c.gstNumber) === normGstin(sellerGstin)) ||
-      (sellerCompany && c.name && (normText(sellerCompany).includes(normText(c.name)) || normText(c.name).includes(normText(sellerCompany))));
-    const suggested = (availableCompanies || []).find((c) => c.guid !== activeCompany.guid && matchesOther(c));
+    const suggested = (availableCompanies || []).find((c) => c.guid !== activeCompany.guid && isSameCompany(sellerCompany, sellerGstin, c));
 
     // Case 1: this seller matches a company the user already has access to
     // — offer to switch straight there instead of just warning.
@@ -299,14 +314,14 @@ export default function ContractUpload() {
 
     setExtracting(true);
     try {
-      const { extracted: extractedData, pdfFilename: savedFilename } = await contractsService.parseContractFile(file);
+      const { extracted: extractedData, pdfFilename: savedFilename, companyMatch } = await contractsService.parseContractFile(file);
       const { products: extractedProducts, contractNumber: extractedContractNumber, ...rest } = extractedData || {};
       setForm({ ...EMPTY_FORM, ...rest, contractNumber: contractNumber.trim() });
       setProducts(Array.isArray(extractedProducts) ? extractedProducts.map((p) => ({ ...EMPTY_PRODUCT, ...p })) : []);
       setPdfFilename(savedFilename);
       setExtractedFlag(true);
 
-      const shouldAbort = await checkSellerCompanyMatch(rest.sellerCompany, rest.sellerGstin);
+      const shouldAbort = await checkSellerCompanyMatch(rest.sellerCompany, rest.sellerGstin, companyMatch);
       if (shouldAbort) {
         setForm(EMPTY_FORM);
         setProducts([]);

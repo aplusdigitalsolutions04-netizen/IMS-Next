@@ -31,7 +31,13 @@ export const POST = withErrorHandling(async (request) => {
   const saved = await saveUploadedFile(file, { prefix: `warranty-signature-${Date.now()}`, folder: "warrantyTemplate" });
   await mysqlPool.query("UPDATE warranty_template SET signatureImagePath=? WHERE companyGuid=?", [saved.filename, user.companyId]);
 
-  const backendBase = process.env.BACKEND_URI || `http://localhost:${process.env.PORT || 3011}`;
   await logUserActivity(mysqlPool, user, "Upload Warranty Signature/Stamp", [], request.headers.get("x-forwarded-for") || null);
-  return NextResponse.json({ message: "Signature/stamp image uploaded", filePath: saved.filename, previewUrl: `${backendBase}/uploads/${saved.filename}` });
+  // Relative, not an absolute BACKEND_URI/localhost URL — see the matching
+  // comment in app/api/warranty/template/upload-header/route.js. This was
+  // exactly why the just-uploaded signature/stamp showed a broken-image
+  // icon instead of the picture: the browser was trying to load
+  // http://localhost:5001/uploads/... (BACKEND_URI from .env), a host that
+  // doesn't exist for anyone except whatever machine that env var pointed
+  // at during local dev.
+  return NextResponse.json({ message: "Signature/stamp image uploaded", filePath: saved.filename, previewUrl: `/uploads/${saved.filename}` });
 });

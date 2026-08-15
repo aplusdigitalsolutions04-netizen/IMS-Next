@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Edit2, Loader2, MapPin, Plus, Search, Star, Trash2, Warehouse, X } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { printerService } from '@/lib/services/api';
+import { hasPermission } from '@/lib/client/rbac';
 
 export default function GodownMaster({ currentUser }) {
   const [godowns, setGodowns] = useState([]);
@@ -17,7 +18,12 @@ export default function GodownMaster({ currentUser }) {
     isDefault: false
   });
 
-  const canManage = currentUser?.role === 'Admin' || !!currentUser?.allow_edit_godown;
+  // "godownMaster" isn't a PROTECTED_EDIT_PERMISSIONS tab (see lib/auth.js) —
+  // the backend already accepts add/edit with just the "godownMaster" view
+  // permission, no separate edit-flag required. This button gate previously
+  // only checked allow_edit_godown, so granting "Godown Master" alone left
+  // Add/Edit disabled here even though the API would have accepted it.
+  const canManage = hasPermission(currentUser, 'godownMaster') || !!currentUser?.allow_edit_godown;
 
   const fetchGodowns = async () => {
     try {

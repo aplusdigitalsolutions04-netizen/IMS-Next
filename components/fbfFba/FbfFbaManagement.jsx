@@ -12,6 +12,7 @@ import {
   Plus,
   Search,
   ShoppingCart,
+  Undo2,
   X,
   MapPin
 } from 'lucide-react';
@@ -89,6 +90,27 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
     serialNumbersInput: ''
   });
 
+  // Return-Stock flow — kept fully separate from the Add-Stock state above
+  // (own category/picker/quantity) so the two full-page views never bleed
+  // into each other's fields. Grouped into one object (matching formData/
+  // editData/sellData above) instead of 11 standalone useState calls —
+  // destructured right below under their original names so every existing
+  // read site (JSX, handlers) is untouched; only the setters change shape.
+  const initialReturnState = {
+    category: '', serialInput: '', serialLookupLoading: false,
+    serials: [], // [{ serialNumber, modelGuid, modelName, type, warehouseGuid, warehouseName, warehouseState }]
+    pickerQuery: '', item: null, // { id, title, ... } from SearchablePicker
+    itemBuckets: [], bucketLoading: false, selectedBucketKey: '', quantity: 1, saving: false,
+  };
+  const [returnState, setReturnState] = useState(initialReturnState);
+  const patchReturnState = (patch) => setReturnState((prev) => ({ ...prev, ...patch }));
+  const {
+    category: returnCategory, serialInput: returnSerialInput, serialLookupLoading: returnSerialLookupLoading,
+    serials: returnSerials, pickerQuery: returnPickerQuery, item: returnItem, itemBuckets: returnItemBuckets,
+    bucketLoading: returnBucketLoading, selectedBucketKey: returnSelectedBucketKey, quantity: returnQuantity,
+    saving: returnSaving,
+  } = returnState;
+
   const pickerOptions = useMemo(() => {
     if (stockCategory === 'serialized') {
       return models
@@ -120,6 +142,20 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
     const selectedId = stockCategory === 'nonSerialized' ? formData.itemId : formData.modelGuid;
     return pickerOptions.find((option) => String(option.id) === String(selectedId)) || null;
   }, [formData.itemId, formData.modelGuid, pickerOptions, stockCategory]);
+
+  // Non-serialized items only, for Return's item picker — items have no
+  // serial identity, so this is the only lookup path for them.
+  const returnPickerOptions = useMemo(() => {
+    if (returnCategory !== 'nonSerialized') return [];
+    return stationeryItems
+      .filter((item) => !isSerializedModel(item.isTrackable))
+      .map((item) => ({
+        id: item.itemId,
+        title: item.itemName,
+        subtitle: [item.brandName, item.categoryName].filter(Boolean).join(' - '),
+        raw: item
+      }));
+  }, [stationeryItems, returnCategory]);
 
   const modelSerials = useMemo(() => {
     if (stockCategory !== 'serialized') return [];
@@ -527,6 +563,394 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
     }
   };
 
+
+  const resetReturnForm = () => {
+    setReturnState(initialReturnState);
+  };
+
+  const openReturnView = () => {
+    resetReturnForm();
+    setActiveView('return_stock');
+  };
+
+  const bucketKey = (b) => `${b.type}::${b.warehouseGuid || ''}`;
+
+  const handleAddReturnSerial = async (event) => {
+    event?.preventDefault?.();
+    const serialNumber = returnSerialInput.trim();
+    if (!serialNumber) return;
+
+    if (returnSerials.some((s) => s.serialNumber.toLowerCase() === serialNumber.toLowerCase())) {
+      Swal.fire('Already added', `${serialNumber} is already in the return list.`, 'info');
+      return;
+    }
+
+    patchReturnState({ serialLookupLoading: true });
+    try {
+      const result = await printerService.lookupFbfFbaReturn({ serialNumber });
+      if (!result.found) {
+        Swal.fire('Not found', result.message || 'This serial is not currently in FBF/FBA stock.', 'warning');
+        return;
+      }
+      setReturnState((prev) => ({ ...prev, serials: [...prev.serials, result], serialInput: '' }));
+    } catch (err) {
+      Swal.fire('Lookup failed', err.message || 'Could not look up this serial.', 'error');
+    } finally {
+      patchReturnState({ serialLookupLoading: false });
+    }
+  };
+
+  const removeReturnSerial = (serialNumber) => {
+    setReturnState((prev) => ({ ...prev, serials: prev.serials.filter((s) => s.serialNumber !== serialNumber) }));
+  };
+
+  const handleReturnItemSelect = async (option) => {
+    patchReturnState({ pickerQuery: option.title, item: option, itemBuckets: [], selectedBucketKey: '', bucketLoading: true });
+    try {
+      const result = await printerService.lookupFbfFbaReturn({ itemId: option.id });
+      if (!result.found) {
+        Swal.fire('No stock found', result.message || 'This item has no FBF/FBA stock to return.', 'info');
+        return;
+      }
+      const buckets = result.buckets || [];
+      patchReturnState({ itemBuckets: buckets, selectedBucketKey: buckets.length === 1 ? bucketKey(buckets[0]) : '' });
+    } catch (err) {
+      Swal.fire('Lookup failed', err.message || 'Could not look up this item.', 'error');
+    } finally {
+      patchReturnState({ bucketLoading: false });
+    }
+  };
+
+  const handleReturnSubmit = async (event) => {
+    event.preventDefault();
+
+    if (returnCategory === 'serialized') {
+      if (returnSerials.length === 0) {
+        Swal.fire('Missing serials', 'Add at least one serial number to return.', 'warning');
+        return;
+      }
+
+      patchReturnState({ saving: true });
+      try {
+        // Group by (type, warehouse, model) — a batch of scanned serials can
+        // span more than one, same as Add Stock's per-model grouping.
+        const groups = {};
+        for (const s of returnSerials) {
+          const key = `${s.type}::${s.warehouseGuid || ''}::${s.modelGuid}`;
+          if (!groups[key]) groups[key] = { type: s.type, warehouseGuid: s.warehouseGuid, modelGuid: s.modelGuid, modelName: s.modelName, serials: [] };
+          groups[key].serials.push(s.serialNumber);
+        }
+
+        // Each group targets a different (type, warehouse, model) combo —
+        // independent requests, so they don't need to wait on each other.
+        // allSettled (not all) so one group's failure doesn't stop the rest
+        // from completing, same partial-failure reporting as before.
+        const groupList = Object.values(groups);
+        const results = await Promise.allSettled(
+          groupList.map((group) =>
+            printerService.returnFbfFbaStock({
+              modelGuid: group.modelGuid,
+              itemKind: 'serialized',
+              type: group.type,
+              warehouseGuid: group.warehouseGuid || null,
+              serialNumbers: group.serials,
+              createdBy: currentUser?.username || 'System'
+            })
+          )
+        );
+
+        let totalReturned = 0;
+        const failedGroups = [];
+        results.forEach((result, i) => {
+          const group = groupList[i];
+          if (result.status === 'fulfilled') {
+            totalReturned += group.serials.length;
+          } else {
+            failedGroups.push({ modelName: group.modelName, message: result.reason?.message });
+          }
+        });
+
+        resetReturnForm();
+        setActiveView('list');
+        await fetchStock();
+
+        if (failedGroups.length > 0) {
+          Swal.fire('Partially completed', `Returned ${totalReturned} serials successfully. Failed for: ${failedGroups.map(f => `${f.modelName} (${f.message})`).join(', ')}`, 'warning');
+        } else {
+          Swal.fire('Stock returned', `Successfully returned ${totalReturned} serial(s) to main inventory.`, 'success');
+        }
+      } catch (err) {
+        Swal.fire('Return failed', err.message || 'Please try again.', 'error');
+      } finally {
+        patchReturnState({ saving: false });
+      }
+      return;
+    }
+
+    const selectedBucket = returnItemBuckets.find((b) => bucketKey(b) === returnSelectedBucketKey);
+    const quantity = Number(returnQuantity);
+
+    if (!returnItem || !selectedBucket) {
+      Swal.fire('Missing details', 'Select an item and choose which warehouse to return from.', 'warning');
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > selectedBucket.quantity) {
+      Swal.fire('Invalid quantity', `Enter a quantity between 1 and ${selectedBucket.quantity}.`, 'warning');
+      return;
+    }
+
+    patchReturnState({ saving: true });
+    try {
+      await printerService.returnFbfFbaStock({
+        itemId: returnItem.id,
+        itemKind: 'nonSerialized',
+        type: selectedBucket.type,
+        warehouseGuid: selectedBucket.warehouseGuid || null,
+        quantity,
+        createdBy: currentUser?.username || 'System'
+      });
+      resetReturnForm();
+      setActiveView('list');
+      await fetchStock();
+      Swal.fire('Stock returned', `${quantity} item${quantity === 1 ? '' : 's'} returned to main inventory.`, 'success');
+    } catch (err) {
+      Swal.fire('Return failed', err.message || 'Please try again.', 'error');
+    } finally {
+      patchReturnState({ saving: false });
+    }
+  };
+
+  if (activeView === 'return_stock') {
+    return (
+      <div className="w-full space-y-6 pb-20 animate-in fade-in zoom-in-95 duration-300">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-black tracking-tight text-slate-950">Return Stock from FBF/FBA</h1>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Bring serials or items back into main inventory — still sitting in FBF/FBA, or already sold and returned by a customer.
+            </p>
+          </div>
+          <button
+            onClick={() => { setActiveView('list'); resetReturnForm(); }}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 shadow-sm hover:bg-slate-50 transition"
+          >
+            <X size={18} />
+            Cancel
+          </button>
+        </div>
+
+        <form onSubmit={handleReturnSubmit} className="w-full space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
+            <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-100">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-50 font-black text-indigo-600 ring-4 ring-indigo-50/50">1</div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900">Stock Category</h3>
+                <p className="text-sm font-medium text-slate-500">Serialized items are looked up by serial number; non-serialized by item + warehouse.</p>
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              <CategoryChoice
+                icon={Barcode}
+                title="Serialized Items"
+                description="Return by scanning/typing serial numbers"
+                active={returnCategory === 'serialized'}
+                onClick={() => { resetReturnForm(); patchReturnState({ category: 'serialized' }); }}
+              />
+              <CategoryChoice
+                icon={Boxes}
+                title="Non-Serialized"
+                description="Return by item + warehouse + quantity"
+                active={returnCategory === 'nonSerialized'}
+                onClick={() => { resetReturnForm(); patchReturnState({ category: 'nonSerialized' }); }}
+              />
+            </div>
+          </div>
+
+          {returnCategory === 'serialized' && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-100">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-50 font-black text-indigo-600 ring-4 ring-indigo-50/50">2</div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Serial Number</h3>
+                  <p className="text-sm font-medium text-slate-500">Type or scan a serial — its warehouse and type will show up automatically.</p>
+                </div>
+              </div>
+
+              {/* Nested <form> isn't valid HTML (this whole view is already
+                  inside the outer Return <form>), so this is a <div> with
+                  its own Enter-key + button handling instead of a submit. */}
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="relative flex-1">
+                  <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+                  <input
+                    autoFocus
+                    value={returnSerialInput}
+                    onChange={(e) => patchReturnState({ serialInput: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddReturnSerial(e);
+                      }
+                    }}
+                    placeholder="Scan or type serial number and press Enter"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-sm font-mono outline-none focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddReturnSerial}
+                  disabled={returnSerialLookupLoading}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {returnSerialLookupLoading ? <Loader2 className="animate-spin" size={16} /> : null}
+                  Look Up
+                </button>
+              </div>
+
+              <div className="mt-5">
+                {returnSerials.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center text-slate-400 py-8 text-center">
+                    <Undo2 size={36} className="mb-3 opacity-20" />
+                    <p className="text-sm font-semibold text-slate-500">No serials added yet.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 overflow-hidden">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500">
+                        <tr>
+                          <th className="p-3">Serial No.</th>
+                          <th className="p-3">Model</th>
+                          <th className="p-3">Type</th>
+                          <th className="p-3">Warehouse</th>
+                          <th className="p-3 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {returnSerials.map((s) => (
+                          <tr key={s.serialNumber}>
+                            <td className="p-3 font-mono font-bold text-slate-800">{s.serialNumber}</td>
+                            <td className="p-3 text-slate-600">{s.modelName}</td>
+                            <td className="p-3"><StatusBadge status={s.type} /></td>
+                            <td className="p-3 text-slate-600">
+                              {s.type === 'Sold' ? (
+                                <div className="font-semibold text-emerald-700">→ Main Inventory (customer return)</div>
+                              ) : (
+                                <>
+                                  <div className="font-semibold">{s.warehouseName}</div>
+                                  {s.warehouseState && <div className="text-xs text-slate-400">{s.warehouseState}</div>}
+                                </>
+                              )}
+                            </td>
+                            <td className="p-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => removeReturnSerial(s.serialNumber)}
+                                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                              >
+                                <X size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {returnCategory === 'nonSerialized' && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 animate-in fade-in slide-in-from-top-2 duration-300 space-y-6">
+              <div className="flex items-center gap-4 mb-2 pb-6 border-b border-slate-100">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-50 font-black text-indigo-600 ring-4 ring-indigo-50/50">2</div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Item &amp; Warehouse</h3>
+                  <p className="text-sm font-medium text-slate-500">Pick the item, then which warehouse's stock to return from.</p>
+                </div>
+              </div>
+
+              <SearchablePicker
+                label="Item Name"
+                placeholder="Search and select stationery item"
+                options={returnPickerOptions}
+                query={returnPickerQuery}
+                selectedOption={returnItem}
+                onQueryChange={(value) => {
+                  patchReturnState({ pickerQuery: value, item: null, itemBuckets: [], selectedBucketKey: '' });
+                }}
+                onSelect={handleReturnItemSelect}
+                emptyText="No stationery items found"
+              />
+
+              {returnBucketLoading && (
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-500">
+                  <Loader2 className="animate-spin" size={16} /> Checking FBF/FBA stock…
+                </div>
+              )}
+
+              {!returnBucketLoading && returnItemBuckets.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-sm font-bold text-slate-700">Return From</span>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {returnItemBuckets.map((b) => {
+                      const key = bucketKey(b);
+                      const active = returnSelectedBucketKey === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => patchReturnState({ selectedBucketKey: key })}
+                          className={`text-left rounded-xl border p-3 transition ${active ? 'border-slate-900 bg-slate-950 text-white' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <StatusBadge status={b.type} />
+                            <span className={`text-xs font-bold ${active ? 'text-white' : 'text-slate-500'}`}>{b.quantity} in stock</span>
+                          </div>
+                          <div className={`mt-1 text-sm font-bold ${active ? 'text-white' : 'text-slate-800'}`}>{b.warehouseName}</div>
+                          {b.warehouseState && <div className={`text-xs ${active ? 'text-slate-300' : 'text-slate-400'}`}>{b.warehouseState}</div>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {returnSelectedBucketKey && (
+                <label className="block max-w-xs">
+                  <span className="text-sm font-bold text-slate-700">Quantity to Return</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max={returnItemBuckets.find((b) => bucketKey(b) === returnSelectedBucketKey)?.quantity || 1}
+                    value={returnQuantity}
+                    onChange={(e) => patchReturnState({ quantity: e.target.value })}
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
+                  />
+                </label>
+              )}
+            </div>
+          )}
+
+          <div className="pt-2 flex justify-end">
+            <button
+              type="submit"
+              disabled={
+                returnSaving ||
+                (returnCategory === 'serialized' && returnSerials.length === 0) ||
+                (returnCategory === 'nonSerialized' && (!returnItem || !returnSelectedBucketKey))
+              }
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-8 py-3.5 text-sm font-black text-white shadow-md hover:bg-indigo-700 hover:shadow-lg transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+            >
+              {returnSaving ? <Loader2 className="animate-spin" size={20} /> : <Undo2 size={20} />}
+              Confirm Return
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
 
   if (activeView === 'add_stock') {
     return (
@@ -936,14 +1360,24 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
               </p>
             </div>
 
-            <button
-              onClick={openAddModal}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
-              disabled={!canManage}
-            >
-              <Plus size={18} />
-              Add Stock
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={openReturnView}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={!canManage}
+              >
+                <Undo2 size={18} />
+                Return Stock
+              </button>
+              <button
+                onClick={openAddModal}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={!canManage}
+              >
+                <Plus size={18} />
+                Add Stock
+              </button>
+            </div>
           </div>
         </div>
 

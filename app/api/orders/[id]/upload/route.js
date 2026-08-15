@@ -40,5 +40,12 @@ export const POST = withErrorHandling(async (request, { params }) => {
     await mysqlPool.query("INSERT INTO orderdocuments (guid, companyGuid, dispatchGuid, docType, filename) VALUES (UUID(),?,?,?,?)", [user.companyId, id, docType, filename]);
   }
 
-  return NextResponse.json({ message: "File uploaded successfully", filename, url: `${process.env.BACKEND_URI}/uploads/${filename}` });
+  // Derived from the incoming request, not process.env.BACKEND_URI (a
+  // leftover from the old split Frontend4+Backend4 deployment, pointing at
+  // whatever localhost port that env var happened to be set to during local
+  // dev) — that produced a URL that only ever resolved on one specific
+  // machine, breaking this link everywhere else. Same class of bug as
+  // app/api/warranty/template/upload-*.
+  const origin = new URL(request.url).origin;
+  return NextResponse.json({ message: "File uploaded successfully", filename, url: `${origin}/uploads/${filename}` });
 });

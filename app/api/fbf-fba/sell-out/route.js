@@ -4,6 +4,7 @@ import { authenticateRequest, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeFbfFba, resolveModelId } from "@/lib/fbfFbaAuth";
 import { recordSerialMovement } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
 
 // Sell / Out Functionality (FIFO Logic, or specific serials if provided)
 export const POST = withErrorHandling(async (request) => {
@@ -111,6 +112,9 @@ export const POST = withErrorHandling(async (request) => {
     }
 
     await connection.commit();
+    // Sold serials flip to 'Sold' — see the matching comment in
+    // app/api/fbf-fba/return/route.js for why this broadcast is needed.
+    if (isSerialized) broadcastRealtimeEvent(user.companyId, "serials");
     return NextResponse.json({ message: "Stock updated successfully", soldSerials });
   } catch (err) {
     await connection.rollback();

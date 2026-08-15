@@ -211,6 +211,65 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
     }
   };
 
+  // Refund confirmation from the marketplace/customer very often lands
+  // after the item's already been marked returned — this lets that be
+  // filled in (or corrected) later instead of being stuck at whatever was
+  // entered, or left blank, at return time.
+  const handleEditRefund = async (item) => {
+    const itemId = item?.id || item?.guid;
+    if (!itemId) return;
+
+    const { value: formValues } = await Swal.fire({
+      title: 'Update Refund',
+      html: `
+        <div class="space-y-4 text-left">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Refund Status</label>
+            <select id="swal-refund-status" class="swal2-select" style="margin:0; width:100%; border:1px solid #d9d9d9; border-radius:0.375em; padding:0.75em; font-size:1em; box-sizing:border-box; background-color:#fff;">
+              <option value="Full" ${item.refundStatus === 'Full' ? 'selected' : ''}>Full Refund</option>
+              <option value="Partial" ${item.refundStatus === 'Partial' ? 'selected' : ''}>Partial Refund</option>
+              <option value="None" ${item.refundStatus === 'None' ? 'selected' : ''}>No Refund</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Refund Amount (₹)</label>
+            <input id="swal-refund-amount" type="number" min="0" class="swal2-input" placeholder="Amount" value="${item.refundAmount || 0}">
+          </div>
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Update',
+      didOpen: () => {
+        const statusEl = document.getElementById('swal-refund-status');
+        const amountEl = document.getElementById('swal-refund-amount');
+        const syncDisabled = () => { amountEl.disabled = statusEl.value === 'None'; if (statusEl.value === 'None') amountEl.value = 0; };
+        statusEl.addEventListener('change', syncDisabled);
+        syncDisabled();
+      },
+      preConfirm: () => {
+        const refundStatus = document.getElementById('swal-refund-status').value;
+        const refundAmount = document.getElementById('swal-refund-amount').value;
+        if (refundStatus !== 'None' && (!refundAmount || Number(refundAmount) <= 0)) {
+          Swal.showValidationMessage('Refund amount is required for Full/Partial refunds');
+          return false;
+        }
+        return { refundStatus, refundAmount: refundStatus === 'None' ? 0 : Number(refundAmount) };
+      }
+    });
+
+    if (formValues) {
+      try {
+        await printerService.updateReturnRefund(itemId, formValues);
+        Swal.fire('Updated', 'Refund details updated successfully', 'success');
+        await loadData();
+        if (onRefresh) await onRefresh();
+      } catch (error) {
+        Swal.fire('Error', error.response?.data?.message || 'Failed to update refund details', 'error');
+      }
+    }
+  };
+
   const getConditionMeta = (value) => {
     const normalized = (value || "").toString().trim().toLowerCase();
 
@@ -694,7 +753,20 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
     }
   };
 
-  const orderDetails = selectedDispatchDetails || selectedReturnOrder;
+  // Was `selectedDispatchDetails || selectedReturnOrder` — every getReturnXxx
+  // helper (lib/returnsHelpers.js) ends its own fallback chain with "N/A",
+  // which is truthy, so ReturnsModals.jsx's
+  // `getReturnXxx(orderDetails) || getReturnXxx(selectedReturnOrder)` calls
+  // could never actually reach the selectedReturnOrder fallback — the first
+  // call always resolved to at least "N/A" and short-circuited there. That
+  // silently hid fields that only exist on the return record itself (e.g.
+  // `reason`, `refundStatus`) whenever the fetched dispatch/order object
+  // didn't happen to carry a same-named field (the order API has no
+  // "reason" concept at all — only `remarks`, which is a different, often-
+  // empty field). Merging instead of `||`-selecting one or the other means
+  // every field from both objects is available, with dispatch/order data
+  // (more authoritative for order-specific fields) taking priority.
+  const orderDetails = selectedDispatchDetails ? { ...selectedReturnOrder, ...selectedDispatchDetails } : selectedReturnOrder;
   const orderDetailsDispatchId = getReturnDispatchId(selectedDispatchDetails) || getReturnDispatchId(selectedReturnOrder);
   const orderDetailsId = getReturnOrderId(orderDetails) || getReturnOrderId(selectedReturnOrder) || orderDetails?.customerName || "N/A";
   const orderInvoiceUrl = getUploadFileUrl(orderDetails?.invoiceFilename || selectedReturnOrder?.invoiceFilename);
@@ -858,9 +930,10 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider font-bold border-b border-slate-100">
               <tr>
+                <th className="px-5 py-3">#</th>
                 <th className="px-5 py-3">Serial Number</th>
                 <th className="px-5 py-3">Model</th>
-                <th className="px-5 py-3">Condition</th> 
+                <th className="px-5 py-3">Condition</th>
                 <th className="px-5 py-3">Platform</th>
                 <th className="px-5 py-3">Order ID</th>
                 <th className="px-5 py-3">Refund</th>
@@ -874,7 +947,7 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
             <tbody className="divide-y divide-slate-50">
               {filteredReturns.length === 0 ? (
                 <tr>
-                  <td colSpan="11" className="p-12 text-center">
+                  <td colSpan="12" className="p-12 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
                         <Box size={32} className="text-slate-300" />
@@ -900,6 +973,9 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
                       style={{ "--row-opacity": intensity ? parseInt(intensity) / 100 : undefined }}
                       className={`hover:bg-slate-50/80 transition-colors ${colorClass || (item.rowColor && !item.rowColor.includes('|') ? item.rowColor : '')}`}
                     >
+                      <td className="px-5 py-3.5 text-xs font-bold text-slate-400">
+                        {(currentPageCurrent - 1) * pageSizeCurrent + index + 1}
+                      </td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
                           <div className="p-1.5 bg-indigo-50 rounded-md">
@@ -1012,6 +1088,15 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
                           >
                             <Palette size={13} />
                           </button>
+                          {canManage && (
+                            <button
+                              onClick={() => handleEditRefund(item)}
+                              className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-200 rounded-lg transition-all shadow-sm shrink-0"
+                              title="Edit Refund"
+                            >
+                              <Edit size={13} />
+                            </button>
+                          )}
                           {canManage ? (
                             <button
                               onClick={() => handleDelete(item)}

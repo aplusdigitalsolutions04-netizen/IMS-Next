@@ -60,13 +60,24 @@ export const GET = withErrorHandling(async (request) => {
     existingReturn = ret[0] || null;
   }
 
+  // A serial only ever gets serialStatus='Sold' from FBF/FBA sell-out (see
+  // app/api/fbf-fba/sell-out/route.js) — it never goes through order_items/
+  // orders, so linkedOrder is always null for these. Same scan-a-serial →
+  // pick condition → confirm flow as a regular Dispatched-order return, just
+  // without an order to look up; app/api/returns/route.js's POST handler
+  // skips the order/dispatch requirement for this case too.
+  const isFbfFbaSoldReturn = serial.serialStatus === "Sold";
+
   return NextResponse.json({
     ...serial,
-    canReturn: serial.serialStatus === "Dispatched" && !!linkedOrder && !existingReturn,
+    canReturn: (serial.serialStatus === "Dispatched" && !!linkedOrder && !existingReturn) || isFbfFbaSoldReturn,
+    isFbfFbaSoldReturn,
     linkedOrder: linkedOrder ? mapDispatchRow(linkedOrder) : null,
     existingReturnForLinkedOrder: existingReturn,
     smartWarning: serial.returnCount > 0
       ? `This serial was previously returned${serial.latestReturnReason ? ` (Reason: ${serial.latestReturnReason})` : ""}.`
-      : null,
+      : isFbfFbaSoldReturn
+        ? `This item was sold via ${serial.fbfFbaType || "FBF/FBA"} — returning it restocks it to main inventory.`
+        : null,
   });
 });

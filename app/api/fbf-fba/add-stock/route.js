@@ -6,6 +6,7 @@ import { authorizeFbfFba, resolveModelId } from "@/lib/fbfFbaAuth";
 import { recordSerialMovement } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { validateBody } from "@/lib/validate";
+import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
 
 // Only covers shape/type safety for fields the business-logic checks further
 // down don't already cover (type/quantity/model-or-item presence stay as
@@ -101,9 +102,14 @@ export const POST = withErrorHandling(async (request) => {
         throw new Error("Some serials are no longer valid for this model (may have been moved or removed by another user)");
       }
 
+      // warehouseGuid is stamped onto each serial (not just the aggregate
+      // fbf_fba_stock row) so a later Return-by-serial-number lookup can
+      // tell exactly which warehouse a given serial is sitting in, even when
+      // the same model has been sent to more than one warehouse under the
+      // same FBF/FBA type.
       await connection.query(
-        "UPDATE inventorystockinserial SET serialStatus = ?, fbfFbaType = ? WHERE serialNumber IN (?) AND itemVariantId = ? AND companyGuid = ?",
-        [type, type, serialNumbers, safeModelId, user.companyId]
+        "UPDATE inventorystockinserial SET serialStatus = ?, fbfFbaType = ?, warehouseGuid = ? WHERE serialNumber IN (?) AND itemVariantId = ? AND companyGuid = ?",
+        [type, type, warehouseGuid || null, serialNumbers, safeModelId, user.companyId]
       );
 
       for (const s of matchedSerials) {
@@ -120,6 +126,11 @@ export const POST = withErrorHandling(async (request) => {
     }
 
     await connection.commit();
+    // Moved serials leave 'Available' status behind — without this, the
+    // cached `serials` list elsewhere in the app (Global Search, dispatch
+    // serial validation) keeps showing them as available until reload. See
+    // the matching comment in app/api/fbf-fba/return/route.js.
+    if (isSerialized) broadcastRealtimeEvent(user.companyId, "serials");
     return NextResponse.json({ message: `Successfully added ${safeQuantity} items to ${type}` });
   } catch (err) {
     await connection.rollback();
