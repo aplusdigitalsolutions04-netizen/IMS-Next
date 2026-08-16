@@ -194,7 +194,7 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
     if (!term) return stock;
 
     return stock.filter((item) =>
-      [item.modelName, item.company, item.activeSerials]
+      [item.modelName, item.brand, item.activeSerials]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(term))
     );
@@ -1441,7 +1441,7 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
               <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Model / Item</th>
-                  <th className="px-4 py-3">Company / Brand</th>
+                  <th className="px-4 py-3">Brand</th>
                   <th className="px-4 py-3">Warehouse</th>
                   <th className="px-4 py-3 text-right">Quantity</th>
                   <th className="px-4 py-3">Serials</th>
@@ -1461,7 +1461,7 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
                         {item.modelName}
                       </button>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{item.company || '-'}</td>
+                    <td className="px-4 py-3 text-slate-600">{item.brand || '-'}</td>
                     <td className="px-4 py-3 text-slate-600">
                       {item.whPlatform ? (
                         <div className="flex flex-col">

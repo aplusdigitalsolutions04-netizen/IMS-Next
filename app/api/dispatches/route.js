@@ -215,7 +215,7 @@ export const DELETE = withErrorHandling(async (request) => {
   requireCompany(user);
   authorizeDispatchRequest(user, "DELETE", body);
 
-  const { ids, reason, cancelledBy } = body;
+  const { ids, reason, cancelledBy, clearCharges } = body;
   const idArray = Array.isArray(ids) ? ids : [ids];
   const results = { success: [], failed: [], errors: {} };
   const actor = cancelledBy || user?.username || "Unknown";
@@ -254,8 +254,15 @@ export const DELETE = withErrorHandling(async (request) => {
 
       const [[{ remaining }]] = await conn.query("SELECT COUNT(*) as remaining FROM order_items WHERE orderGuid=? AND companyGuid=?", [item.orderGuid, user.companyId]);
       if (remaining === 0) {
+        // freightCharges/packagingCost are order-level, so only touched once
+        // the whole order is actually being cancelled (not for cancelling one
+        // item out of a still-active multi-item order) — and only when the
+        // caller explicitly opted in, since these charges may have already
+        // been genuinely incurred (e.g. courier already picked up) and
+        // shouldn't be silently wiped just because the order got cancelled.
+        const chargesClause = clearCharges ? ", freightCharges=0, packagingCost=0" : "";
         await conn.query(
-          "UPDATE orders SET isDeleted=1, status='Order Cancelled', cancellationReason=?, cancelledBy=?, cancelledAt=NOW() WHERE guid=? AND companyGuid=?",
+          `UPDATE orders SET isDeleted=1, status='Order Cancelled', cancellationReason=?, cancelledBy=?, cancelledAt=NOW()${chargesClause} WHERE guid=? AND companyGuid=?`,
           [deleteReason, actor, item.orderGuid, user.companyId]
         );
       }

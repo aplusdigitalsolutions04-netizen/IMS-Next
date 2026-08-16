@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, Loader2, Sparkles, Save, Plus, Trash2, UploadCloud, Hash, CheckCircle2 } from "lucide-react";
 import Swal from "sweetalert2";
@@ -54,6 +54,12 @@ const FIELDS_AFTER_PRODUCTS = [
 
 const ALL_FIELDS = [...SECTIONS.flatMap((s) => s.fields), ...FIELDS_AFTER_PRODUCTS];
 const EMPTY_FORM = ALL_FIELDS.reduce((acc, f) => ({ ...acc, [f.key]: "" }), {});
+
+// Carries an in-progress extraction across the full-page reload that
+// switchCompany() triggers, so the user doesn't have to re-upload/re-extract
+// the same contract after switching into (or creating) the seller's actual
+// company.
+const PENDING_CONTRACT_KEY = "pt_pending_contract_upload";
 
 const EMPTY_PRODUCT = {
   productName: "", brand: "", model: "", categoryQuadrant: "", hsnCode: "", quantity: "", unitPrice: "", totalValue: "",
@@ -120,8 +126,38 @@ export default function ContractUpload() {
   const [numberExists, setNumberExists] = useState(false);
   const [numberExistsMessage, setNumberExistsMessage] = useState("");
   const [pdfContractNumber, setPdfContractNumber] = useState(null);
+  const [tokenUsage, setTokenUsage] = useState(null);
   const [wizardProduct, setWizardProduct] = useState(null);
   const wizardResolveRef = React.useRef(null);
+
+  // Resumes an extraction that was interrupted by a company switch/creation
+  // (see checkSellerCompanyMatch below) — only once activeCompany matches the
+  // company the upload was meant for, otherwise it waits for the next switch.
+  useEffect(() => {
+    if (!activeCompany) return;
+    try {
+      const raw = window.sessionStorage.getItem(PENDING_CONTRACT_KEY);
+      if (!raw) return;
+      const pending = JSON.parse(raw);
+      if (pending?.targetCompanyGuid === activeCompany.guid) {
+        setForm(pending.form || EMPTY_FORM);
+        setProducts(pending.products || []);
+        setPdfFilename(pending.pdfFilename || null);
+        setContractNumber(pending.contractNumber || "");
+        setExtractedFlag(true);
+        setTokenUsage(pending.tokenUsage || null);
+        window.sessionStorage.removeItem(PENDING_CONTRACT_KEY);
+      }
+    } catch (err) {}
+  }, [activeCompany]);
+
+  const persistPendingContract = (targetCompanyGuid) => {
+    try {
+      window.sessionStorage.setItem(PENDING_CONTRACT_KEY, JSON.stringify({
+        targetCompanyGuid, form, products, pdfFilename, contractNumber, tokenUsage,
+      }));
+    } catch (err) {}
+  };
 
   let rowIndex = 0;
 
@@ -160,10 +196,11 @@ export default function ContractUpload() {
   //
   // Returns true if the caller (handleExtract) should abort and reset the
   // form — either because the user is being sent to a different company
-  // (new or existing) to continue there, or because they have no way to fix
-  // the mismatch themselves and must go through an Admin instead. Returns
-  // false when it's safe to keep going with the currently active company
-  // (no mismatch, or the user explicitly chose to continue anyway).
+  // (new or existing) to continue there, because they cancelled the upload,
+  // or because they have no way to fix the mismatch themselves and must go
+  // through an Admin instead. A mismatch can never be waved through under
+  // the wrong company — the only way past it is to switch/create the right
+  // one. Returns false only when there's no mismatch to begin with.
   const checkSellerCompanyMatch = async (sellerCompany, sellerGstin, companyMatch) => {
     if (!activeCompany || (!sellerCompany && !sellerGstin)) return false;
 
@@ -207,12 +244,11 @@ export default function ContractUpload() {
           `which belongs to <b>"${suggested.name}"</b>, not your currently active company <b>${activeCompany.name}</b>.`,
         icon: "warning",
         showCancelButton: true,
-        showDenyButton: true,
         confirmButtonText: `Switch to "${suggested.name}"`,
-        denyButtonText: "Continue anyway",
         cancelButtonText: "Cancel upload",
       });
       if (result.isConfirmed) {
+        persistPendingContract(suggested.guid);
         const switched = await switchCompany(suggested.guid);
         // A successful switch reloads the page, so resetting local state is
         // moot either way — but if it silently failed (switchCompany alerts
@@ -221,8 +257,7 @@ export default function ContractUpload() {
         // extracted contract data instead of wiping it for nothing.
         return switched;
       }
-      if (result.isDenied) return false; // explicit "continue anyway"
-      return true; // cancelled
+      return true; // cancelled — mismatch must be resolved, never continue as-is
     }
 
     // Case 2: seller doesn't match any company the user has access to at
@@ -239,9 +274,7 @@ export default function ContractUpload() {
           `<br/><br/>You can create <b>"${sellerCompany || "this company"}"</b> now and switch to it to upload this contract.`,
         icon: "warning",
         showCancelButton: true,
-        showDenyButton: true,
         confirmButtonText: "Create company & switch",
-        denyButtonText: "Continue anyway",
         cancelButtonText: "Cancel upload",
       });
       if (result.isConfirmed) {
@@ -255,7 +288,8 @@ export default function ContractUpload() {
           // `activeCompany` from, leaving company name/logo/GST blank
           // everywhere until the next full login.
           setAvailableCompanies((prev) => [...prev, { guid: created.guid, name: sellerCompany || "New Company", gstNumber: sellerGstin || null }]);
-          await Swal.fire("Company created", `"${sellerCompany}" has been added. Switching you there now — please re-upload the contract after the switch.`, "success");
+          persistPendingContract(created.guid);
+          await Swal.fire("Company created", `"${sellerCompany}" has been added. Switching you there now — your extracted contract data will carry over automatically.`, "success");
           const switched = await switchCompany(created.guid);
           // Same reasoning as Case 1 — only treat this as handled (and clear
           // the extracted data) if the switch actually went through.
@@ -267,8 +301,7 @@ export default function ContractUpload() {
           return false;
         }
       }
-      if (result.isDenied) return false; // explicit "continue anyway"
-      return true; // cancelled
+      return true; // cancelled — mismatch must be resolved, never continue as-is
     }
 
     await Swal.fire({
@@ -314,12 +347,13 @@ export default function ContractUpload() {
 
     setExtracting(true);
     try {
-      const { extracted: extractedData, pdfFilename: savedFilename, companyMatch } = await contractsService.parseContractFile(file);
+      const { extracted: extractedData, pdfFilename: savedFilename, companyMatch, tokenUsage: usage } = await contractsService.parseContractFile(file);
       const { products: extractedProducts, contractNumber: extractedContractNumber, ...rest } = extractedData || {};
       setForm({ ...EMPTY_FORM, ...rest, contractNumber: contractNumber.trim() });
       setProducts(Array.isArray(extractedProducts) ? extractedProducts.map((p) => ({ ...EMPTY_PRODUCT, ...p })) : []);
       setPdfFilename(savedFilename);
       setExtractedFlag(true);
+      setTokenUsage(usage || null);
 
       const shouldAbort = await checkSellerCompanyMatch(rest.sellerCompany, rest.sellerGstin, companyMatch);
       if (shouldAbort) {
@@ -327,6 +361,7 @@ export default function ContractUpload() {
         setProducts([]);
         setPdfFilename(null);
         setExtractedFlag(false);
+        setTokenUsage(null);
         return;
       }
 
@@ -509,7 +544,7 @@ export default function ContractUpload() {
     }
     setSaving(true);
     try {
-      const saveRes = await contractsService.saveContract({ ...form, products: JSON.stringify(products), pdfFilename });
+      const saveRes = await contractsService.saveContract({ ...form, products: JSON.stringify(products), pdfFilename, tokenUsage });
 
       const linkedProducts = await runInventoryValidation(products);
       if (saveRes?.guid && linkedProducts.some((p, i) => p.itemVariantId && p.itemVariantId !== products[i]?.itemVariantId)) {
@@ -614,10 +649,18 @@ export default function ContractUpload() {
 
       {extracted && (
         <div className="w-full animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
             <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-black flex items-center justify-center shrink-0">2</span>
             <h3 className="text-sm font-black text-slate-700 uppercase tracking-wide">Extracted Contract Information</h3>
             <span className="text-xs text-slate-400 font-medium">— review &amp; edit before saving</span>
+            {tokenUsage && (
+              <span
+                title={`Prompt: ${tokenUsage.promptTokens} · Completion: ${tokenUsage.completionTokens}`}
+                className="ml-auto text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-2.5 py-1"
+              >
+                AI tokens used: {tokenUsage.totalTokens.toLocaleString("en-IN")}
+              </span>
+            )}
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm">

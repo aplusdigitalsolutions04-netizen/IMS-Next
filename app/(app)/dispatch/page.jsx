@@ -36,8 +36,8 @@ export default function DispatchPage() {
   );
 
   const handleDelete = useCallback(
-    async (ids, reason, cancelledBy) => {
-      await printerService.deleteDispatch(ids, reason, cancelledBy || currentUser?.username || "Unknown");
+    async (ids, reason, cancelledBy, clearCharges) => {
+      await printerService.deleteDispatch(ids, reason, cancelledBy || currentUser?.username || "Unknown", clearCharges);
       await refreshData();
     },
     [refreshData, currentUser]

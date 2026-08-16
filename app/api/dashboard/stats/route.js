@@ -22,7 +22,10 @@ export const GET = withErrorHandling(async (request) => {
   const [[{ recentDispatches }]] = await mysqlPool.query(`SELECT COUNT(oi.guid) as recentDispatches FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid JOIN companies co ON oi.companyGuid=co.guid AND co.isActive=1 WHERE o.dispatchDate>=DATE_SUB(NOW(),INTERVAL 30 DAY) AND o.isDeleted=0 ${w("o")} ${w("oi")}`, p(2));
   const [[{ totalReturns }]] = await mysqlPool.query(`SELECT COUNT(*) as totalReturns FROM returns JOIN companies co ON returns.companyGuid=co.guid AND co.isActive=1 WHERE isDeleted=0 ${w("returns")}`, p(1));
   const [[{ pendingInstallations }]] = await mysqlPool.query(`SELECT COUNT(oi.guid) as pendingInstallations FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid JOIN order_installations ins ON o.guid=ins.orderGuid JOIN companies co ON oi.companyGuid=co.guid AND co.isActive=1 WHERE (ins.installationRequired='Yes' OR ins.installationRequired='true' OR ins.installationRequired='1') AND ins.installationStatus IN ('Pending','Scheduled') AND o.isDeleted=0 ${w("o")} ${w("oi")} ${w("ins")}`, p(3));
-  const [[{ totalRevenue }]] = await mysqlPool.query(`SELECT SUM(oi.sellingPrice) as totalRevenue FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid JOIN companies co ON oi.companyGuid=co.guid AND co.isActive=1 WHERE o.dispatchDate>=DATE_SUB(NOW(),INTERVAL 30 DAY) AND o.isDeleted=0 ${w("o")} ${w("oi")}`, p(2));
+  // sellingPrice is per-unit; serialized rows are always quantity 1 (one row
+  // per serial) but non-serialized rows collapse multiple units into a
+  // single row, so this must multiply by quantity or it undercounts them.
+  const [[{ totalRevenue }]] = await mysqlPool.query(`SELECT SUM(oi.sellingPrice * COALESCE(oi.quantity, 1)) as totalRevenue FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid JOIN companies co ON oi.companyGuid=co.guid AND co.isActive=1 WHERE o.dispatchDate>=DATE_SUB(NOW(),INTERVAL 30 DAY) AND o.isDeleted=0 ${w("o")} ${w("oi")}`, p(2));
 
   return NextResponse.json({ totalModels, totalSerials, availableSerials, dispatchedSerials, totalDispatches, recentDispatches, totalReturns, pendingInstallations, totalRevenue: Number(totalRevenue || 0) });
 });

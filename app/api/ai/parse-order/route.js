@@ -7,13 +7,13 @@ export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireAuth(user);
 
-  if (!checkOpenAIKey()) throw new ApiError(503, "OpenAI API key not configured. Add OPENAI_API_KEY to .env");
+  if (!(await checkOpenAIKey())) throw new ApiError(503, "OpenAI API key not configured. Add it under Settings → AI Settings.");
   const { text } = await parseJsonBody(request);
   if (!text?.trim()) throw new ApiError(400, "No text provided");
 
   try {
-    const result = await callOpenAI(text.trim());
-    return NextResponse.json(result);
+    const { data } = await callOpenAI(text.trim(), { source: "parse-order", user });
+    return NextResponse.json(data);
   } catch (err) {
     console.error("[ai] parse-order error:", err.message);
     throw new ApiError(500, err.message || "AI parsing failed");

@@ -177,6 +177,8 @@ export default function Dispatch({
   });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [itemsToDelete, setItemsToDelete] = useState([]);
+  const [deleteChargesTotal, setDeleteChargesTotal] = useState({ freight: 0, packaging: 0 });
+  const [clearChargesOnCancel, setClearChargesOnCancel] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
@@ -289,7 +291,7 @@ export default function Dispatch({
 
   const dashboardStats = useMemo(() => {
     let totalDispatch = 0;
-    let readyCount = 0;
+    let packingCount = 0;
     let inTransitCount = 0;
     let deliveredCount = 0;
     let rtoCount = 0;
@@ -319,7 +321,7 @@ export default function Dispatch({
       const d = group[0];
       const effStatus = getEffectiveDispatchStatus(d);
       if (activeSet.has(d) || inTransitSet.has(d)) totalDispatch++;
-      if (effStatus === "Ready for Pickup") readyCount++;
+      if (effStatus === "Packing in Process") packingCount++;
       if (effStatus === "In Transit") inTransitCount++;
       if (effStatus === "Delivered" || effStatus === "Completed") deliveredCount++;
       if (effStatus === "RTO") rtoCount++;
@@ -331,7 +333,7 @@ export default function Dispatch({
       totalPackagingCost += (Number(d.packagingCost) || 0);
     });
 
-    return { totalDispatch, readyCount, inTransitCount, deliveredCount, rtoCount, podPendingCount, totalRevenue, totalFreight, totalPackagingCost };
+    return { totalDispatch, packingCount, inTransitCount, deliveredCount, rtoCount, podPendingCount, totalRevenue, totalFreight, totalPackagingCost };
   }, [activeDispatches, inTransitDispatches, deliveredDispatches, rtoDispatches, podPendingDispatches]);
 
   const allGroupedDispatches = useMemo(() => {
@@ -422,11 +424,30 @@ export default function Dispatch({
     setViewOrder(group);
   };
 
+  // Freight/packaging are order-level charges, not per-item — sum each
+  // affected order's own values once (via its first item) rather than once
+  // per item, or a multi-item order would count its charges multiple times.
+  const sumOrderCharges = (groups) => {
+    const seenOrders = new Set();
+    return groups.reduce((acc, group) => {
+      const first = group[0];
+      const orderKey = first?._orderId || first?.orderid;
+      if (!first || seenOrders.has(orderKey)) return acc;
+      seenOrders.add(orderKey);
+      acc.freight += Number(first.freightCharges) || 0;
+      acc.packaging += Number(first.packagingCost) || 0;
+      return acc;
+    }, { freight: 0, packaging: 0 });
+  };
+
   const handleBulkDeleteClick = () => {
     if (!canManage) { alert("🚫 Access Denied."); return; }
     const allIds = getSelectedItems();
     if (allIds.length === 0) return;
+    const groups = selectedIndices.map((index) => currentDispatches[index]).filter(Boolean);
     setItemsToDelete(allIds);
+    setDeleteChargesTotal(sumOrderCharges(groups));
+    setClearChargesOnCancel(false);
     setDeleteReason("");
     setShowDeleteModal(true);
   };
@@ -436,6 +457,8 @@ export default function Dispatch({
     const ids = group.map((item) => item.guid).filter(Boolean);
     if (ids.length === 0) return;
     setItemsToDelete(ids);
+    setDeleteChargesTotal(sumOrderCharges([group]));
+    setClearChargesOnCancel(false);
     setDeleteReason("");
     setShowDeleteModal(true);
   };
@@ -446,12 +469,13 @@ export default function Dispatch({
     if (!itemsToDelete.length) return;
     setIsDeleting(true);
     try {
-      await onDelete(itemsToDelete, deleteReason, currentUser?.username || "Admin");
+      await onDelete(itemsToDelete, deleteReason, currentUser?.username || "Admin", clearChargesOnCancel);
       setShowDeleteModal(false);
       setSelectedIndices([]);
       setIsSelectionMode(false);
       setItemsToDelete([]);
       setDeleteReason("");
+      setClearChargesOnCancel(false);
     } catch (error) {
       alert("Failed to delete: " + error.message);
     } finally {
@@ -690,8 +714,23 @@ export default function Dispatch({
   const handleSaveLogistics = async (e) => {
     e.preventDefault();
     if (isSavingLogistics) return;
-    setIsSavingLogistics(true);
     const finalLogisticsStatus = logisticsForm.logisticsStatus;
+
+    // Marking RTO doesn't have to mean the freight/packaging already spent on
+    // this shipment gets wiped — ask instead of silently deciding either way.
+    let clearChargesOnRTO = false;
+    const wasAlreadyRTO = (logisticsBatch || []).every((item) => item.logisticsStatus === "RTO");
+    const currentFreight = logisticsForm.freightCharges ? Number(logisticsForm.freightCharges) : 0;
+    const currentPackaging = logisticsForm.includePackaging === "yes" ? Number(logisticsForm.packagingCost) : 0;
+    if (!isDeliveredLogisticsLocked && finalLogisticsStatus === "RTO" && !wasAlreadyRTO && (currentFreight > 0 || currentPackaging > 0)) {
+      clearChargesOnRTO = confirm(
+        `This order has ₹${currentFreight.toLocaleString("en-IN")} freight` +
+        (currentPackaging > 0 ? ` and ₹${currentPackaging.toLocaleString("en-IN")} packaging` : "") +
+        ` charges.\n\nOK = clear these charges (RTO)\nCancel = keep them as-is`
+      );
+    }
+
+    setIsSavingLogistics(true);
 
     const commonUpdateData = isDeliveredLogisticsLocked
       ? { logisticsStatus: finalLogisticsStatus }
@@ -700,9 +739,9 @@ export default function Dispatch({
           courierPartner: logisticsForm.courierPartner || null,
           logisticsDispatchDate: logisticsForm.dispatchDate || null,
           trackingId: logisticsForm.trackingId || null,
-          freightCharges: logisticsForm.freightCharges ? Number(logisticsForm.freightCharges) : 0,
+          freightCharges: clearChargesOnRTO ? 0 : currentFreight,
           logisticsStatus: finalLogisticsStatus,
-          packagingCost: logisticsForm.includePackaging === "yes" ? Number(logisticsForm.packagingCost) : 0
+          packagingCost: clearChargesOnRTO ? 0 : currentPackaging
         };
 
     try {
@@ -784,10 +823,25 @@ export default function Dispatch({
   };
 
   const checkIsReturned = (item) => {
-    if (item.isDeleted && item.cancelReason) return true;
+    if (item.isDeleted || item.status === "Order Cancelled") return true;
     const lookupId = String(item.serialNumberId || item.serialNumberGuid || item.serialGuid || item.serialId);
+    if (!lookupId || lookupId === 'undefined' || lookupId === 'null') return false;
     const s = serials.find((x) => String(x.guid || x.id) === lookupId);
-    if (s && s.status !== 'Dispatched') return true;
+    if (!s) return false;
+    // 'Dispatched' and 'Sold' are both valid "still counts" states — 'Sold'
+    // is what a serial's status becomes once its order is Billed (see
+    // lib/dispatchHelpers.js), it does NOT mean the item was returned.
+    // Treating it as "returned" here wrongly zeroed out the order value for
+    // every Billed dispatch.
+    if (s.status === 'Dispatched' || s.status === 'Sold') return false;
+    if (s.status === 'Available') {
+      // If it's 'Available', it might just be a newly created dispatch where `serials` state hasn't refreshed yet.
+      const created = new Date(item.dispatchDate || Date.now());
+      // If the dispatch was created very recently (within 10 minutes), assume it's a stale serials cache
+      if (Date.now() - created.getTime() < 1000 * 60 * 10) return false;
+      return true; // genuinely back in stock — this dispatch was returned
+    }
+    if (s.status === 'Damaged') return true; // came back damaged
     return false;
   };
 
@@ -828,12 +882,12 @@ export default function Dispatch({
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4">
-        <StatCard icon={Box} label="Dispatch" value={dashboardStats.totalDispatch} color="bg-indigo-50 text-indigo-600" />
-        <StatCard icon={Clock} label="Ready for Pickup" value={dashboardStats.readyCount} color="bg-amber-50 text-amber-600" />
-        <StatCard icon={Truck} label="In Transit" value={dashboardStats.inTransitCount} color="bg-blue-50 text-blue-600" />
-        <StatCard icon={FileText} label="POD Pending" value={dashboardStats.podPendingCount} color="bg-amber-50 text-amber-700" />
-        <StatCard icon={CheckCircle} label="Delivered" value={dashboardStats.deliveredCount} color="bg-emerald-50 text-emerald-600" />
-        <StatCard icon={RotateCcw} label="RTO" value={dashboardStats.rtoCount} color="bg-red-50 text-red-600" />
+        <StatCard icon={Box} label="Dispatch" value={dashboardStats.totalDispatch} color="bg-indigo-50 text-indigo-600" onClick={() => handleTabChange("active")} />
+        <StatCard icon={Clock} label="Packing in Process" value={dashboardStats.packingCount} color="bg-amber-50 text-amber-600" onClick={() => handleTabChange("active")} />
+        <StatCard icon={Truck} label="In Transit" value={dashboardStats.inTransitCount} color="bg-blue-50 text-blue-600" onClick={() => handleTabChange("in_transit")} />
+        <StatCard icon={FileText} label="POD Pending" value={dashboardStats.podPendingCount} color="bg-amber-50 text-amber-700" onClick={() => handleTabChange("pod_pending")} />
+        <StatCard icon={CheckCircle} label="Delivered" value={dashboardStats.deliveredCount} color="bg-emerald-50 text-emerald-600" onClick={() => handleTabChange("delivered")} />
+        <StatCard icon={RotateCcw} label="RTO" value={dashboardStats.rtoCount} color="bg-red-50 text-red-600" onClick={() => handleTabChange("rto")} />
         {isAdmin && (
             <StatCard className="col-span-2 md:col-span-2" icon={Banknote} label=" Charges" value={`₹${dashboardStats.totalFreight.toLocaleString("en-IN")}`} color="bg-purple-50 text-purple-600" subText=" Freight Cost" />
         )}
@@ -951,7 +1005,11 @@ export default function Dispatch({
                   const totalSellPrice = group.reduce((sum, i) => {
                     const returned = checkIsReturned(i);
                     if (returned) return sum;
-                    return sum + (Number(i.sellingPrice) || 0);
+                    // sellingPrice is per-unit; serialized rows are always
+                    // quantity 1 (one row per serial) but non-serialized rows
+                    // collapse multiple units into a single row, so this must
+                    // multiply by quantity or it undercounts those lines.
+                    return sum + (Number(i.sellingPrice) || 0) * (Number(i.quantity) || 1);
                   }, 0);
                   const statusColors = {
                     Delivered: "bg-green-100 text-green-700 border-green-200",
@@ -1070,7 +1128,17 @@ export default function Dispatch({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5">
             <h3 className="text-lg font-bold text-slate-800 mb-2 text-center flex items-center justify-center gap-2"><AlertCircle className="text-red-500" /> Confirm Cancel</h3>
-            <textarea className="w-full border p-3 rounded-xl text-sm mb-4 focus:ring-2 focus:ring-red-500 outline-none" rows="2" placeholder="Reason is required..." value={deleteReason} onChange={(e) => setDeleteReason(e.target.value)} autoFocus />
+            <textarea className="w-full border p-3 rounded-xl text-sm mb-3 focus:ring-2 focus:ring-red-500 outline-none" rows="2" placeholder="Reason is required..." value={deleteReason} onChange={(e) => setDeleteReason(e.target.value)} autoFocus />
+            {(deleteChargesTotal.freight > 0 || deleteChargesTotal.packaging > 0) && (
+              <label className="flex items-start gap-2 mb-4 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 cursor-pointer">
+                <input type="checkbox" className="mt-0.5" checked={clearChargesOnCancel} onChange={(e) => setClearChargesOnCancel(e.target.checked)} />
+                <span>
+                  This order has <b>₹{deleteChargesTotal.freight.toLocaleString("en-IN")}</b> freight
+                  {deleteChargesTotal.packaging > 0 && <> and <b>₹{deleteChargesTotal.packaging.toLocaleString("en-IN")}</b> packaging</>} charges.
+                  Also clear these charges on cancel?
+                </span>
+              </label>
+            )}
             <div className="flex gap-2"><button onClick={() => setShowDeleteModal(false)} className="flex-1 py-2 bg-slate-100 rounded-xl text-sm font-bold text-slate-600">Keep</button><button onClick={confirmDelete} disabled={isDeleting} className="flex-1 py-2 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition flex items-center justify-center gap-2">{isDeleting ? "Cancelling..." : "Cancel Items"}</button></div>
           </div>
         </div>

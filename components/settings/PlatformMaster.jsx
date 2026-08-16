@@ -5,6 +5,29 @@ import Swal from "sweetalert2";
 import { platformsService } from "@/lib/services/platformsService";
 import { getStoredUser } from "@/lib/client/auth";
 
+// These fields aren't rows in selling_platform_fields — they're hardcoded
+// straight into components/newDispatch/NewDispatch.jsx's per-platform form
+// sections (search "GeM-specific fields", "Other platform fields", the
+// isECommerce block) because they existed before the dynamic custom-fields
+// system did. Listed here read-only purely so "Manage Fields" doesn't look
+// empty/misleading for a platform that in fact already collects a dozen
+// fields during dispatch — adding one here does nothing; only the fields
+// added through the form below (backed by selling_platform_fields) do.
+const BUILT_IN_FIELDS = {
+  GeM: [
+    "Order Type", "Bid No.", "Order Date", "Last Delivery Date", "Shipping Address",
+    "Buy To Address", "GST Number", "Contact No.", "Alt Contact", "Buyer Email",
+    "Consignee Name", "Consignee Email", "Payment Authority Email", "Installation Required", "Warranty",
+  ],
+  Other: [
+    "Order Date", "Last Delivery Date", "Shipping Address", "Buy To Address", "GST Number",
+    "Contact No.", "Alt Contact", "Consignee Name", "Consignee Email", "Payment Authority Email",
+    "Installation Required", "Warranty",
+  ],
+  Amazon: ["Invoice No.", "Invoice Date", "GST Number", "Invoice Upload", "Order Date", "Last Delivery Date"],
+  Flipkart: ["Invoice No.", "Invoice Date", "GST Number", "Invoice Upload", "Order Date", "Last Delivery Date"],
+};
+
 const COLOR_THEMES = [
   "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal",
   "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink",
@@ -236,7 +259,7 @@ export default function PlatformMaster() {
                 >
                   {p.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
                 </button>
-                {(currentUser?.role === 'Admin' || currentUser?.allow_manage_platform_fields) && (
+                {(currentUser?.role?.toLowerCase() === 'admin' || currentUser?.allow_manage_platform_fields) && (
                   <button
                     onClick={() => setManagingFieldsFor(p)}
                     className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
@@ -331,6 +354,25 @@ function ManageFieldsModal({ platform, onClose }) {
         </div>
 
         <div className="p-6 flex-1 overflow-y-auto">
+          {BUILT_IN_FIELDS[platform.name] && (
+            <div className="mb-8">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <Lock size={11} className="text-slate-300" /> Built-in Fields
+              </label>
+              <p className="text-xs text-slate-400 mb-3">
+                Already collected during New Dispatch for {platform.name} — these are part of the app itself, not editable here.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {BUILT_IN_FIELDS[platform.name].map((label) => (
+                  <span key={label} className="text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-full">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 block">Custom Fields</label>
           <form onSubmit={handleAddField} className="flex gap-3 mb-8 items-end">
             <div className="flex-1">
               <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Field Name</label>

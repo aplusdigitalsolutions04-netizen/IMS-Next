@@ -12,7 +12,7 @@ export const POST = withErrorHandling(async (request) => {
   requireAuth(user);
   requirePermission(user, "contracts", "You do not have permission to access contracts.");
 
-  if (!checkOpenAIKey()) throw new ApiError(503, "OpenAI API key not configured. Add OPENAI_API_KEY to .env");
+  if (!(await checkOpenAIKey())) throw new ApiError(503, "OpenAI API key not configured. Add it under Settings → AI Settings.");
 
   const formData = await request.formData();
   const file = formData.get("file");
@@ -22,17 +22,19 @@ export const POST = withErrorHandling(async (request) => {
   const buffer = Buffer.from(await file.arrayBuffer());
   if (buffer.length > 15 * 1024 * 1024) throw new ApiError(413, "File too large (max 15 MB)");
 
+  const meta = { source: "contracts-parse", user };
   let extracted;
+  let tokenUsage = null;
   try {
     if (mimeType === "application/pdf") {
       const pdf = await getDocumentProxy(new Uint8Array(buffer));
       const { text: rawText } = await extractText(pdf, { mergePages: true });
       const text = (rawText || "").trim();
       if (!text) throw new ApiError(422, "Could not extract text from PDF — it may be a scanned image PDF. Try uploading as JPG/PNG.");
-      extracted = await callOpenAIContract(text);
+      ({ data: extracted, usage: tokenUsage } = await callOpenAIContract(text, meta));
     } else if (mimeType.startsWith("image/")) {
       const base64 = buffer.toString("base64");
-      extracted = await callOpenAIVisionContract(base64, mimeType);
+      ({ data: extracted, usage: tokenUsage } = await callOpenAIVisionContract(base64, mimeType, meta));
     } else {
       throw new ApiError(400, "Unsupported file type. Upload a PDF or image (JPG, PNG, WebP).");
     }
@@ -74,5 +76,5 @@ export const POST = withErrorHandling(async (request) => {
     }
   }
 
-  return NextResponse.json({ extracted, pdfFilename: saved.filename, companyMatch });
+  return NextResponse.json({ extracted, pdfFilename: saved.filename, companyMatch, tokenUsage });
 });

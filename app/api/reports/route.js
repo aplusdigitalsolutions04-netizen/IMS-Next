@@ -50,10 +50,14 @@ export const GET = withErrorHandling(async (request) => {
   `, s1.params);
 
   const s2 = buildWhere(" WHERE o.isDeleted=0", "o.dispatchDate", true, "o");
+  // sellingPrice/landingPrice are per-unit; serialized rows are always
+  // quantity 1 (one row per serial) but non-serialized rows collapse
+  // multiple units into a single row, so both must be scaled by quantity to
+  // report this row's actual line value rather than its unit price.
   const [printerRows] = await mysqlPool.query(`
     SELECT oi.guid as _id, o.invoiceNumber as orderId, o.dispatchDate,
-           o.status, ol.logisticsStatus, oi.sellingPrice,
-           COALESCE(NULLIF(s.landingPrice,0), itv.purchasePrice, 0) as landingPrice,
+           o.status, ol.logisticsStatus, oi.sellingPrice * COALESCE(oi.quantity, 1) as sellingPrice,
+           COALESCE(NULLIF(s.landingPrice,0), itv.purchasePrice, 0) * COALESCE(oi.quantity, 1) as landingPrice,
            o.platform AS firmName, o.orderid AS customerName, itv.variantName as modelName, s.serialNumber as serialValue,
            'Printers' as category, o.invoiceFilename as invoiceFile, o.ewayBillFilename as ewayBillFile
     FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid

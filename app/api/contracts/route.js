@@ -48,7 +48,7 @@ export const POST = withErrorHandling(async (request) => {
     bidNumber, contractNumber, generatedDate, buyerContact, products, buyerEmail, buyerGstin,
     buyerAddress, deliveryStartAfter, deliveryCompletedBy, deliveryInstructions, ministry, department, organisation,
     officeZone, sellerCompany, sellerContact, sellerGstin, consigneeDesignation, consigneeEmail,
-    consigneeContact, consigneeAddress, pdfFilename,
+    consigneeContact, consigneeAddress, pdfFilename, tokenUsage,
   } = body;
 
   if (!contractNumber || !String(contractNumber).trim()) {
@@ -81,8 +81,9 @@ export const POST = withErrorHandling(async (request) => {
         guid, companyGuid, bidNumber, contractNumber, generatedDate, buyerContact, products, buyerEmail, buyerGstin,
         buyerAddress, deliveryStartAfter, deliveryCompletedBy, deliveryInstructions, ministry, department, organisation,
         officeZone, sellerCompany, sellerContact, sellerGstin, consigneeDesignation, consigneeEmail,
-        consigneeContact, consigneeAddress, pdfFilename, isDeleted, createdBy, modifiedBy
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`,
+        consigneeContact, consigneeAddress, pdfFilename, aiPromptTokens, aiCompletionTokens, aiTotalTokens,
+        isDeleted, createdBy, modifiedBy
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`,
       [
         guid, user.companyId, bidNumber || null, contractNumber.trim(), generatedDate || null,
         buyerContact || null, products || null, buyerEmail || null, buyerGstin || null,
@@ -90,6 +91,7 @@ export const POST = withErrorHandling(async (request) => {
         ministry || null, department || null, organisation || null, officeZone || null,
         sellerCompany || null, sellerContact || null, sellerGstin || null, consigneeDesignation || null,
         consigneeEmail || null, consigneeContact || null, consigneeAddress || null, pdfFilename || null,
+        tokenUsage?.promptTokens ?? null, tokenUsage?.completionTokens ?? null, tokenUsage?.totalTokens ?? null,
         user.username || user.fullName || "Unknown", user.username || user.fullName || "Unknown",
       ]
     );

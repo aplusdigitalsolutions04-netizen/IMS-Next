@@ -542,8 +542,8 @@ export default function FbfModals({
                 <div className="mt-1 font-semibold text-slate-800">{serialViewItem.type || activeTab}</div>
               </div>
               <div>
-                <div className="text-xs font-bold uppercase text-slate-400">Company</div>
-                <div className="mt-1 font-semibold text-slate-800">{serialViewItem.company || '-'}</div>
+                <div className="text-xs font-bold uppercase text-slate-400">Brand</div>
+                <div className="mt-1 font-semibold text-slate-800">{serialViewItem.brand || '-'}</div>
               </div>
               <div>
                 <div className="text-xs font-bold uppercase text-slate-400">Quantity</div>

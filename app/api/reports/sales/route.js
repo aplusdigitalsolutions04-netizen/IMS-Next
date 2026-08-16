@@ -34,7 +34,8 @@ export const GET = withErrorHandling(async (request) => {
 
   const rowsQuery = `
     SELECT o.dispatchDate, o.platform AS firmName, o.orderid as customer,
-           oi.sellingPrice, COALESCE(NULLIF(s.landingPrice, 0), itv.purchasePrice, 0) as landingPrice,
+           oi.sellingPrice * COALESCE(oi.quantity, 1) as sellingPrice,
+           COALESCE(NULLIF(s.landingPrice, 0), itv.purchasePrice, 0) * COALESCE(oi.quantity, 1) as landingPrice,
            itv.variantName as modelName, bm.brandName as companyName,
            s.serialNumber as serialNumber, ins.installationRequired, ins.installationCharges,
            o.packagingCost, o.commission, o.status
@@ -52,12 +53,16 @@ export const GET = withErrorHandling(async (request) => {
   // Aggregated in SQL instead of Array.reduce over the fetched rows — same
   // WHERE clause, computed by the database instead of walking the full
   // result set again in Node for each of the 5 totals.
+  // sellingPrice and landingPrice are both per-unit; serialized rows are
+  // always quantity 1 (one row per serial) but non-serialized rows collapse
+  // multiple units into a single row, so both sides must multiply by
+  // quantity or revenue/cost/profit all undercount those lines.
   const summaryQuery = `
     SELECT
       COUNT(*) as totalSales,
-      COALESCE(SUM(oi.sellingPrice), 0) as totalRevenue,
-      COALESCE(SUM(COALESCE(NULLIF(s.landingPrice, 0), itv.purchasePrice, 0) + IFNULL(o.packagingCost, 0) + IFNULL(o.commission, 0)), 0) as totalCost,
-      COALESCE(SUM(oi.sellingPrice - COALESCE(NULLIF(s.landingPrice, 0), itv.purchasePrice, 0) - IFNULL(o.packagingCost, 0) - IFNULL(o.commission, 0)), 0) as totalProfit,
+      COALESCE(SUM(oi.sellingPrice * COALESCE(oi.quantity, 1)), 0) as totalRevenue,
+      COALESCE(SUM((COALESCE(NULLIF(s.landingPrice, 0), itv.purchasePrice, 0) * COALESCE(oi.quantity, 1)) + IFNULL(o.packagingCost, 0) + IFNULL(o.commission, 0)), 0) as totalCost,
+      COALESCE(SUM((oi.sellingPrice - COALESCE(NULLIF(s.landingPrice, 0), itv.purchasePrice, 0)) * COALESCE(oi.quantity, 1) - IFNULL(o.packagingCost, 0) - IFNULL(o.commission, 0)), 0) as totalProfit,
       COALESCE(SUM(CASE WHEN ins.installationRequired IN ('Yes', 'true', '1') THEN IFNULL(ins.installationCharges, 0) ELSE 0 END), 0) as totalInstallationCharges
     FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid
     LEFT JOIN order_installations ins ON o.guid=ins.orderGuid

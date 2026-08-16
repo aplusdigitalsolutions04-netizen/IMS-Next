@@ -423,7 +423,7 @@ export default function ContractsList({ statusFilter = "Active" }) {
       await loadContracts();
     } catch (error) {
       console.error("Delete contract failed:", error);
-      Swal.fire("Error", "Failed to delete contract", "error");
+      Swal.fire("Error", error.message || "Failed to delete contract", "error");
     }
   };
 

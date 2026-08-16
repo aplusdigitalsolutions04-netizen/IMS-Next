@@ -18,7 +18,7 @@ export const GET = withErrorHandling(async (request) => {
         w.state as whState,
         w.warehouseName as whName,
         COALESCE(miv.variantName, i.itemName) as modelName,
-        COALESCE(mb.brandName, b.brandName) as company,
+        COALESCE(mb.brandName, b.brandName) as brand,
         CASE WHEN s.itemKind = 'serialized' THEN 1 ELSE 0 END as isSerialized,
         (SELECT GROUP_CONCAT(serialNumber) FROM inventorystockinserial WHERE serialStatus = s.type AND itemVariantId = s.modelGuid AND isDeleted = 0 AND companyGuid = s.companyGuid) as activeSerials
     FROM fbf_fba_stock s
