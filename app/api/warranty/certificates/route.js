@@ -3,7 +3,9 @@ import { v4 as uuidv4 } from "uuid";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany } from "@/lib/auth";
 import { authorizeWarranty } from "@/lib/warrantyAuth";
+import { ensureCertFilenameColumn } from "@/lib/warrantyCerts";
 import { logUserActivity } from "@/lib/helpers";
+import { deleteUploadedFile } from "@/lib/upload";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const POST = withErrorHandling(async (request) => {
@@ -11,14 +13,21 @@ export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
   authorizeWarranty(user, "POST");
+  await ensureCertFilenameColumn();
 
   const { orderGuid, orderNumber, htmlContent, status, certGuid } = body;
   const createdBy = user?.username || "unknown";
 
   let response;
   if (certGuid) {
+    // Saving generated/edited HTML content supersedes any previously
+    // uploaded certificate file for this order — a certificate is either the
+    // in-app-generated one or an uploaded file, never both at once.
+    const [[current]] = await mysqlPool.query("SELECT certFilename FROM wc_certs WHERE guid=? AND companyGuid=?", [certGuid, user.companyId]);
+    if (current?.certFilename) deleteUploadedFile(current.certFilename).catch(() => {});
+
     await mysqlPool.query(
-      "UPDATE wc_certs SET htmlContent=?, status=?, updatedAt=NOW() WHERE guid=? AND companyGuid=?",
+      "UPDATE wc_certs SET htmlContent=?, certFilename=NULL, status=?, updatedAt=NOW() WHERE guid=? AND companyGuid=?",
       [htmlContent, status || "draft", certGuid, user.companyId]
     );
     response = { message: "Certificate saved", guid: certGuid };
@@ -39,10 +48,11 @@ export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
   authorizeWarranty(user, "GET");
+  await ensureCertFilenameColumn();
 
   const [rows] = await mysqlPool.query(`
     SELECT
-      wc.guid, wc.orderGuid, wc.orderNumber,
+      wc.guid, wc.orderGuid, wc.orderNumber, wc.certFilename,
       wc.status, wc.createdBy, wc.createdAt, wc.updatedAt,
       o.customerName AS customerName,
       o.platform,

@@ -5,7 +5,7 @@ import Swal from "sweetalert2";
 import {
   FileText, Settings, Save, Search, Eye,
   Trash2, CheckCircle2, Clock, Edit3, ArrowLeft,
-  Printer, ShieldCheck, Image, Upload, Code2,
+  Printer, ShieldCheck, Image, Upload, Code2, Paperclip,
   Loader2, Plus, RefreshCw, X, Copy, ChevronLeft, ChevronRight
 } from "lucide-react";
 
@@ -53,6 +53,13 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
   const [orderSearch, setOrderSearch]   = useState("");
   const [savedCerts, setSavedCerts]     = useState([]);
   const [certsLoading, setCertsLoading] = useState(false);
+
+  // Upload an existing certificate file (instead of generating one from the
+  // HTML template) — one hidden input reused for every row, with the target
+  // order stashed here so onChange knows which order it's uploading for.
+  const certFileInputRef = useRef(null);
+  const [uploadTargetOrder, setUploadTargetOrder] = useState(null);
+  const [uploadingCertFor, setUploadingCertFor] = useState(null); // orderGuid currently uploading
 
   // Preview scale — scales A4 iframe down to fit container width
   const previewWrapRef = useRef(null);
@@ -207,6 +214,35 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
 
   useEffect(() => { loadOrders(); loadCerts(); }, [loadOrders, loadCerts]);
 
+  // ── Upload an existing certificate file for an order ───────────────────────
+  const openUploadPicker = (order) => {
+    setUploadTargetOrder(order);
+    certFileInputRef.current?.click();
+  };
+
+  const handleCertFileSelected = async (file) => {
+    if (!file || !uploadTargetOrder) return;
+    const orderGuid = uploadTargetOrder.orderGuid || uploadTargetOrder.guid;
+    setUploadingCertFor(orderGuid);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("orderGuid", orderGuid);
+      fd.append("orderNumber", uploadTargetOrder.orderNumber || "");
+      await axios.post(`${API}/api/warranty/certificates/upload`, fd, {
+        headers: { ...getHeaders(), "Content-Type": "multipart/form-data" },
+      });
+      Swal.fire({ toast: true, position: "top-end", icon: "success", title: "Certificate uploaded!", timer: 2000, showConfirmButton: false });
+      await loadCerts();
+      setListTab("saved");
+    } catch (e) {
+      Swal.fire("Error", e.response?.data?.message || "Upload failed", "error");
+    } finally {
+      setUploadingCertFor(null);
+      setUploadTargetOrder(null);
+    }
+  };
+
   // ── Filtered orders (GEM only) ──────────────────────────────────────────────
   const filteredOrders = useMemo(() => {
     const gemOnly = orders.filter(o =>
@@ -267,6 +303,12 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
 
   // ── Open saved cert ─────────────────────────────────────────────────────────
   const openSavedCert = async (cert) => {
+    // An uploaded certificate is a raw file (PDF/image), not HTML to render
+    // in the edit/preview page — just open it directly.
+    if (cert.certFilename) {
+      window.open(`${API}/uploads/${cert.certFilename}`, "_blank");
+      return;
+    }
     try {
       setCertLoading(true);
       setPage("view");
@@ -654,6 +696,13 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
   // ────────────────────────────────────────────────────────────────────────────
   return (
     <div className="h-full bg-slate-50 p-5 flex flex-col">
+      <input
+        ref={certFileInputRef}
+        type="file"
+        accept="application/pdf,image/*"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCertFileSelected(f); e.target.value = ""; }}
+      />
       <div className="w-full flex-1 flex flex-col min-h-0">
 
         {/* Header */}
@@ -766,11 +815,21 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
                               : "—"}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button onClick={() => generateCert(o)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-all opacity-0 group-hover:opacity-100">
-                            {canManage ? <Plus size={12} /> : <Eye size={12} />}
-                            {canManage ? "Generate" : "Preview"}
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100">
+                            {canManage && (
+                              <button onClick={() => openUploadPicker(o)} disabled={uploadingCertFor === o.orderGuid}
+                                title="Upload an existing certificate file instead of generating one"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-200 transition-all disabled:opacity-50">
+                                {uploadingCertFor === o.orderGuid ? <Loader2 size={12} className="animate-spin" /> : <Paperclip size={12} />}
+                                Upload
+                              </button>
+                            )}
+                            <button onClick={() => generateCert(o)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-all">
+                              {canManage ? <Plus size={12} /> : <Eye size={12} />}
+                              {canManage ? "Generate" : "Preview"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -841,10 +900,10 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
                           {new Date(c.updatedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                            c.status === "final" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 w-fit ${
+                            c.certFilename ? "bg-indigo-100 text-indigo-700" : c.status === "final" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
                           }`}>
-                            {c.status === "final" ? "✓ Final" : "Draft"}
+                            {c.certFilename ? <><Paperclip size={9} />Uploaded</> : c.status === "final" ? "✓ Final" : "Draft"}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-400">{c.createdBy || "—"}</td>

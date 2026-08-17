@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDocumentProxy, extractText } from "unpdf";
 import { authenticateRequest, requireAuth, requirePermission, hasAllCompaniesAccess, ApiError } from "@/lib/auth";
 import { callOpenAIContract, callOpenAIVisionContract, checkOpenAIKey } from "@/lib/aiParse";
-import { saveUploadedFile } from "@/lib/upload";
+import { saveUploadedFile, getCompanyName } from "@/lib/upload";
 import { withErrorHandling } from "@/lib/apiResponse";
 import { mysqlPool } from "@/lib/db";
 import { isSameCompany } from "@/lib/companyMatch";
@@ -44,7 +44,8 @@ export const POST = withErrorHandling(async (request) => {
     throw new ApiError(500, err.message || "AI contract parsing failed");
   }
 
-  const saved = await saveUploadedFile(file, { prefix: "contract", folder: "contract" });
+  const companyName = await getCompanyName(user.companyId);
+  const saved = await saveUploadedFile(file, { prefix: "contract", folder: "contract", companyName });
 
   // ContractUpload.jsx's checkSellerCompanyMatch already warns when the
   // extracted seller doesn't match any company the CURRENT user has access

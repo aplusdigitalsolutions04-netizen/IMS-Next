@@ -36,7 +36,8 @@ import {
   ShieldHalf,
   Globe,
   HardDrive,
-  Sparkles
+  Sparkles,
+  Database
 } from "lucide-react";
 import { useCompany } from "@/lib/client/CompanyContext";
 
@@ -45,7 +46,12 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
   const pathname = usePathname();
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const { activeCompany } = useCompany();
-  const logoSrc = activeCompany?.logoFilename ? `/uploads/${activeCompany.logoFilename}` : "/aplus.png";
+  // No fallback to a fixed image here on purpose — this used to fall back to
+  // "/aplus.png" (the platform operator's own logo, also its favicon), which
+  // meant every OTHER tenant company that hadn't uploaded its own logo yet
+  // saw A Plus Digital Solutions' logo in its sidebar instead of no logo at
+  // all. null renders the neutral placeholder box below instead.
+  const logoSrc = activeCompany?.logoFilename ? `/uploads/${activeCompany.logoFilename}` : null;
   const [expandedMenus, setExpandedMenus] = useState({});
 
   const activeTab = pathname.split("/")[1] || "dashboard";
@@ -108,8 +114,14 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
 
     return (
       <aside className="bg-white border-r flex flex-col items-center py-3 w-16 transition-all">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logoSrc} alt="Logo" className="h-8 w-auto object-contain mb-3 logo-invert" />
+        {logoSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={logoSrc} alt="Logo" className="h-8 w-auto object-contain mb-3 logo-invert" />
+        ) : (
+          <div className="h-8 w-8 mb-3 rounded-lg bg-slate-100 flex items-center justify-center" title="No logo uploaded">
+            <Building2 size={16} className="text-slate-300" />
+          </div>
+        )}
         <nav className="flex-1 flex flex-col items-center gap-1.5 overflow-y-auto w-full px-2 py-1">
           {hasPermission('dashboard') && (
             <button
@@ -217,7 +229,13 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
       <aside className="bg-white border-r flex flex-col w-64 h-full shrink-0 animate-sidebar-in transition-all">
         <div className="p-4 flex items-center justify-between border-b border-slate-100">
           <div className="flex flex-col items-center justify-center flex-1">
-            <img src={logoSrc} alt="Company Logo" className="h-12 w-auto object-contain logo-invert" />
+            {logoSrc ? (
+              <img src={logoSrc} alt="Company Logo" className="h-12 w-auto object-contain logo-invert" />
+            ) : (
+              <div className="h-12 w-12 rounded-xl bg-slate-100 flex items-center justify-center" title="No logo uploaded">
+                <Building2 size={22} className="text-slate-300" />
+              </div>
+            )}
           </div>
           <button onClick={() => setIsSidebarVisible(false)} className="p-1 hover:bg-slate-100 rounded-full text-slate-400 border border-slate-200 shadow-sm">
             <HideIcon size={18} />
@@ -234,35 +252,59 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
           <button onClick={() => router.push('/profile')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'profile' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <User size={18} /> <span>My Profile</span>
           </button>
-          {hasPermission('companyMaster') && (
-            <button onClick={() => router.push('/companyMaster')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'companyMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <Building2 size={18} /> <span>Company Master</span>
-            </button>
+          {(hasPermission('companyMaster') || hasPermission('platformMaster') || hasPermission('deliveryPartnerMaster')) && (
+            <div className="space-y-1">
+              <button onClick={() => toggleSubmenu('master')} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+                <div className="flex items-center gap-3"><Database size={18} /><span>Master</span></div>
+                {expandedMenus.master ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {expandedMenus.master && (
+                <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
+                  {hasPermission('companyMaster') && (
+                    <button onClick={() => router.push('/companyMaster')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'companyMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <Building2 size={14} className="flex-shrink-0" /> <span className="truncate">Company Master</span>
+                    </button>
+                  )}
+                  {hasPermission('platformMaster') && (
+                    <button onClick={() => router.push('/platformMaster')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'platformMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <Globe size={14} className="flex-shrink-0" /> <span className="truncate">Selling Platforms</span>
+                    </button>
+                  )}
+                  {hasPermission('deliveryPartnerMaster') && (
+                    <button onClick={() => router.push('/deliveryPartnerMaster')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'deliveryPartnerMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <Truck size={14} className="flex-shrink-0" /> <span className="truncate">Delivery Partners</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
-          {hasPermission('platformMaster') && (
-            <button onClick={() => router.push('/platformMaster')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'platformMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <Globe size={18} /> <span>Selling Platforms</span>
-            </button>
-          )}
-          {hasPermission('deliveryPartnerMaster') && (
-            <button onClick={() => router.push('/deliveryPartnerMaster')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'deliveryPartnerMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <Truck size={18} /> <span>Delivery Partners</span>
-            </button>
-          )}
-          {hasPermission('users') && (
-            <button onClick={() => router.push('/users')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <UsersIcon size={18} /> <span>User Management</span>
-            </button>
-          )}
-          {hasPermission('roles') && (
-            <button onClick={() => router.push('/roles')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'roles' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <Briefcase size={18} /> <span>Manage Roles</span>
-            </button>
-          )}
-          {hasPermission('userActivity') && (
-            <button onClick={() => router.push('/userActivity')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'userActivity' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <History size={18} /> <span>User Activity</span>
-            </button>
+          {(hasPermission('users') || hasPermission('roles') || hasPermission('userActivity')) && (
+            <div className="space-y-1">
+              <button onClick={() => toggleSubmenu('user')} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+                <div className="flex items-center gap-3"><UsersIcon size={18} /><span>User</span></div>
+                {expandedMenus.user ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {expandedMenus.user && (
+                <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
+                  {hasPermission('users') && (
+                    <button onClick={() => router.push('/users')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <UsersIcon size={14} className="flex-shrink-0" /> <span className="truncate">User Management</span>
+                    </button>
+                  )}
+                  {hasPermission('roles') && (
+                    <button onClick={() => router.push('/roles')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'roles' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <Briefcase size={14} className="flex-shrink-0" /> <span className="truncate">Manage Roles</span>
+                    </button>
+                  )}
+                  {hasPermission('userActivity') && (
+                    <button onClick={() => router.push('/userActivity')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'userActivity' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <History size={14} className="flex-shrink-0" /> <span className="truncate">User Activity</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
           {hasPermission('reports') && (
             <button onClick={() => router.push('/reports')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'reports' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
@@ -306,30 +348,42 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               )}
             </div>
           )}
-          {hasPermission('apiLogs') && (
-            <button onClick={() => router.push('/apiLogs')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'apiLogs' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <ShieldAlert size={18} /> <span>API Logs</span>
-            </button>
-          )}
-          {hasPermission('backupRestore') && (
-            <button onClick={() => router.push('/backupRestore')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'backupRestore' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <DatabaseBackup size={18} /> <span>Backup &amp; Restore</span>
-            </button>
-          )}
-          {hasPermission('rateLimitSettings') && (
-            <button onClick={() => router.push('/rateLimitSettings')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'rateLimitSettings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <ShieldHalf size={18} /> <span>Rate Limiting</span>
-            </button>
-          )}
-          {hasPermission('aiSettings') && (
-            <button onClick={() => router.push('/aiSettings')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'aiSettings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <Sparkles size={18} /> <span>AI Settings</span>
-            </button>
-          )}
-          {hasPermission('googleDrive') && (
-            <button onClick={() => router.push('/googleDrive')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'googleDrive' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <HardDrive size={18} /> <span>Google Drive</span>
-            </button>
+          {(hasPermission('apiLogs') || hasPermission('backupRestore') || hasPermission('rateLimitSettings') || hasPermission('aiSettings') || hasPermission('googleDrive')) && (
+            <div className="space-y-1">
+              <button onClick={() => toggleSubmenu('admin')} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+                <div className="flex items-center gap-3"><ShieldAlert size={18} /><span>Admin</span></div>
+                {expandedMenus.admin ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {expandedMenus.admin && (
+                <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
+                  {hasPermission('apiLogs') && (
+                    <button onClick={() => router.push('/apiLogs')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'apiLogs' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <ShieldAlert size={14} className="flex-shrink-0" /> <span className="truncate">API Logs</span>
+                    </button>
+                  )}
+                  {hasPermission('backupRestore') && (
+                    <button onClick={() => router.push('/backupRestore')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'backupRestore' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <DatabaseBackup size={14} className="flex-shrink-0" /> <span className="truncate">Backup &amp; Restore</span>
+                    </button>
+                  )}
+                  {hasPermission('rateLimitSettings') && (
+                    <button onClick={() => router.push('/rateLimitSettings')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'rateLimitSettings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <ShieldHalf size={14} className="flex-shrink-0" /> <span className="truncate">Rate Limiting</span>
+                    </button>
+                  )}
+                  {hasPermission('aiSettings') && (
+                    <button onClick={() => router.push('/aiSettings')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'aiSettings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <Sparkles size={14} className="flex-shrink-0" /> <span className="truncate">AI Settings</span>
+                    </button>
+                  )}
+                  {hasPermission('googleDrive') && (
+                    <button onClick={() => router.push('/googleDrive')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'googleDrive' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <HardDrive size={14} className="flex-shrink-0" /> <span className="truncate">Google Drive</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </nav>
         <div className="shrink-0 px-2 pb-2 border-t border-slate-100 pt-2">
@@ -346,8 +400,14 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
     <aside className="bg-white border-r flex flex-col w-64 h-full shrink-0 transition-all">
       <div className="p-4 flex items-center justify-between border-b border-slate-100">
         <div className="flex flex-col items-center justify-center flex-1">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logoSrc} alt="Company Logo" className="h-12 w-auto object-contain logo-invert" />
+          {logoSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoSrc} alt="Company Logo" className="h-12 w-auto object-contain logo-invert" />
+          ) : (
+            <div className="h-12 w-12 rounded-xl bg-slate-100 flex items-center justify-center" title="No logo uploaded">
+              <Building2 size={22} className="text-slate-300" />
+            </div>
+          )}
         </div>
         <button onClick={() => setIsSidebarVisible(false)} className="p-1 hover:bg-slate-100 rounded-full text-slate-400 border border-slate-200 shadow-sm">
           <HideIcon size={18} />

@@ -151,7 +151,9 @@ export default function PlatformMaster() {
   const handleDelete = async (platform) => {
     const confirm = await Swal.fire({
       title: `Delete "${platform.name}"?`,
-      text: "This can't be undone.",
+      text: platform.isSystem
+        ? "This is a built-in platform — GeM-specific dispatch/warranty logic elsewhere in the app assumes it exists by this exact name. Deleting it won't crash anything, but it will disappear from every platform dropdown going forward. This can't be undone."
+        : "This can't be undone.",
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Delete",
@@ -268,8 +270,8 @@ export default function PlatformMaster() {
                     <Settings2 size={14} />
                   </button>
                 )}
-                {!p.isSystem && (
-                  <button onClick={() => handleDelete(p)} disabled={busyId === p.guid} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                {(!p.isSystem || currentUser?.role?.toLowerCase() === "admin" || currentUser?.allow_delete_platformMaster) && (
+                  <button onClick={() => handleDelete(p)} disabled={busyId === p.guid} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title={p.isSystem ? "Delete (built-in)" : "Delete"}>
                     <Trash2 size={14} />
                   </button>
                 )}

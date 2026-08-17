@@ -52,7 +52,18 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
 
   const [[platform]] = await mysqlPool.query("SELECT * FROM selling_platforms WHERE guid = ?", [id]);
   if (!platform) throw new ApiError(404, "Platform not found.");
-  if (platform.isSystem) throw new ApiError(400, `"${platform.name}" is a built-in platform and can't be deleted — deactivate it instead.`);
+  // Built-in platform names are hardcoded into GeM-specific business logic
+  // elsewhere (see the PUT handler's rename block above for the same
+  // reasoning), so deleting one is gated behind the same allow_delete_
+  // platformMaster flag that already governs deleting custom platforms —
+  // Admin always has it (authorizeMasterDelete's isSuperUser bypass sets it
+  // unconditionally in sanitizeUser), and any other role only gets it if
+  // explicitly granted via Manage Roles. The orderCount check right below
+  // still applies regardless, so a platform actively in use by real orders
+  // can't be deleted out from under them even with this flag.
+  if (platform.isSystem && !user.allow_delete_platformMaster) {
+    throw new ApiError(400, `"${platform.name}" is a built-in platform and can't be deleted — deactivate it instead.`);
+  }
 
   const [[{ orderCount }]] = await mysqlPool.query("SELECT COUNT(*) as orderCount FROM orders WHERE platform = ?", [platform.name]);
   if (orderCount > 0) {

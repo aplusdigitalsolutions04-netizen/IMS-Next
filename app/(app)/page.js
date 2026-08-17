@@ -295,14 +295,22 @@ export default function DashboardPage() {
   // Role-name-free: driven by the user's actual permission list (resolved
   // from their assigned role in the DB), not a hardcoded role name.
   // "reports" permission = Supervisor/Accountant-tier visibility;
-  // "billing" permission = financial-amount visibility (Accountant-tier);
-  // ops cards go to anyone who ISN'T billing-scoped (mirrors the old
-  // Supervisor/Operator/User vs Accountant split without naming any role).
+  // "billing" permission = financial-amount visibility (Accountant-tier).
+  // showOpsCards used to be "anyone who ISN'T billing-scoped" — meant to hide
+  // ops widgets from a pure-Accountant role, but that also hid them for any
+  // role that legitimately has BOTH billing and real order/dispatch/stock
+  // access (e.g. an "orders" role that also got Billing ticked), leaving
+  // that user with only the one unconditional Orders card and nothing else.
+  // Now it's driven by whether the role has any actual ops-side permission,
+  // independent of billing — a pure-billing role (no ops permissions) still
+  // gets the finance-only view, but billing no longer silently suppresses
+  // ops cards for anyone who also has real ops access.
+  const OPS_PERMISSION_IDS = ["orders", "dispatch", "stat_stock_in", "returns", "damage", "stat_current_stock"];
   const hasReportsAccess = isAdmin || !!currentUser?.permissions?.includes("reports");
   const hasBillingAccess = isAdmin || !!currentUser?.permissions?.includes("billing");
   const showReports = hasReportsAccess;
   const showFinancials = hasBillingAccess;
-  const showOpsCards = isAdmin || !currentUser?.permissions?.includes("billing");
+  const showOpsCards = isAdmin || OPS_PERMISSION_IDS.some((p) => currentUser?.permissions?.includes(p));
   const showFinanceCards = hasReportsAccess;
 
   const inPeriod = (dateVal) => {

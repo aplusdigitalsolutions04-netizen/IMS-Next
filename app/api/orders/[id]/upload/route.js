@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeOrdersRequest, requireAuth, requireCompany, canManageOrderDocuments, ApiError } from "@/lib/auth";
-import { saveUploadedFile } from "@/lib/upload";
+import { saveUploadedFile, getCompanyName } from "@/lib/upload";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 export const POST = withErrorHandling(async (request, { params }) => {
@@ -20,8 +20,14 @@ export const POST = withErrorHandling(async (request, { params }) => {
     throw new ApiError(403, "You cannot upload this document type.");
   }
 
-  const DOC_TYPE_FOLDERS = { gemContract: "contract", pod: "pod", ewayBill: "ewayBill", invoice: "invoice" };
-  const saved = await saveUploadedFile(file, { folder: DOC_TYPE_FOLDERS[docType] });
+  // Anything not one of these 5 known types is a user-typed "Additional
+  // Document" label (see OrderDetailModal.jsx's extraDocType input) — those
+  // all file into one shared "Additional Documents" folder rather than
+  // getting a new Drive folder per custom label.
+  const DOC_TYPE_FOLDERS = { gemContract: "contract", pod: "pod", ewayBill: "ewayBill", invoice: "invoice", challan: "challan" };
+  const folder = DOC_TYPE_FOLDERS[docType] || "additionalDoc";
+  const companyName = await getCompanyName(user.companyId);
+  const saved = await saveUploadedFile(file, { folder, companyName });
   const filename = saved.filename;
 
   if (id !== "0") {

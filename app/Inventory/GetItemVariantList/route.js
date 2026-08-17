@@ -71,6 +71,7 @@ export const GET = withErrorHandling(async (request) => {
     data: rows,
     total,
     showMrp: !!categoryInfo?.showMrp,
+    isTrackable,
     categoryId: categoryInfo?.categoryId || "",
     categoryName: categoryInfo?.categoryName || "",
   });

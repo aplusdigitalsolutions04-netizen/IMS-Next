@@ -37,10 +37,19 @@ export const POST = withErrorHandling(async (request) => {
     await conn.beginTransaction();
 
     const [variantRows] = await conn.query(
-      "SELECT itemVariantId FROM inventoryitemvariant WHERE itemVariantId = ? AND isDeleted = 0 FOR UPDATE",
+      `SELECT v.itemVariantId, IFNULL(i.isTrackable, 0) as isTrackable
+       FROM inventoryitemvariant v
+       LEFT JOIN inventoryitemmaster i ON v.itemId = i.itemId AND i.companyGuid = v.companyGuid
+       WHERE v.itemVariantId = ? AND v.isDeleted = 0 FOR UPDATE`,
       [itemVariantId]
     );
     if (!variantRows.length) throw new ApiError(404, "Variant not found.");
+    // Mirrors the UI gate in components/itemMaster/ItemVariant.jsx (which
+    // hides the Serial No. button entirely when the item's "Ask Serial No."
+    // is off) — enforced here too so a direct API call can't bypass it.
+    if (!variantRows[0].isTrackable) {
+      throw new ApiError(400, "This item is not set to track serial numbers — enable \"Ask Serial No.\" on the item first.");
+    }
 
     for (const serialValue of serialValues) {
       const [dupRows] = await conn.query("SELECT guid FROM inventorystockinserial WHERE serialNumber = ? AND isDeleted = 0", [serialValue]);

@@ -1,13 +1,27 @@
 "use client";
-import React, { useState } from "react";
-import { HardDrive, Loader2, CheckCircle2, XCircle, PlugZap, UploadCloud, AlertTriangle } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { HardDrive, Loader2, CheckCircle2, XCircle, PlugZap, UploadCloud, AlertTriangle, FolderTree } from "lucide-react";
 import { googleDriveService } from "@/lib/services/googleDriveService";
+import { companyService } from "@/lib/services/companyService";
 
 export default function GoogleDriveSettings() {
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState(null); // { connected, folderName?, message? }
   const [migrating, setMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState(null);
+
+  const [companies, setCompanies] = useState([]);
+  const [reorgCompanyGuid, setReorgCompanyGuid] = useState("");
+  const [reorganizing, setReorganizing] = useState(false);
+  const [reorgResult, setReorgResult] = useState(null);
+
+  useEffect(() => {
+    companyService.getCompanies().then((data) => {
+      const list = Array.isArray(data) ? data : data?.data || [];
+      setCompanies(list);
+      if (list.length === 1) setReorgCompanyGuid(list[0].guid);
+    });
+  }, []);
 
   const handleTest = async () => {
     setTesting(true);
@@ -32,6 +46,20 @@ export default function GoogleDriveSettings() {
       setMigrateResult({ error: err?.response?.data?.message || err.message || "Migration failed" });
     } finally {
       setMigrating(false);
+    }
+  };
+
+  const handleReorganize = async () => {
+    if (!reorgCompanyGuid) return;
+    setReorganizing(true);
+    setReorgResult(null);
+    try {
+      const res = await googleDriveService.reorganizeIntoCompanyFolders(reorgCompanyGuid);
+      setReorgResult(res);
+    } catch (err) {
+      setReorgResult({ error: err?.response?.data?.message || err.message || "Reorganize failed" });
+    } finally {
+      setReorganizing(false);
     }
   };
 
@@ -143,6 +171,70 @@ export default function GoogleDriveSettings() {
                       <span>{migrateResult.failed.length} file(s) failed: {migrateResult.failed.map((f) => f.filename).join(", ")}</span>
                     </div>
                   )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 mt-6">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h3 className="text-sm font-black text-slate-700 uppercase tracking-wide mb-1">Reorganize Into Company Folders</h3>
+            <p className="text-sm text-slate-500 max-w-xl">
+              Moves files sitting in the old flat Contracts/Invoices/POD/Challan/E-Way Bills/Additional Documents folders into a folder named after the selected company, with those same subfolders underneath it. Files keep working exactly as before — only where they sit in Drive changes. Safe to run more than once.
+            </p>
+          </div>
+          <div className="shrink-0 flex items-center gap-2">
+            <select
+              value={reorgCompanyGuid}
+              onChange={(e) => setReorgCompanyGuid(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="">Select company…</option>
+              {companies.map((c) => (
+                <option key={c.guid} value={c.guid}>{c.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={handleReorganize}
+              disabled={reorganizing || !reorgCompanyGuid}
+              className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-md shadow-indigo-100 transition-all"
+            >
+              {reorganizing ? <Loader2 className="animate-spin" size={18} /> : <FolderTree size={18} />}
+              {reorganizing ? "Moving…" : "Reorganize"}
+            </button>
+          </div>
+        </div>
+
+        {reorgResult && (
+          <div
+            className={`mt-5 rounded-2xl p-4 flex items-start gap-3 ${
+              reorgResult.error ? "bg-red-50 border border-red-200" : "bg-emerald-50 border border-emerald-200"
+            }`}
+          >
+            {reorgResult.error ? (
+              <XCircle className="text-red-500 shrink-0 mt-0.5" size={20} />
+            ) : (
+              <CheckCircle2 className="text-emerald-600 shrink-0 mt-0.5" size={20} />
+            )}
+            <div className="text-sm">
+              {reorgResult.error ? (
+                <p className="text-red-600 font-medium">{reorgResult.error}</p>
+              ) : (
+                <>
+                  <p className="text-emerald-700 font-bold">Moved into "{reorgResult.companyName}":</p>
+                  <ul className="mt-1 space-y-0.5">
+                    {reorgResult.results?.map((r) => (
+                      <li key={r.folder} className="text-emerald-600">
+                        {r.folder}: {r.moved} file(s) moved{r.note ? ` (${r.note})` : ""}
+                        {r.failed?.length > 0 && (
+                          <span className="text-amber-700"> · {r.failed.length} failed</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 </>
               )}
             </div>

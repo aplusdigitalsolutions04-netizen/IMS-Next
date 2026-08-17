@@ -184,6 +184,11 @@ const ItemVariant = () => {
   // MRP is only shown for categories that opted into it (Category Master "Show MRP" checkbox)
   const [showMrp, setShowMrp] = useState(false);
 
+  // "Ask Serial No." on the item (Item Master) — variants under an item that
+  // has this set to No never get serial numbers, so the Serial No. input
+  // shouldn't be offered here for them either.
+  const [isTrackable, setIsTrackable] = useState(false);
+
   const fetchVariants = async (page = currentPage, limit = pageSize, search = searchTerm) => {
     if (!rawItemId) return;
 
@@ -196,6 +201,7 @@ const ItemVariant = () => {
       setVariants(response.data?.data || []);
       setTotalRecords(response.data?.total || 0);
       setShowMrp(!!response.data?.showMrp);
+      setIsTrackable(!!response.data?.isTrackable);
       if (response.data?.categoryName) setCategoryName(response.data.categoryName);
       if (response.data?.categoryId) setCategoryId(response.data.categoryId);
     } catch (error) {
@@ -526,13 +532,15 @@ const ItemVariant = () => {
                         >
                           <Edit2 size={14} />
                         </button>
-                        <button
-                          onClick={() => openVariantSerials(v)}
-                          title="Serial No."
-                          className="bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 p-2 rounded-lg transition-all shadow-sm flex items-center justify-center"
-                        >
-                          <Hash size={14} />
-                        </button>
+                        {isTrackable && (
+                          <button
+                            onClick={() => openVariantSerials(v)}
+                            title="Serial No."
+                            className="bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 p-2 rounded-lg transition-all shadow-sm flex items-center justify-center"
+                          >
+                            <Hash size={14} />
+                          </button>
+                        )}
                         <button
                           onClick={() => router.push(`/variantBarcode?itemVariantId=${v.itemVariantId}`)}
                           title="Map Barcode"

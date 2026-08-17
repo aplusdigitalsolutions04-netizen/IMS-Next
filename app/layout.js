@@ -29,6 +29,7 @@ export const viewport = {
 
 import { ThemeProvider } from "@/components/ThemeProvider";
 import PwaRegister from "@/components/PwaRegister";
+import DisableRightClick from "@/components/DisableRightClick";
 
 export default function RootLayout({ children }) {
   return (
@@ -40,6 +41,7 @@ export default function RootLayout({ children }) {
       <body className="min-h-full flex flex-col">
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem enableColorScheme={false} disableTransitionOnChange>
           <PwaRegister />
+          <DisableRightClick />
           {children}
         </ThemeProvider>
       </body>
