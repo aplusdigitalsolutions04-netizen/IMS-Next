@@ -1,0 +1,142 @@
+// One-off: re-uploads every DB-referenced, locally-available file to the
+// Drive account/folder currently configured in .env.local (a *different*
+// Google account than whatever drive_files currently points at), and
+// overwrites each drive_files row with the new file ID. Unlike
+// migrateLocalFilesToDrive() (which skips anything already in drive_files),
+// this force-reuploads everything — that's the whole point of an account
+// switch. Uses the same flat category folders the app always has; run the
+// existing "Reorganize Into Company Folders" feature afterward per company
+// if that nesting is wanted again.
+require("dotenv").config({ path: ".env.local" });
+const fs = require("fs");
+const path = require("path");
+const mysql = require("mysql2/promise");
+const { google } = require("googleapis");
+const { Readable } = require("stream");
+
+const uploadDir = process.env.UPLOAD_DIR ? path.resolve(process.env.UPLOAD_DIR) : path.resolve(process.cwd(), "uploads");
+
+const DRIVE_FOLDERS = {
+  contract: "Contracts",
+  invoice: "Invoices",
+  ewayBill: "E-Way Bills",
+  pod: "POD",
+  challan: "Challan",
+  additionalDoc: "Additional Documents",
+  warrantyCert: "Warranty Certificates",
+  companyLogo: "Company Logos",
+  profilePhoto: "Profile Photos",
+  warrantyTemplate: "Warranty Templates",
+  stockInInvoice: "Stock In Invoices",
+  stockOutInvoice: "Stock Out Invoices",
+  other: "Migrated (Uncategorized)",
+};
+
+const FILENAME_SOURCES = [
+  { table: "companies", columns: ["logoFilename"], folder: "companyLogo" },
+  { table: "contracts", columns: ["pdfFilename"], folder: "contract" },
+  { table: "inventorystockin", columns: ["invoiceFilePath"], folder: "stockInInvoice" },
+  { table: "order_items", columns: ["contractFilename"], folder: "contract" },
+  { table: "order_logistics", columns: ["podFilename"], folder: "pod" },
+  { table: "orders", columns: ["invoiceFilename"], folder: "invoice" },
+  { table: "orders", columns: ["ewayBillFilename"], folder: "ewayBill" },
+  { table: "users", columns: ["profilePhoto"], folder: "profilePhoto" },
+  { table: "warranty_template", columns: ["headerImagePath", "signatureImagePath"], folder: "warrantyTemplate" },
+];
+const ORDERDOCUMENTS_DOCTYPE_FOLDER = { gemContract: "contract", invoice: "invoice", ewayBill: "ewayBill", pod: "pod", challan: "challan" };
+
+function guessMimeType(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  return { ".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" }[ext] || "application/octet-stream";
+}
+
+function getOAuthClient() {
+  const c = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, process.env.GOOGLE_REDIRECT_URI);
+  c.setCredentials({ refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN });
+  return c;
+}
+
+async function main() {
+  const drive = google.drive({ version: "v3", auth: getOAuthClient() });
+  const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+  const db = await mysql.createConnection({
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT) || 3306,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  });
+
+  const categoryByFilename = new Map();
+  const set = (filename, folder) => { if (filename) categoryByFilename.set(filename, folder); };
+
+  for (const { table, columns, folder } of FILENAME_SOURCES) {
+    const where = columns.map((c) => `(\`${c}\` IS NOT NULL AND \`${c}\` != '')`).join(" OR ");
+    const [rows] = await db.query(`SELECT ${columns.map((c) => `\`${c}\``).join(", ")} FROM \`${table}\` WHERE ${where}`);
+    rows.forEach((row) => columns.forEach((c) => set(row[c], folder)));
+  }
+  const [orderDocs] = await db.query("SELECT filename, docType FROM orderdocuments WHERE filename IS NOT NULL AND filename != ''");
+  orderDocs.forEach((r) => set(r.filename, ORDERDOCUMENTS_DOCTYPE_FOLDER[r.docType] || "other"));
+
+  console.log(`DB references ${categoryByFilename.size} distinct filenames.`);
+
+  const localFiles = new Set(fs.readdirSync(uploadDir));
+  const toMigrate = [...categoryByFilename.entries()].filter(([filename]) => localFiles.has(filename));
+  console.log(`${toMigrate.length} of them found locally — re-uploading ALL of them to the new account (no skip).`);
+
+  const folderIdCache = new Map();
+  async function findOrCreateFolder(name) {
+    if (folderIdCache.has(name)) return folderIdCache.get(name);
+    const res = await drive.files.list({
+      q: `'${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g, "\\'")}' and trashed=false`,
+      fields: "files(id, name)", supportsAllDrives: true, includeItemsFromAllDrives: true,
+    });
+    let id = res.data.files?.[0]?.id;
+    if (!id) {
+      const created = await drive.files.create({
+        requestBody: { name, mimeType: "application/vnd.google-apps.folder", parents: [rootFolderId] },
+        fields: "id", supportsAllDrives: true,
+      });
+      id = created.data.id;
+    }
+    folderIdCache.set(name, id);
+    return id;
+  }
+
+  let migrated = 0, failed = 0;
+  const startedAt = Date.now();
+  for (const [filename, folder] of toMigrate) {
+    try {
+      const folderName = DRIVE_FOLDERS[folder] || DRIVE_FOLDERS.other;
+      const folderId = await findOrCreateFolder(folderName);
+      const buffer = fs.readFileSync(path.join(uploadDir, filename));
+      const mimetype = guessMimeType(filename);
+
+      const res = await drive.files.create({
+        requestBody: { name: filename, parents: [folderId] },
+        media: { mimeType: mimetype, body: Readable.from(buffer) },
+        fields: "id", supportsAllDrives: true,
+      });
+
+      await db.query(
+        "INSERT INTO drive_files (filename, driveFileId, mimetype, size) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE driveFileId=VALUES(driveFileId), mimetype=VALUES(mimetype), size=VALUES(size)",
+        [filename, res.data.id, mimetype, buffer.length]
+      );
+
+      migrated++;
+      if (migrated % 25 === 0) {
+        const elapsed = ((Date.now() - startedAt) / 1000).toFixed(0);
+        console.log(`... ${migrated}/${toMigrate.length} migrated, ${failed} failed (${elapsed}s elapsed)`);
+      }
+    } catch (err) {
+      failed++;
+      console.error(`FAILED: ${filename}:`, err.message);
+    }
+  }
+
+  console.log(`\nDone. Migrated to new account: ${migrated}, failed: ${failed}.`);
+  await db.end();
+}
+
+main().catch((e) => { console.error("Migration failed:", e); process.exit(1); });

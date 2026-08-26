@@ -9,7 +9,7 @@ export const GET = withErrorHandling(async (request) => {
   requireCompany(user);
   authorizeReports(user, 'GET');
 
-  const [rows] = await mysqlPool.query(\
+  const [rows] = await mysqlPool.query(`
     SELECT COALESCE(im.itemName, iv.variantName) as modelName, bm.brandName as companyName, cm.categoryName as category,
       COUNT(s2.guid) as totalSerials,
       SUM(CASE WHEN s2.serialStatus='Available' THEN 1 ELSE 0 END) as availableSerials,
@@ -26,6 +26,6 @@ export const GET = withErrorHandling(async (request) => {
     WHERE iv.isDeleted=0 AND iv.companyGuid=?
     GROUP BY iv.itemVariantId, im.itemName, iv.variantName, bm.brandName, cm.categoryName, vs.availablePCS, iv.purchasePrice
     ORDER BY modelName
-  \, [user.companyId]);
+  `, [user.companyId]);
   return NextResponse.json(rows);
 });

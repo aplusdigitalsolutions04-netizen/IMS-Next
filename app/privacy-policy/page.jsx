@@ -69,14 +69,12 @@ const SECTIONS = [
 export default function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#f4f7f6] via-[#e2e8f0] to-[#cbd5e1] font-sans">
-      <div className="w-full px-4 sm:px-10 lg:px-20 py-16">
-        <div className="mb-8">
-          <Link href="/login" className="text-xs font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-widest">
+      <div className="w-full px-4 sm:px-6 py-16">
+        <div className="w-full bg-white/90 backdrop-blur-md rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-white/50 p-8 sm:p-12">
+          <Link href="/login" className="inline-block mb-6 text-xs font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-widest">
             ← Back to Home
           </Link>
-        </div>
 
-        <div className="w-full bg-white/90 backdrop-blur-md rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-white/50 p-8 sm:p-12">
           <div className="flex items-center gap-2 mb-2">
             <span className="h-[1px] w-8 bg-emerald-500"></span>
             <h5 className="text-emerald-550 text-xs font-black tracking-[0.3em] uppercase">

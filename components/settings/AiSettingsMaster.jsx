@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { Sparkles, Loader2, KeyRound, Save, BarChart3, Filter, Eye, EyeOff } from "lucide-react";
+import { Sparkles, Loader2, KeyRound, Save, BarChart3, Filter, Eye, EyeOff, IndianRupee } from "lucide-react";
 import Swal from "sweetalert2";
 import { aiSettingsService } from "@/lib/services/aiSettingsService";
 
@@ -20,12 +20,16 @@ function StatCard({ label, value }) {
   );
 }
 
+const formatInr = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+
 export default function AiSettingsMaster() {
   const [settings, setSettings] = useState(null);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [keyInput, setKeyInput] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [rateInput, setRateInput] = useState("");
+  const [savingRate, setSavingRate] = useState(false);
 
   const [usage, setUsage] = useState({ data: [], total: 0, summary: {}, bySource: [] });
   const [loadingUsage, setLoadingUsage] = useState(true);
@@ -38,7 +42,9 @@ export default function AiSettingsMaster() {
   const loadSettings = async () => {
     setLoadingSettings(true);
     try {
-      setSettings(await aiSettingsService.getSettings());
+      const data = await aiSettingsService.getSettings();
+      setSettings(data);
+      setRateInput(String(data?.usdInrRate ?? ""));
     } catch (err) {
       Swal.fire("Error", err.message || "Failed to load AI settings", "error");
     } finally {
@@ -77,6 +83,21 @@ export default function AiSettingsMaster() {
       Swal.fire("Error", err.message || "Failed to save API key", "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveRate = async () => {
+    const rate = Number(rateInput);
+    if (!rate || rate <= 0) return;
+    setSavingRate(true);
+    try {
+      await aiSettingsService.saveRate(rate);
+      await loadSettings();
+      Swal.fire("Saved", "USD → INR rate updated.", "success");
+    } catch (err) {
+      Swal.fire("Error", err.message || "Failed to save rate", "error");
+    } finally {
+      setSavingRate(false);
     }
   };
 
@@ -145,6 +166,32 @@ export default function AiSettingsMaster() {
                 {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Save
               </button>
             </div>
+
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 mt-5 block">
+              USD → INR rate (used to estimate cost below)
+            </label>
+            <div className="flex gap-3 max-w-xs">
+              <div className="relative flex-1">
+                <IndianRupee size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={rateInput}
+                  onChange={(e) => setRateInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSaveRate()}
+                  placeholder="88"
+                  className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300"
+                />
+              </div>
+              <button
+                onClick={handleSaveRate}
+                disabled={savingRate || !rateInput}
+                className="bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all"
+              >
+                {savingRate ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Save
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -156,18 +203,19 @@ export default function AiSettingsMaster() {
           <h3 className="text-lg font-black text-slate-800">Token Usage</h3>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
           <StatCard label="Total Calls" value={usage.summary?.totalCalls ?? 0} />
           <StatCard label="Prompt Tokens" value={usage.summary?.totalPromptTokens ?? 0} />
           <StatCard label="Completion Tokens" value={usage.summary?.totalCompletionTokens ?? 0} />
           <StatCard label="Total Tokens" value={usage.summary?.totalTokens ?? 0} />
+          <StatCard label="Total Cost" value={formatInr(usage.summary?.totalCostInr)} />
         </div>
 
         {usage.bySource?.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-6">
             {usage.bySource.map((s) => (
               <span key={s.source} className="text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-full">
-                {s.sourceLabel}: {s.calls} calls · {s.tokens} tokens
+                {s.sourceLabel}: {s.calls} calls · {s.tokens} tokens · {formatInr(s.costInr)}
               </span>
             ))}
           </div>
@@ -209,6 +257,7 @@ export default function AiSettingsMaster() {
                     <th className="py-2 pr-4 text-right">Prompt</th>
                     <th className="py-2 pr-4 text-right">Completion</th>
                     <th className="py-2 pr-4 text-right">Total Tokens</th>
+                    <th className="py-2 pr-4 text-right">Cost</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -220,6 +269,7 @@ export default function AiSettingsMaster() {
                       <td className="py-2.5 pr-4 text-right font-mono text-slate-600">{row.promptTokens}</td>
                       <td className="py-2.5 pr-4 text-right font-mono text-slate-600">{row.completionTokens}</td>
                       <td className="py-2.5 pr-4 text-right font-mono font-bold text-slate-800">{row.totalTokens}</td>
+                      <td className="py-2.5 pr-4 text-right font-mono font-bold text-emerald-700">{formatInr(row.costInr)}</td>
                     </tr>
                   ))}
                 </tbody>

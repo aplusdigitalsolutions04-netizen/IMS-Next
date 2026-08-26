@@ -40,20 +40,22 @@ export const GET = withErrorHandling(async (request) => {
 
   const [[{ total }]] = await mysqlPool.query(`SELECT COUNT(*) as total FROM ai_usage_log ${whereSql}`, params);
   const [rows] = await mysqlPool.query(
-    `SELECT id, source, model, promptTokens, completionTokens, totalTokens, username, companyGuid, createdAt
+    `SELECT id, source, model, promptTokens, completionTokens, totalTokens, costInr, username, companyGuid, createdAt
      FROM ai_usage_log ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`,
     [...params, limit, offset]
   );
 
   const [[summary]] = await mysqlPool.query(
     `SELECT COUNT(*) as totalCalls, COALESCE(SUM(promptTokens),0) as totalPromptTokens,
-            COALESCE(SUM(completionTokens),0) as totalCompletionTokens, COALESCE(SUM(totalTokens),0) as totalTokens
+            COALESCE(SUM(completionTokens),0) as totalCompletionTokens, COALESCE(SUM(totalTokens),0) as totalTokens,
+            COALESCE(SUM(costInr),0) as totalCostInr
      FROM ai_usage_log ${whereSql}`,
     params
   );
 
   const [bySource] = await mysqlPool.query(
-    `SELECT source, COUNT(*) as calls, COALESCE(SUM(totalTokens),0) as tokens FROM ai_usage_log ${whereSql} GROUP BY source`,
+    `SELECT source, COUNT(*) as calls, COALESCE(SUM(totalTokens),0) as tokens, COALESCE(SUM(costInr),0) as costInr
+     FROM ai_usage_log ${whereSql} GROUP BY source`,
     params
   );
 

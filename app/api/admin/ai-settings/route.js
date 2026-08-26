@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
-import { getOpenAIKeyRow, saveOpenAIKey } from "@/lib/aiParse";
+import { getOpenAIKeyRow, saveOpenAIKey, saveUsdInrRate } from "@/lib/aiParse";
 
 // The raw key is never sent back to the browser once saved — only a masked
 // preview (last 4 chars) plus where it's coming from, so the UI can show
@@ -24,6 +24,7 @@ export const GET = withErrorHandling(async (request) => {
     maskedKey: mask(hasDbKey ? row.apiKey : envKey),
     updatedBy: row?.updatedBy || null,
     updatedAt: row?.updatedAt || null,
+    usdInrRate: Number(row?.usdInrRate) || 88,
   });
 });
 
@@ -31,10 +32,24 @@ export const PUT = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requirePermission(user, "aiSettings", "Only Admin can manage AI settings.");
 
-  const { apiKey } = await parseJsonBody(request);
-  const trimmed = String(apiKey || "").trim();
-  if (!trimmed) throw new ApiError(400, "API key is required.");
+  const { apiKey, usdInrRate } = await parseJsonBody(request);
+  const who = user.username || user.fullName || "Unknown";
 
-  await saveOpenAIKey(trimmed, user.username || user.fullName || "Unknown");
-  return NextResponse.json({ message: "OpenAI API key saved" });
+  if (apiKey === undefined && usdInrRate === undefined) {
+    throw new ApiError(400, "Nothing to update.");
+  }
+
+  if (apiKey !== undefined) {
+    const trimmed = String(apiKey || "").trim();
+    if (!trimmed) throw new ApiError(400, "API key is required.");
+    await saveOpenAIKey(trimmed, who);
+  }
+
+  if (usdInrRate !== undefined) {
+    const rate = Number(usdInrRate);
+    if (!rate || rate <= 0) throw new ApiError(400, "USD → INR rate must be a positive number.");
+    await saveUsdInrRate(rate, who);
+  }
+
+  return NextResponse.json({ message: "Saved" });
 });
