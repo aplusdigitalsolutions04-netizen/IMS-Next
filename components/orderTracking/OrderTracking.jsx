@@ -311,10 +311,16 @@ export default function OrderTracking({
     return orders.length > 0 && orders.every((o) => savedContractOrderIds.has(o.orderid));
   };
 
+  // Only GeM orders can be saved as contracts (see lib/orderToContract.js) —
+  // Flipkart/Amazon/Other batches shouldn't even be selectable here, since
+  // attempting them would just come back as a per-order failure from the
+  // bulk save endpoint.
+  const isGemBatch = (batch) => String(batch.firmName || "").trim() === "GeM";
+
   const handleSelectAllContractBatches = (e) => {
     if (e.target.checked) {
       setSelectedContractBatchKeys(
-        currentBatches.filter((b) => !isBatchFullySaved(b)).map((b) => b.batchKey || String(b.id))
+        currentBatches.filter((b) => !isBatchFullySaved(b) && isGemBatch(b)).map((b) => b.batchKey || String(b.id))
       );
     } else {
       setSelectedContractBatchKeys([]);
@@ -1764,8 +1770,8 @@ export default function OrderTracking({
                       type="checkbox"
                       onChange={handleSelectAllContractBatches}
                       checked={
-                        currentBatches.some((b) => !isBatchFullySaved(b)) &&
-                        currentBatches.filter((b) => !isBatchFullySaved(b)).every((b) => selectedContractBatchKeys.includes(b.batchKey || String(b.id)))
+                        currentBatches.some((b) => !isBatchFullySaved(b) && isGemBatch(b)) &&
+                        currentBatches.filter((b) => !isBatchFullySaved(b) && isGemBatch(b)).every((b) => selectedContractBatchKeys.includes(b.batchKey || String(b.id)))
                       }
                       className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                     />
@@ -1876,6 +1882,13 @@ export default function OrderTracking({
                         <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
                           {isBatchFullySaved(batch) ? (
                             <span title="Already saved as a contract"><CheckCircle size={15} className="text-emerald-500 inline" /></span>
+                          ) : !isGemBatch(batch) ? (
+                            <input
+                              type="checkbox"
+                              disabled
+                              title="Only GeM orders can be saved as contracts"
+                              className="w-4 h-4 rounded border-slate-300 opacity-40 cursor-not-allowed"
+                            />
                           ) : (
                             <input
                               type="checkbox"
