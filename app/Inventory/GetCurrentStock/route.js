@@ -38,14 +38,43 @@ export const GET = withErrorHandling(async (request) => {
   // non-serialized path does keep in sync.
   // "Purchase Rate" here now shows Landing Price — for trackable variants
   // that's the average landingPrice across their currently-Available serials
-  // (the real per-unit cost), falling back to inventoryvariantstock's
-  // lastPurchaseRate/avgPurchaseRate only when no serial landingPrice exists
-  // (e.g. non-trackable variants, which never get serial rows at all).
+  // (the real per-unit cost). When stock is 0 there's no Available serial to
+  // average, so fall back to `lk`: the landingPrice of the single MOST
+  // RECENT serial for that variant regardless of status — i.e. the last
+  // price paid even if every unit since sold out. That's what Item Master's
+  // own "Add Serial" history shows (it lists serials of every status), so
+  // this keeps Current Stock's out-of-stock rows consistent with it instead
+  // of going straight to blank/0. inventoryvariantstock's
+  // lastPurchaseRate/avgPurchaseRate and finally the variant's own
+  // purchasePrice from Item Master are further fallbacks after that.
+  // Multiplying by availablePCS=0 still keeps totalValue at 0 for
+  // out-of-stock rows, so none of this affects inventory valuation — only
+  // the price display.
+  const priceExpr = "IFNULL(NULLIF(lp.avgLandingPrice, 0), IFNULL(NULLIF(lk.lastLandingPrice, 0), IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(NULLIF(s.avgPurchaseRate, 0), IFNULL(v.purchasePrice, 0)))))";
+  // Picks exactly one serial per itemVariantId — a plain "join to the max
+  // createdAt" (what this used to do) can match MORE than one row when
+  // several serials share the exact same createdAt (e.g. a batch/bulk
+  // import inserts them all with one timestamp), which fans the whole
+  // result set out into duplicate rows. The guid tiebreaker in the
+  // correlated subquery guarantees a single row even when timestamps tie.
+  const lastKnownJoin = `
+    LEFT JOIN (
+      SELECT s1.itemVariantId, s1.landingPrice as lastLandingPrice
+      FROM inventorystockinserial s1
+      WHERE s1.isDeleted = 0
+        AND s1.guid = (
+          SELECT s2.guid FROM inventorystockinserial s2
+          WHERE s2.itemVariantId = s1.itemVariantId AND s2.isDeleted = 0
+          ORDER BY s2.createdAt DESC, s2.guid DESC
+          LIMIT 1
+        )
+    ) lk ON v.itemVariantId = lk.itemVariantId`;
+
   const [rows] = await mysqlPool.query(`
     SELECT v.itemVariantId, v.variantName, i.itemName, i.brandId, u.unitName, i.isTrackable,
            IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) as availablePCS,
-           IFNULL(NULLIF(lp.avgLandingPrice, 0), IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(s.avgPurchaseRate, 0))) as avgPurchaseRate,
-           (IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * IFNULL(NULLIF(lp.avgLandingPrice, 0), IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(s.avgPurchaseRate, 0)))) as totalValue
+           ${priceExpr} as avgPurchaseRate,
+           (IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * ${priceExpr}) as totalValue
     FROM inventoryitemvariant v
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
     LEFT JOIN inventoryunitmaster u ON i.unitId = u.unitId
@@ -58,6 +87,7 @@ export const GET = withErrorHandling(async (request) => {
       SELECT itemVariantId, AVG(NULLIF(landingPrice, 0)) as avgLandingPrice FROM inventorystockinserial
       WHERE serialStatus = 'Available' AND isDeleted = 0 GROUP BY itemVariantId
     ) lp ON v.itemVariantId = lp.itemVariantId
+    ${lastKnownJoin}
     ${whereClause}
     LIMIT ? OFFSET ?
   `, [...params, limit, offset]);
@@ -65,7 +95,7 @@ export const GET = withErrorHandling(async (request) => {
   const [[{ total, totalValue, lowStockCount }]] = await mysqlPool.query(`
     SELECT
       COUNT(*) as total,
-      SUM(IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * IFNULL(NULLIF(lp.avgLandingPrice, 0), IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(s.avgPurchaseRate, 0)))) as totalValue,
+      SUM(IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * ${priceExpr}) as totalValue,
       COUNT(CASE WHEN IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) < 10 THEN 1 END) as lowStockCount
     FROM inventoryitemvariant v
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
@@ -78,6 +108,7 @@ export const GET = withErrorHandling(async (request) => {
       SELECT itemVariantId, AVG(NULLIF(landingPrice, 0)) as avgLandingPrice FROM inventorystockinserial
       WHERE serialStatus = 'Available' AND isDeleted = 0 GROUP BY itemVariantId
     ) lp ON v.itemVariantId = lp.itemVariantId
+    ${lastKnownJoin}
     ${whereClause}
   `, params);
 

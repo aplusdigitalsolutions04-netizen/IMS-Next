@@ -4,8 +4,10 @@ import axios from 'axios';
 import { PackageSearch, Search, Layers, TrendingUp, AlertTriangle, FileDown, Loader2, Hash, X, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
+import { useToast } from '@/lib/client/ToastContext';
 
 const CurrentStock = () => {
+  const toast = useToast();
   const [stockData, setStockData] = useState([]);
   const [brands, setBrands] = useState([]);
   const [activeBrandId, setActiveBrandId] = useState("all");
@@ -74,7 +76,7 @@ const CurrentStock = () => {
         await openVariantSerials(serialModalVariant);
         fetchCurrentStock(currentPage, pageSize);
       } catch (error) {
-        Swal.fire("Error", error.response?.data?.message || "Failed to delete serial", "error");
+        toast.error(error.response?.data?.message || "Failed to delete serial");
       } finally {
         setDeletingSerialGuid("");
       }
@@ -126,33 +128,52 @@ const CurrentStock = () => {
     } catch (error) {
       if (requestId !== latestRequestId.current) return;
       console.error("Error fetching stock:", error);
-      Swal.fire("Error", "Failed to load current stock", "error");
+      toast.error("Failed to load current stock");
     } finally {
       if (requestId === latestRequestId.current) setLoading(false);
     }
   };
 
-  const handleExportExcel = () => {
-    if (stockData.length === 0) {
-      Swal.fire("No Data", "No stock information to export", "warning");
-      return;
-    }
-    
-    const reportData = stockData.map(item => ({
-      "Item Name": item.itemName,
-      "Variant": item.variantName,
-      "SKU": item.sku || 'N/A',
-      "Available Qty": item.availablePCS || 0,
-      "Landing Price": item.avgPurchaseRate,
-      "Total Value": item.totalValue
-    }));
+  const [exportingExcel, setExportingExcel] = useState(false);
 
-    const ws = XLSX.utils.json_to_sheet(reportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "CurrentStock_Report");
-    XLSX.writeFile(wb, `CurrentStock_${new Date().toISOString().split('T')[0]}.xlsx`);
-    
-    Swal.fire("Exported", "Current stock report downloaded", "success");
+  // Row-per-serial export (not the paginated summary `stockData`) — pulled
+  // from ExportCurrentStock so trackable items show their actual serial
+  // number per row and non-trackable items show a blank Serial No. instead
+  // of nothing to show for at all.
+  const handleExportExcel = async () => {
+    setExportingExcel(true);
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || ""}/Inventory/ExportCurrentStock`, {
+        params: { brandId: activeBrandId, search: searchTerm },
+        headers: { Authorization: `Bearer ${sessionStorage.getItem("pt_auth_token")}` },
+      });
+      const rows = response.data?.data || [];
+      if (rows.length === 0) {
+        toast.warning("No stock information to export");
+        return;
+      }
+
+      const reportData = rows.map(item => ({
+        "Item Name": item.itemName,
+        "Variant": item.variantName,
+        "Serial No.": item.serialNumber,
+        "Available Qty": item.availableQty,
+        "Landing Price": item.landingPrice,
+        "Total Value": item.totalValue,
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(reportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "CurrentStock_Report");
+      XLSX.writeFile(wb, `CurrentStock_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+      toast.success("Current stock report downloaded");
+    } catch (error) {
+      console.error("Failed to export current stock:", error);
+      toast.error("Failed to export current stock");
+    } finally {
+      setExportingExcel(false);
+    }
   };
 
   // Reset page when brand or search changes
@@ -249,18 +270,19 @@ const CurrentStock = () => {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
           <input
             type="text"
-            placeholder="Search by Item Name, Variant Name, or SKU..."
+            placeholder="Search by Item Name or Variant Name..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-slate-800 font-medium focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
           />
         </div>
-        <button 
+        <button
           onClick={handleExportExcel}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-md shadow-emerald-100 shrink-0 w-full md:w-auto justify-center"
+          disabled={exportingExcel}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-md shadow-emerald-100 shrink-0 w-full md:w-auto justify-center disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <FileDown size={20} />
-          Export All Stock
+          {exportingExcel ? <Loader2 size={20} className="animate-spin" /> : <FileDown size={20} />}
+          {exportingExcel ? "Exporting..." : "Export All Stock"}
         </button>
       </div>
 
@@ -272,7 +294,6 @@ const CurrentStock = () => {
               <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider">Sr. No.</th>
               <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider">Item Name</th>
               <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider">Variant</th>
-              <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider">SKU</th>
               <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider text-right">Available Qty</th>
               <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider text-right">Landing Price</th>
               <th className="p-4 text-xs font-black text-slate-500 uppercase tracking-wider text-right">Total Value</th>
@@ -281,7 +302,7 @@ const CurrentStock = () => {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td colSpan="7" className="p-8 text-center">
+                <td colSpan="6" className="p-8 text-center">
                   <div className="flex justify-center">
                     <div className="animate-spin w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full"></div>
                   </div>
@@ -289,7 +310,7 @@ const CurrentStock = () => {
               </tr>
             ) : stockData.length === 0 ? (
               <tr>
-                <td colSpan="7" className="p-8 text-center">
+                <td colSpan="6" className="p-8 text-center">
                   <div className="flex flex-col items-center justify-center text-slate-400">
                     <PackageSearch size={48} className="mb-3 opacity-20" />
                     <p className="font-medium">No stock data found</p>
@@ -310,11 +331,6 @@ const CurrentStock = () => {
                   </td>
                   <td className="p-4">
                     <span className="font-medium text-slate-600">{item.variantName}</span>
-                  </td>
-                  <td className="p-4">
-                    <span className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs font-bold">
-                      {item.sku || 'N/A'}
-                    </span>
                   </td>
                   <td className="p-4 text-right">
                     <span className={`inline-flex items-center justify-center min-w-[3rem] px-2 py-1 rounded-lg text-sm font-black ${

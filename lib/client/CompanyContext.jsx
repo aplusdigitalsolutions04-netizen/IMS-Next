@@ -4,10 +4,12 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { useAppData } from "./AppDataContext";
 import { setSession } from "./auth";
 import api from "./apiClient";
+import { useToast } from "./ToastContext";
 
 const CompanyContext = createContext(null);
 
 export function CompanyProvider({ children }) {
+  const toast = useToast();
   const [activeCompany, setActiveCompany] = useState(null);
   const [availableCompanies, setAvailableCompanies] = useState([]);
   // Read-only lens the Dashboard uses to view aggregated data across every
@@ -82,7 +84,7 @@ export function CompanyProvider({ children }) {
       return true;
     } catch (err) {
       console.error("Error switching company:", err);
-      alert(err.response?.data?.message || err.message);
+      toast.error(err.response?.data?.message || err.message);
       setIsSwitchingCompany(false);
       return false;
     }

@@ -2,8 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Tag as TagIcon, Palette, Check, Trash2 } from 'lucide-react';
 import { printerService } from '@/lib/services/api';
+import { useToast } from '@/lib/client/ToastContext';
 
 export default function AppearanceModal({ isOpen, onClose, item, type, onUpdated }) {
+  const toast = useToast();
   const [rowColor, setRowColor] = useState('');
   const [rowIntensity, setRowIntensity] = useState(15);
   const [colorLabel, setColorLabel] = useState('');
@@ -95,7 +97,7 @@ export default function AppearanceModal({ isOpen, onClose, item, type, onUpdated
       onUpdated();
       onClose();
     } catch (err) {
-      alert("Failed to save appearance: " + err.message);
+      toast.error("Failed to save appearance: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -118,7 +120,7 @@ export default function AppearanceModal({ isOpen, onClose, item, type, onUpdated
     // Check for duplicates
     const exists = globalTags.find(t => t.tagName.toLowerCase() === trimmedName.toLowerCase());
     if (exists) {
-      alert("⚠️ A tag with this name already exists!");
+      toast.warning("A tag with this name already exists!");
       return;
     }
 
@@ -137,7 +139,7 @@ export default function AppearanceModal({ isOpen, onClose, item, type, onUpdated
       setIsAddingTag(false);
       fetchGlobalTags();
     } catch (err) {
-      alert("Failed to create tag: " + err.message);
+      toast.error("Failed to create tag: " + err.message);
     }
   };
 
@@ -148,7 +150,7 @@ export default function AppearanceModal({ isOpen, onClose, item, type, onUpdated
       await printerService.deleteGlobalTag(id, moduleKey);
       fetchGlobalTags();
     } catch (err) {
-      alert("Failed to delete tag: " + err.message);
+      toast.error("Failed to delete tag: " + err.message);
     }
   };
 

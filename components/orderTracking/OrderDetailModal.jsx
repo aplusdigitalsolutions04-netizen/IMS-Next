@@ -7,6 +7,7 @@ import {
   RotateCcw, Save, Send, Trash2, Truck, UploadCloud, User, Wrench, X, Zap,
 } from "lucide-react";
 import api from "@/lib/client/apiClient";
+import { contractsService } from "@/lib/services/contractsService";
 import { format } from "date-fns";
 import {
   UPDATE_STATUS_OPTIONS, calculateBatchFinancials, getItemSerial, getOldSerial,
@@ -148,7 +149,7 @@ export default function OrderDetailModal({
   handleReplaceExtraDoc, handleReplaceStandardDoc, handleReplaceSerial, handleRestoreBatch, handleSaveEdits,
   handleSavePaymentEdit, handleSaveItemWarrantyDate, handleToggleInstallation, handleToggleGemUpload, handleUpdateStatus,
   handleUploadExtraDoc, handleViewDocument, isAdmin, isEditMode, isEditingPayment,
-  isSupervisor, isUpdating, localSerials, localModels, modalDetailTab, newStatus, paymentEditForm,
+  isSupervisor, isUpdating, localSerials, localModels, modalDetailTab, newStatus, paymentEditForm, showToast,
   replaceWithSerialId, replacingItemId, restoringBatchKey, returns,
   selectedBatch, setCancellationReason, setContractFile, setInvoiceFile, setEditFormData,
   setEditItems, setExtraDocCustomLabel, setExtraDocFile, setExtraDocType,
@@ -170,6 +171,84 @@ export default function OrderDetailModal({
   const [bulkWarrantyDate, setBulkWarrantyDate] = React.useState(null);
 
   const [gatepassLoading, setGatepassLoading] = React.useState(false);
+  const [savingContract, setSavingContract] = React.useState(false);
+  const [confirmReplaceContractGuid, setConfirmReplaceContractGuid] = React.useState(null);
+
+  // A "batch" (one row in Order Processing) can bundle items from more than
+  // one real order — OrderTracking.jsx groups rows by firmName+bidNumber (or
+  // customerName) via getBatchKey(), which several distinct `orders.guid`
+  // rows can share (e.g. repeat dispatches under the same GeM bid). Using
+  // only items[0]'s order silently dropped every other order's
+  // products/details from the saved contract, so collect every distinct
+  // order guid the batch actually contains.
+  const getDistinctOrderGuids = (batch) => {
+    const guids = new Set();
+    (batch?.items || []).forEach((item) => {
+      const guid = item.orderGuid || item._orderId || item.orderId;
+      if (guid) guids.add(guid);
+    });
+    return Array.from(guids);
+  };
+
+  const handleSaveAsContract = async () => {
+    const orderGuids = getDistinctOrderGuids(selectedBatch);
+    if (orderGuids.length === 0) return;
+
+    // Batch maps to a single real order — keep the single-order flow so
+    // "already saved" can offer the Admin-only replace confirmation below.
+    if (orderGuids.length === 1) {
+      const orderGuid = orderGuids[0];
+      try {
+        setSavingContract(true);
+        await contractsService.saveOrderAsContract(orderGuid);
+        showToast("Order saved to Contracts.", "success");
+      } catch (e) {
+        if (e?.response?.status === 409) {
+          // Already saved — Admin can choose to overwrite it (via the confirm
+          // dialog below); anyone else just sees that it's already there,
+          // since replacing is Admin-only.
+          if (isAdmin) {
+            setConfirmReplaceContractGuid(orderGuid);
+          } else {
+            showToast("This order is already saved as a contract.", "info");
+          }
+        } else {
+          showToast(e?.response?.data?.message || "Failed to save order as contract", "error");
+        }
+      } finally {
+        setSavingContract(false);
+      }
+      return;
+    }
+
+    // Batch bundles multiple real orders — save each of them as its own
+    // contract (each has its own Order ID / contract number) via the bulk
+    // endpoint, which already skips ones saved previously and reports a
+    // summary instead of failing the whole action.
+    try {
+      setSavingContract(true);
+      const result = await contractsService.saveOrdersAsContractBulk(orderGuids);
+      showToast(result.message, result.failed?.length > 0 ? "error" : "success");
+    } catch (e) {
+      showToast(e?.response?.data?.message || "Failed to save orders as contracts", "error");
+    } finally {
+      setSavingContract(false);
+    }
+  };
+
+  const handleConfirmReplaceContract = async () => {
+    const orderGuid = confirmReplaceContractGuid;
+    setConfirmReplaceContractGuid(null);
+    try {
+      setSavingContract(true);
+      await contractsService.saveOrderAsContract(orderGuid, true);
+      showToast("Contract replaced with the latest order data.", "success");
+    } catch (e) {
+      showToast(e?.response?.data?.message || "Failed to replace the saved contract", "error");
+    } finally {
+      setSavingContract(false);
+    }
+  };
 
   const downloadGatepass = async () => {
     const orderGuid = selectedBatch?.items?.[0]?.orderGuid || selectedBatch?.items?.[0]?._orderId;
@@ -183,11 +262,11 @@ export default function OrderDetailModal({
         newWin.document.write(res.data);
         newWin.document.close();
       } else {
-        alert("Please allow popups to view the gate pass.");
+        showToast("Please allow popups to view the gate pass.", "warning");
       }
       setGatepassLoading(false);
     } catch (e) {
-      alert(e?.response?.data?.message || "Failed to generate gate pass");
+      showToast(e?.response?.data?.message || "Failed to generate gate pass", "error");
     } finally {
       setGatepassLoading(false);
     }
@@ -374,6 +453,17 @@ export default function OrderDetailModal({
                           <button onClick={() => setIsEditMode(true)} className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg flex items-center gap-1 text-xs">
                             <Edit3 size={13} />
                             <span className="hidden sm:inline">Edit</span>
+                          </button>
+                        )}
+                        {!isEditMode && canEditOrder && !isCancelledOrder && (
+                          <button
+                            onClick={handleSaveAsContract}
+                            disabled={savingContract}
+                            className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg flex items-center gap-1 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                            title="Save this order into the Contracts list"
+                          >
+                            {savingContract ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                            <span className="hidden sm:inline">{savingContract ? "Saving" : "Save as Contract"}</span>
                           </button>
                         )}
                         <button onClick={closeModal} className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg">
@@ -2618,6 +2708,26 @@ export default function OrderDetailModal({
           </div>
         </div>
 
+        {confirmReplaceContractGuid && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4" onClick={() => setConfirmReplaceContractGuid(null)}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-2">
+                <FileText size={16} className="text-indigo-600" /> Contract Already Saved
+              </h3>
+              <p className="text-xs text-slate-500 mb-4">
+                This order is already saved as a contract. Replace it with the latest order data?
+              </p>
+              <div className="flex items-center justify-end gap-2">
+                <button onClick={() => setConfirmReplaceContractGuid(null)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                  Cancel
+                </button>
+                <button onClick={handleConfirmReplaceContract} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700">
+                  Replace
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
     </>
   );
 }

@@ -1,26 +1,11 @@
 "use client";
 // Small presentational components shared by the OrderTracking screen.
-import React, { useEffect } from "react";
+import React from "react";
 import {
-  CheckCircle, AlertCircle, X, Receipt, Truck, CheckSquare,
-  Check, AlertTriangle, FileText, ExternalLink, PauseCircle,
+  CheckCircle, AlertCircle, Receipt, Truck, CheckSquare,
+  FileText, ExternalLink, PauseCircle,
 } from "lucide-react";
 import { STATUS_CONFIG, resolveDisplayStatus } from "./helpers";
-
-export function Toast({ message, type, onClose }) {
-  useEffect(() => {
-    const timer = setTimeout(onClose, 4000);
-    return () => clearTimeout(timer);
-  }, [onClose]);
-  const config = { success: { bg: "bg-emerald-500", icon: Check }, error: { bg: "bg-red-500", icon: AlertTriangle }, info: { bg: "bg-blue-500", icon: AlertCircle } };
-  const { bg, icon: Icon } = config[type] || config.info;
-  return (
-    <div className={`fixed bottom-6 right-6 z-[100] ${bg} text-white px-4 py-2.5 rounded-lg shadow-2xl flex items-center gap-2`}>
-      <Icon size={16} /><span className="font-medium text-xs">{message}</span>
-      <button onClick={onClose} className="ml-1 hover:bg-white/20 rounded-full p-0.5"><X size={12} /></button>
-    </div>
-  );
-}
 
 export function StatusBadge({ status, size = "default" }) {
   const displayStatus = resolveDisplayStatus(status);

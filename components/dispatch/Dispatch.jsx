@@ -18,6 +18,7 @@ import DayFilterSelect from "@/components/common/DayFilterSelect";
 import { getDayFilterRange, isWithinDayFilter } from "@/lib/client/dayFilter";
 import { getDeadlineUrgency, DeadlineBadge, StatCard } from "./parts";
 import { platformsService } from "@/lib/services/platformsService";
+import { useToast } from "@/lib/client/ToastContext";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const UPLOADS_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
@@ -127,6 +128,7 @@ export default function Dispatch({
   initialCustomStart = "",
   initialCustomEnd = "",
 }) {
+  const toast = useToast();
   const [activeTabView, setActiveTabView] = useState("active");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
@@ -441,7 +443,7 @@ export default function Dispatch({
   };
 
   const handleBulkDeleteClick = () => {
-    if (!canManage) { alert("🚫 Access Denied."); return; }
+    if (!canManage) { toast.error("Access Denied."); return; }
     const allIds = getSelectedItems();
     if (allIds.length === 0) return;
     const groups = selectedIndices.map((index) => currentDispatches[index]).filter(Boolean);
@@ -453,7 +455,7 @@ export default function Dispatch({
   };
 
   const handleSingleDeleteClick = (group) => {
-    if (!canManage) { alert("🚫 Access Denied."); return; }
+    if (!canManage) { toast.error("Access Denied."); return; }
     const ids = group.map((item) => item.guid).filter(Boolean);
     if (ids.length === 0) return;
     setItemsToDelete(ids);
@@ -464,7 +466,7 @@ export default function Dispatch({
   };
 
   const confirmDelete = async () => {
-    if (!deleteReason.trim()) { alert("⚠️ Please enter a reason for cancellation!"); return; }
+    if (!deleteReason.trim()) { toast.warning("Please enter a reason for cancellation!"); return; }
     if (!onDelete) return;
     if (!itemsToDelete.length) return;
     setIsDeleting(true);
@@ -477,14 +479,14 @@ export default function Dispatch({
       setDeleteReason("");
       setClearChargesOnCancel(false);
     } catch (error) {
-      alert("Failed to delete: " + error.message);
+      toast.error("Failed to delete: " + error.message);
     } finally {
       setIsDeleting(false);
     }
   };
 
   const handleBulkRestoreClick = () => {
-    if (!canManage) { alert("🚫 Access Denied."); return; }
+    if (!canManage) { toast.error("Access Denied."); return; }
     const allIds = getSelectedItems();
     if (allIds.length === 0) return;
     setItemsToRestore(allIds);
@@ -492,7 +494,7 @@ export default function Dispatch({
   };
 
   const handleSingleRestoreClick = (group) => {
-    if (!canManage) { alert("🚫 Access Denied."); return; }
+    if (!canManage) { toast.error("Access Denied."); return; }
     const ids = group.map((item) => item.guid).filter(Boolean);
     setItemsToRestore(ids);
     setShowRestoreModal(true);
@@ -506,7 +508,7 @@ export default function Dispatch({
       setSelectedIndices([]);
       setIsSelectionMode(false);
     } catch (error) {
-      alert("Failed to restore: " + error.message);
+      toast.error("Failed to restore: " + error.message);
     } finally {
       setIsRestoring(false);
     }
@@ -544,7 +546,7 @@ export default function Dispatch({
           : m));
         setEditingModelId(null);
       } catch (error) {
-        alert("Failed to update model cost: " + error.message);
+        toast.error("Failed to update model cost: " + error.message);
       }
     }
   };
@@ -558,11 +560,11 @@ export default function Dispatch({
         newWin.document.write(res.data);
         newWin.document.close();
       } else {
-        alert("Please allow popups to view the gate pass.");
+        toast.warning("Please allow popups to view the gate pass.");
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to generate gate pass");
+      toast.error("Failed to generate gate pass");
     }
   };
 
@@ -625,7 +627,7 @@ export default function Dispatch({
 
   const handleCreateDelhiveryShipment = async () => {
     const rep = Array.isArray(logisticsBatch) ? logisticsBatch[0] : null;
-    if (!rep) { alert("No order selected."); return; }
+    if (!rep) { toast.error("No order selected."); return; }
     // consigneeName is a genuinely optional field on orders (shown elsewhere
     // as `consigneeName || "N/A"`) — customerName is the one that's always
     // populated, so use that as the primary name and consigneeName only as
@@ -633,7 +635,7 @@ export default function Dispatch({
     const shipName = rep.consigneeName || rep.customerName || rep.customer;
     const shipAddress = rep.shippingAddress || rep.address;
     if (!shipName || !shipAddress || !rep.contactNumber) {
-      alert("Order is missing customer name, shipping address, or contact number — cannot create shipment.");
+      toast.warning("Order is missing customer name, shipping address, or contact number — cannot create shipment.");
       return;
     }
 
@@ -646,7 +648,7 @@ export default function Dispatch({
     if (!consigneePincode) {
       const entered = window.prompt("Could not detect a pincode in the shipping address. Please enter the 6-digit delivery pincode:");
       if (!entered?.trim() || !/^\d{6}$/.test(entered.trim())) {
-        alert("A valid 6-digit pincode is required to create a Delhivery shipment.");
+        toast.warning("A valid 6-digit pincode is required to create a Delhivery shipment.");
         return;
       }
       consigneePincode = entered.trim();
@@ -668,9 +670,9 @@ export default function Dispatch({
         ? await printerService.createB2BShipment(payload)
         : await printerService.createShipment(payload);
       setLogisticsForm((prev) => ({ ...prev, trackingId: result.waybill }));
-      alert(`✅ Delhivery ${logisticsForm.shipmentMode} shipment created! Waybill: ${result.waybill}`);
+      toast.success(`Delhivery ${logisticsForm.shipmentMode} shipment created! Waybill: ${result.waybill}`);
     } catch (error) {
-      alert("Failed to create Delhivery shipment: " + (error.response?.data?.message || error.message));
+      toast.error("Failed to create Delhivery shipment: " + (error.response?.data?.message || error.message));
     } finally {
       setIsCreatingShipment(false);
     }
@@ -678,7 +680,7 @@ export default function Dispatch({
 
   const handleRequestDelhiveryPickup = async () => {
     if (!pickupForm.pickupDate || !pickupForm.pickupTime) {
-      alert("Please choose a pickup date and time.");
+      toast.warning("Please choose a pickup date and time.");
       return;
     }
     setIsRequestingPickup(true);
@@ -698,14 +700,14 @@ export default function Dispatch({
   };
 
   const handleTrackDelhiveryShipment = async () => {
-    if (!logisticsForm.trackingId?.trim()) { alert("Enter a tracking ID first."); return; }
+    if (!logisticsForm.trackingId?.trim()) { toast.warning("Enter a tracking ID first."); return; }
     setIsTrackingShipment(true);
     setShipmentTrackInfo(null);
     try {
       const info = await printerService.trackShipment(logisticsForm.trackingId.trim());
       setShipmentTrackInfo(info);
     } catch (error) {
-      alert("Failed to fetch tracking info: " + (error.response?.data?.message || error.message));
+      toast.error("Failed to fetch tracking info: " + (error.response?.data?.message || error.message));
     } finally {
       setIsTrackingShipment(false);
     }
@@ -750,7 +752,7 @@ export default function Dispatch({
       if (finalLogisticsStatus === "Delivered") {
         const missingPOD = logisticsBatch.some(item => !item.podFilename);
         if (missingPOD && !logisticsForm.dpodFile) {
-          alert("Please upload the Delivery Proof (POD) before marking as Delivered.");
+          toast.warning("Please upload the Delivery Proof (POD) before marking as Delivered.");
           return;
         }
       }
@@ -783,7 +785,7 @@ export default function Dispatch({
       setLogisticsBatch(null);
     } catch (err) {
       console.error(err);
-      alert("Failed to update logistics.");
+      toast.error("Failed to update logistics.");
     } finally {
       setIsSavingLogistics(false);
     }
@@ -792,7 +794,7 @@ export default function Dispatch({
   const handleSendBackToBilling = async () => {
     if (!logisticsBatch || logisticsBatch.length === 0) return;
     if (!logisticsForm.sendBackRemark?.trim()) {
-      alert("Please enter a reason for sending back to billing.");
+      toast.warning("Please enter a reason for sending back to billing.");
       return;
     }
     if (isSendingBackToBilling) return;
@@ -816,7 +818,7 @@ export default function Dispatch({
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error(err);
-      alert("Failed to send back to billing: " + (err.response?.data?.message || err.message));
+      toast.error("Failed to send back to billing: " + (err.response?.data?.message || err.message));
     } finally {
       setIsSendingBackToBilling(false);
     }

@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo } from "react";
-import { printerService } from "@/lib/services/api"; 
+import { printerService } from "@/lib/services/api";
+import { useToast } from "@/lib/client/ToastContext";
 import { 
   Calendar, Download, TrendingUp, Box,
   FileText, Printer, Layers, AlertTriangle, CheckCircle, Edit2, Save, X,
@@ -18,6 +19,7 @@ function formatCsvNumber(val) {
 }
 
 export default function Reports({ isAdmin, isAccountant, isSupervisor, returns = [] }) {
+  const toast = useToast();
   const [dateRange, setDateRange] = useState("all");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -111,11 +113,11 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
   const saveCommission = async (transaction) => {
     const commissionValue = Number(tempCommission);
     if (isNaN(commissionValue) || commissionValue < 0) {
-      alert("Commission must be a valid positive number");
+      toast.error("Commission must be a valid positive number");
       return;
     }
     if (!transaction.itemCount) {
-      alert("Cannot compute per-item commission: item count is 0");
+      toast.error("Cannot compute per-item commission: item count is 0");
       return;
     }
     try {
@@ -127,14 +129,16 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
 
       const failedCount = outcomes.filter(o => o.status === "rejected").length;
       if (failedCount > 0) {
-        alert(`Commission updated for ${outcomes.length - failedCount} of ${outcomes.length} items. ${failedCount} failed.`);
+        toast.warning(`Commission updated for ${outcomes.length - failedCount} of ${outcomes.length} items. ${failedCount} failed.`);
+      } else {
+        toast.success("Commission updated");
       }
 
       fetchReport(dateRange === "custom" ? "custom" : dateRange);
       setEditingId(null);
       setTempCommission("");
     } catch (error) {
-      alert("Failed to update commission: " + error.message);
+      toast.error("Failed to update commission: " + error.message);
       console.error("Commission update error:", error);
     }
   };
@@ -389,7 +393,7 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
 
   const downloadCSV = () => {
     if (!reportData) {
-      alert("No data available to download");
+      toast.warning("No data available to download");
       return;
     }
 

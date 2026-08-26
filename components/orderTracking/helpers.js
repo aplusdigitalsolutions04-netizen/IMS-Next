@@ -45,18 +45,23 @@ export const UPDATE_STATUS_OPTIONS = [
   { value: "Order Cancelled", label: "Order Cancelled" },
 ];
 
+// Mirrors STATUS_CONFIG's real, in-use status values (above) — Draft,
+// Completed, and Order Cancelled are excluded since those already have their
+// own dedicated tabs in OrderTracking.jsx and this filter only applies
+// within the "Active" tab (see OrderTracking.jsx's filteredBatches).
 export const FILTER_OPTIONS = [
   { value: "All", label: "All Statuses" },
   { value: "Pending", label: "Pending" },
   { value: "Order Confirmed", label: "Order Confirmed" },
+  { value: "Order On Hold", label: "On Hold" },
   { value: "Send for Billing", label: "Billing Pending" },
   { value: "Ready for Pickup", label: "Ready for Pickup" },
+  { value: "Dispatched", label: "Dispatched" },
   { value: "Delivery in Process", label: "Out for Delivery" },
   { value: "POD Pending", label: "POD Pending" },
   { value: "Delivered", label: "Delivered" },
+  { value: "RTO", label: "RTO" },
   { value: "Returned", label: "Returned" },
-  { value: "Order On Hold", label: "On Hold" },
-  { value: "Order Cancelled", label: "Cancelled" },
 ];
 
 export function normalizeSerial(val) {

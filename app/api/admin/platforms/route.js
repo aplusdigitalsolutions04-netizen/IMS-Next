@@ -32,7 +32,10 @@ export const POST = withErrorHandling(async (request) => {
     throw new ApiError(400, "Invalid color theme.");
   }
 
-  const [existing] = await mysqlPool.query("SELECT guid FROM selling_platforms WHERE name = ?", [trimmed]);
+  // Case-insensitive: without this, "GeM" and "Gem" both save as separate
+  // rows (same platform, two badges) since MySQL's default collation on this
+  // column is apparently case-sensitive — exactly how that duplicate got in.
+  const [existing] = await mysqlPool.query("SELECT guid FROM selling_platforms WHERE LOWER(name) = LOWER(?)", [trimmed]);
   if (existing.length) throw new ApiError(400, `"${trimmed}" already exists.`);
 
   const [[{ maxSort }]] = await mysqlPool.query("SELECT COALESCE(MAX(sortOrder), 0) as maxSort FROM selling_platforms");

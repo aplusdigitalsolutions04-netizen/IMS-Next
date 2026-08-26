@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Swal from 'sweetalert2';
 
 import { printerService } from "@/lib/services/api";
+import { useToast } from "@/lib/client/ToastContext";
 import { 
   RotateCcw, History, Trash2, CheckCircle2, AlertTriangle, 
   Search, ScanLine, Box, Calendar, ShoppingCart, Zap, X,
@@ -24,6 +25,7 @@ import {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 export default function Returns({ returns = [], isLoaded = false, onRefresh, isAdmin, isSupervisor, currentUser }) {
+  const toast = useToast();
   const canManage = currentUser?.role === 'Admin' || !!currentUser?.allow_edit_returns;
   const [serialInput, setSerialInput] = useState("");
   const [returnsList, setReturnsList] = useState([]);
@@ -122,7 +124,7 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
         originalItemSent: res.data.items.map(i => `${i.itemName} (${i.variantName})`).join(", ")
       });
     } catch (err) {
-      Swal.fire("Not Found", err.response?.data?.message || "Order not found", "error");
+      toast.error(err.response?.data?.message || "Order not found");
     } finally {
       setSearchingOrder(false);
     }
@@ -133,7 +135,7 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
     
     // Validation
     if (!stationeryForm.isSameItemReceived && !stationeryForm.itemReceivedInstead) {
-      return Swal.fire("Required", "Please specify which item was received instead", "warning");
+      return toast.warning("Please specify which item was received instead");
     }
 
     setSubmittingStationery(true);
@@ -144,7 +146,7 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
         ...stationeryForm
       });
       
-      Swal.fire("Success", "Stationery return verified and saved", "success");
+      toast.success("Stationery return verified and saved");
       
       // Reset
       setOrderFound(null);
@@ -160,7 +162,7 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
       });
       loadStationeryHistory();
     } catch {
-      Swal.fire("Error", "Failed to save stationery return", "error");
+      toast.error("Failed to save stationery return");
     } finally {
       setSubmittingStationery(false);
     }
@@ -203,10 +205,10 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
           returnId: item.returnId,
           ...formValues
         });
-        Swal.fire("Updated", "Compensation details updated successfully", "success");
+        toast.success("Compensation details updated successfully");
         loadStationeryHistory();
       } catch {
-        Swal.fire("Error", "Failed to update compensation", "error");
+        toast.error("Failed to update compensation");
       }
     }
   };
@@ -261,11 +263,11 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
     if (formValues) {
       try {
         await printerService.updateReturnRefund(itemId, formValues);
-        Swal.fire('Updated', 'Refund details updated successfully', 'success');
+        toast.success('Refund details updated successfully');
         await loadData();
         if (onRefresh) await onRefresh();
       } catch (error) {
-        Swal.fire('Error', error.response?.data?.message || 'Failed to update refund details', 'error');
+        toast.error(error.response?.data?.message || 'Failed to update refund details');
       }
     }
   };
@@ -634,12 +636,12 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
     const itemId = item?.id || item?.guid;
 
     if (!itemId) {
-      alert("❌ Error: Could not find item ID to delete.");
+      toast.error("Could not find item ID to delete.");
       console.error("Item to delete has no id or guid:", item);
       return;
     }
 
-    if (!canManage) { alert("🚫 Access Denied: Requires Edit Permissions."); return; }
+    if (!canManage) { toast.error("Access Denied: Requires Edit Permissions."); return; }
 
     const result = await Swal.fire({
       title: "Are you sure?",
@@ -661,16 +663,11 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
         if (onRefresh) {
           await onRefresh();
         }
-        Swal.fire({
-          title: "Deleted!",
-          text: "The return record has been deleted successfully.",
-          icon: "success",
-          confirmButtonColor: "#6366F1",
-        });
+        toast.success("The return record has been deleted successfully.");
       } catch (error) {
         console.error("❌ Delete failed:", error);
         console.error("❌ Error response:", error.response?.data);
-        alert(`Failed to delete: ${error.response?.data?.message || error.message || "Unknown error"}`);
+        toast.error(`Failed to delete: ${error.response?.data?.message || error.message || "Unknown error"}`);
       } finally {
         setDeletingId(null);
       }

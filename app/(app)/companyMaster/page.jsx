@@ -504,6 +504,33 @@ export default function CompanyMasterPage() {
                     );
                   })}
                 </div>
+                {/* Values already saved on this company that don't match any
+                    current Selling Platform (renamed/deleted there, or a
+                    stray/mistyped entry like "Gem" vs "GeM") — the grid above
+                    can't surface these since it's built from the live
+                    Selling Platforms list, so without this there'd be no way
+                    to ever uncheck one. */}
+                {form.allowedPlatforms.filter((p) => !platformOptions.some((opt) => opt.value === p)).length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-[11px] text-amber-600 font-semibold mb-1.5">
+                      Not in Selling Platforms — click to remove:
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {form.allowedPlatforms.filter((p) => !platformOptions.some((opt) => opt.value === p)).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => togglePlatform(p)}
+                          className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-700 text-sm font-bold transition-all text-left hover:bg-amber-100"
+                        >
+                          <Globe size={15} className="shrink-0" />
+                          <span className="flex-1">{p}</span>
+                          <X size={14} className="shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200">

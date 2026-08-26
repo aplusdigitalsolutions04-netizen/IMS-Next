@@ -684,7 +684,9 @@ export default function ContractsList({ statusFilter = "Active" }) {
                           {c.contractNumber || "-"}
                         </a>
                       ) : (
-                        c.contractNumber || "-"
+                        <button onClick={() => setEditingContract(c)} className="text-indigo-600 hover:text-indigo-800 hover:underline font-semibold text-left" title="No PDF on file — open contract details">
+                          {c.contractNumber || "-"}
+                        </button>
                       )}
                     </td>
                     {visibleCols.has("status") && (

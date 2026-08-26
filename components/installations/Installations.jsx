@@ -2,6 +2,7 @@
 // components/Installations.jsx
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { printerService } from "@/lib/services/api";
+import { useToast } from "@/lib/client/ToastContext";
 import {
     Wrench, Search, X, Phone, User, Calendar, Clock, Check,
     AlertCircle, IndianRupee, MapPin, Package, Loader2, RefreshCw,
@@ -23,21 +24,6 @@ function getBatchKey(item) {
     if (customer) return `${firm}__${customer}`;
     return `single__${item.id}`;
 }
-
-// ── Toast Notification ──
-const Notification = ({ message, type, onClose }) => {
-    useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, [onClose]);
-    const styles = { success: "bg-emerald-600", error: "bg-rose-600", info: "bg-indigo-600", warning: "bg-amber-600" };
-    const icons = { success: CheckCircle, error: XCircle, info: AlertCircle, warning: AlertTriangle };
-    const Icon = icons[type] || icons.info;
-    return (
-        <div className={`fixed top-4 right-4 z-[200] ${styles[type]} text-white px-3 py-2.5 rounded-lg shadow-2xl flex items-center gap-2 animate-in slide-in-from-top-2 duration-300 max-w-xs`}>
-            <Icon size={16} />
-            <p className="text-xs font-medium flex-1">{message}</p>
-            <button onClick={onClose} className="p-0.5 hover:bg-white/20 rounded-full"><X size={12} /></button>
-        </div>
-    );
-};
 
 // ── Loading Skeleton ──
 const Skeleton = ({ className }) => (
@@ -780,7 +766,6 @@ export default function Installations({ installations: propInstallations, stats:
     const [selectedBatch, setSelectedBatch] = useState(null);
     const [modalOpen, setModalOpen] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [toast, setToast] = useState(null);
     const [view, setView] = useState("grid");
     const [sort, setSort] = useState({ field: "id", direction: "desc" });
     const [selectMode, setSelectMode] = useState(false);
@@ -790,7 +775,8 @@ export default function Installations({ installations: propInstallations, stats:
     // this page (Admin, User, Operator) can fill in/edit installation details.
     const canManage = !isSupervisor;
 
-    const notify = useCallback((message, type = "info") => setToast({ message, type }), []);
+    const toastCtx = useToast();
+    const notify = useCallback((message, type = "info") => toastCtx.show(message, type), [toastCtx]);
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -911,8 +897,6 @@ export default function Installations({ installations: propInstallations, stats:
 
     return (
         <div className="space-y-4 pb-20 min-h-screen">
-            {toast && <Notification message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
             {/* Header */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 p-4">

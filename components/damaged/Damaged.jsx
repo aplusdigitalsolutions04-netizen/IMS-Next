@@ -11,7 +11,8 @@ import { format } from "date-fns";
 import DayFilterSelect from "@/components/common/DayFilterSelect";
 import { getDayFilterRange, isWithinDayFilter } from "@/lib/client/dayFilter";
 import axios from "axios";
-import { printerService } from "@/lib/services/api"; 
+import { printerService } from "@/lib/services/api";
+import { useToast } from "@/lib/client/ToastContext";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const UPLOADS_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
@@ -32,7 +33,8 @@ const getAuthHeaders = () => {
 };
 
 export default function Damaged({ returns = [], onRefresh, currentUser, initialDayFilter = "all", initialCustomStart = "", initialCustomEnd = "" }) {
-  
+  const toast = useToast();
+
   const [searchTerm, setSearchTerm] = useState("");
   const [dayFilter, setDayFilter] = useState(initialDayFilter);
   const [customStart, setCustomStart] = useState(initialCustomStart);
@@ -70,7 +72,7 @@ export default function Damaged({ returns = [], onRefresh, currentUser, initialD
     const dispatchGuid = getReturnDispatchId(item);
 
     if (!dispatchGuid) {
-      alert("Linked order not found for this return.");
+      toast.error("Linked order not found for this return.");
       return;
     }
 
@@ -126,13 +128,13 @@ export default function Damaged({ returns = [], onRefresh, currentUser, initialD
     
 
     if (!itemId) {
-      alert("❌ Error: Could not find item ID. Check console for details.");
+      toast.error("Could not find item ID. Check console for details.");
       console.error("Item has no guid or id:", item);
       return;
     }
 
     if (!canManage) {
-      alert("🚫 Access Denied.");
+      toast.error("Access Denied.");
       return;
     }
 
@@ -161,18 +163,13 @@ export default function Damaged({ returns = [], onRefresh, currentUser, initialD
         if (onRefresh) {
           await onRefresh(); // ✅ Await refresh
         }
-        Swal.fire({
-          title: "Deleted!",
-          text: "The damaged record has been deleted successfully.",
-          icon: "success",
-          confirmButtonColor: "#6366F1",
-        });
+        toast.success("The damaged record has been deleted successfully.");
       } catch (error) {
         console.error("❌ Delete failed:", error);
         console.error("❌ Error response:", error.response?.data);
         console.error("❌ Error status:", error.response?.status);
-        
-        alert(
+
+        toast.error(
           `Failed to delete record: ${
             error.response?.data?.message || error.message || "Unknown error"
           }`
@@ -187,7 +184,7 @@ export default function Damaged({ returns = [], onRefresh, currentUser, initialD
   const handleSaveEdit = async () => {
     const itemId = editingItem?.guid || editingItem?.id;
     if (!itemId) {
-      alert("Cannot save: item ID is missing. Please refresh and try again.");
+      toast.error("Cannot save: item ID is missing. Please refresh and try again.");
       return;
     }
     setIsSaving(true);
@@ -199,7 +196,7 @@ export default function Damaged({ returns = [], onRefresh, currentUser, initialD
       if (onRefresh) await onRefresh();
       setEditingItem(null);
     } catch (err) {
-      alert("Failed to update: " + err.message);
+      toast.error("Failed to update: " + err.message);
     } finally {
       setIsSaving(false);
     }

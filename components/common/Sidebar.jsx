@@ -3,7 +3,6 @@ import React, { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Barcode,
   Bell,
   Truck,
   RotateCcw,
@@ -37,7 +36,8 @@ import {
   Globe,
   HardDrive,
   Sparkles,
-  Database
+  Database,
+  Tag
 } from "lucide-react";
 import { useCompany } from "@/lib/client/CompanyContext";
 
@@ -68,14 +68,14 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
 
     // Masters
     { id: "categoryMaster", label: "Category Master", icon: Tags, group: "masters", permission: "stat_category" },
-    { id: "brandMaster", label: "Brand Master", icon: Barcode, group: "masters", permission: "stat_brand" },
-    { id: "vendorMaster", label: "Vendor Master", icon: UsersIcon, group: "masters", permission: "stat_vendor" },
-    { id: "categoryBrandMapping", label: "Cate-Brand Mapping", icon: FileText, group: "masters", permission: "stat_mapping" },
+    { id: "brandMaster", label: "Brand Master", icon: Tag, group: "masters", permission: "stat_brand" },
+    { id: "vendorMaster", label: "Vendor Master", icon: Building2, group: "masters", permission: "stat_vendor" },
+    { id: "categoryBrandMapping", label: "Cate-Brand Mapping", icon: Link2, group: "masters", permission: "stat_mapping" },
     { id: "unitMaster", label: "Unit Master", icon: Ruler, group: "masters", permission: "stat_unit" },
     { id: "itemMaster", label: "Item Master", icon: Package, group: "masters", permission: "stat_item" },
     { id: "comboMaster", label: "Combos Master", icon: Layers, group: "masters", permission: "stat_combo" },
     { id: "godownMaster", label: "Godown Master", icon: Warehouse, group: "masters", permission: "godownMaster" },
-    { id: "fbfFbaMaster", label: "FBF / FBA Master", icon: Layers, group: "masters", permission: "fbfFbaMaster" },
+    { id: "fbfFbaMaster", label: "FBF / FBA Master", icon: Box, group: "masters", permission: "fbfFbaMaster" },
 
     // Inventory
     { id: "currentStock", label: "Current Stock", icon: Package, group: "inventory", permission: "stat_current_stock" },

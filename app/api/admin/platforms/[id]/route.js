@@ -28,7 +28,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
     if (platform.isSystem) throw new ApiError(400, `"${platform.name}" is a built-in platform and can't be renamed — deactivate it instead if you don't want it offered.`);
     const trimmed = String(name).trim();
     if (!trimmed) throw new ApiError(400, "Platform name is required.");
-    const [dup] = await mysqlPool.query("SELECT guid FROM selling_platforms WHERE name = ? AND guid != ?", [trimmed, id]);
+    const [dup] = await mysqlPool.query("SELECT guid FROM selling_platforms WHERE LOWER(name) = LOWER(?) AND guid != ?", [trimmed, id]);
     if (dup.length) throw new ApiError(400, `"${trimmed}" already exists.`);
     await mysqlPool.query("UPDATE selling_platforms SET name = ? WHERE guid = ?", [trimmed, id]);
   }

@@ -10,6 +10,7 @@ import {
   List, Archive, Layers, Edit3, Wrench, UploadCloud, RotateCcw,
   Hash, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, XCircle, Palette, Trash2, FileDown
 } from "lucide-react";
+import ColumnPicker from "@/components/common/ColumnPicker";
 import axios from "axios";
 import Swal from "sweetalert2";
 import NewDispatch from "../newDispatch/NewDispatch";
@@ -23,7 +24,8 @@ import {
   resolveDisplayStatus, safeFormatDate, isInstallationRequired, isHoldStatus,
   getWarrantyExpiryDate,
 } from "./helpers";
-import { Toast, StatusBadge, StatusTimeline } from "./parts";
+import { StatusBadge, StatusTimeline } from "./parts";
+import { useToast } from "@/lib/client/ToastContext";
 import OrderDetailModal from "./OrderDetailModal";
 import ConfirmDraftModal from "./ConfirmDraftModal";
 import OrderExportModal from "./OrderExportModal";
@@ -31,6 +33,22 @@ import DayFilterSelect from "@/components/common/DayFilterSelect";
 import { getDayFilterRange, isWithinDayFilter } from "@/lib/client/dayFilter";
 import { ordersService } from "@/lib/services/ordersService";
 import { platformsService } from "@/lib/services/platformsService";
+import { contractsService } from "@/lib/services/contractsService";
+
+// #, Order ID, and Action stay pinned (always shown) — everything else here
+// can be hidden via the Columns picker in the table toolbar.
+const TOGGLABLE_COLUMNS = [
+  { key: "platform", label: "Platform" },
+  { key: "items", label: "Items" },
+  { key: "orderDate", label: "Order Date" },
+  { key: "lastDelivery", label: "Last Delivery" },
+  { key: "warranty", label: "Warranty Till" },
+  { key: "gemUpload", label: "Upload on GeM" },
+  { key: "contact", label: "Contact No." },
+  { key: "orderValue", label: "Order Value" },
+  { key: "status", label: "Status / Reason" },
+  { key: "billing", label: "Billing / Dispatch" },
+];
 
 export default function OrderTracking({
   orders = [],
@@ -60,6 +78,7 @@ export default function OrderTracking({
   const [customEnd, setCustomEnd] = useState(initialCustomEnd);
   const [appearanceModalOpen, setAppearanceModalOpen] = useState(false);
   const [appearanceItem, setAppearanceItem] = useState(null);
+  const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
 
   const openAppearanceModal = (e, item) => {
     e.stopPropagation();
@@ -105,12 +124,28 @@ export default function OrderTracking({
   const [newStatus, setNewStatus] = useState("");
   const [trackingId, setTrackingId] = useState("");
   const [cancellationReason, setCancellationReason] = useState("");
-  const [toast, setToast] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [editItems, setEditItems] = useState([]);
   const [replacingItemId, setReplacingItemId] = useState(null);
   const [replaceWithSerialId, setReplaceWithSerialId] = useState("");
   const [platformFilter, setPlatformFilter] = useState("All"); // ✅ New: Platform filter
+
+  // ── Column visibility ──────────────────────────────────────────────────────
+  const [visibleCols, setVisibleCols] = useState(() => new Set(TOGGLABLE_COLUMNS.map((c) => c.key)));
+  const toggleCol = (key) =>
+    setVisibleCols((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  const selectAllCols = () => setVisibleCols(new Set(TOGGLABLE_COLUMNS.map((c) => c.key)));
+  const clearAllCols = () => setVisibleCols(new Set());
+
+  // ── Bulk "Save as Contract" (multi-select) ────────────────────────────────
+  const [savedContractOrderIds, setSavedContractOrderIds] = useState(new Set());
+  const [isContractSelectMode, setIsContractSelectMode] = useState(false);
+  const [selectedContractBatchKeys, setSelectedContractBatchKeys] = useState([]);
+  const [savingContractsBulk, setSavingContractsBulk] = useState(false);
 
   const [isEditingPayment, setIsEditingPayment] = useState(false);
   const [paymentEditForm, setPaymentEditForm] = useState({ paymentDate: "", amount: "", utrId: "" });
@@ -237,7 +272,83 @@ export default function OrderTracking({
     }
   }, [propReturns, returnsLoaded]);
 
-  const showToast = useCallback((message, type = "info") => { setToast({ message, type }); }, []);
+  const toastCtx = useToast();
+  const showToast = useCallback((message, type = "info") => toastCtx.show(message, type), [toastCtx]);
+
+  // contracts.contractNumber == orders.orderid is the only link between the
+  // two (no FK — see lib/orderToContract.js) — loaded once entering select
+  // mode so the checkbox list can exclude orders already saved as a contract.
+  const loadSavedContractOrderIds = useCallback(async () => {
+    const contracts = await contractsService.getContracts();
+    setSavedContractOrderIds(new Set((Array.isArray(contracts) ? contracts : []).map((c) => c.contractNumber).filter(Boolean)));
+  }, []);
+
+  const toggleContractSelectMode = () => {
+    if (!isContractSelectMode) loadSavedContractOrderIds();
+    setIsContractSelectMode((prev) => !prev);
+    setSelectedContractBatchKeys([]);
+  };
+
+  // One table row ("batch") can bundle items from more than one real order —
+  // rows are grouped by firmName+bidNumber (or customerName) via
+  // getBatchKey(), which several distinct `orders.guid` rows can share (e.g.
+  // repeat dispatches under the same GeM bid). Each { guid, orderid } pair
+  // here is one real order the row actually contains.
+  const getDistinctOrdersInBatch = (batch) => {
+    const map = new Map();
+    (batch?.items || []).forEach((item) => {
+      const guid = item._orderId || item.orderId;
+      if (guid && !map.has(guid)) map.set(guid, { guid, orderid: item.orderid || item.orderId });
+    });
+    return Array.from(map.values());
+  };
+
+  // A row only counts as "already saved" once every real order it contains
+  // has a contract — otherwise it's still selectable so the remaining ones
+  // can be saved.
+  const isBatchFullySaved = (batch) => {
+    const orders = getDistinctOrdersInBatch(batch);
+    return orders.length > 0 && orders.every((o) => savedContractOrderIds.has(o.orderid));
+  };
+
+  const handleSelectAllContractBatches = (e) => {
+    if (e.target.checked) {
+      setSelectedContractBatchKeys(
+        currentBatches.filter((b) => !isBatchFullySaved(b)).map((b) => b.batchKey || String(b.id))
+      );
+    } else {
+      setSelectedContractBatchKeys([]);
+    }
+  };
+
+  const handleSelectOneContractBatch = (batchKey) => {
+    setSelectedContractBatchKeys((prev) =>
+      prev.includes(batchKey) ? prev.filter((k) => k !== batchKey) : [...prev, batchKey]
+    );
+  };
+
+  const handleBulkSaveAsContract = async () => {
+    const selectedBatchSet = new Set(selectedContractBatchKeys);
+    const orderGuids = Array.from(new Set(
+      currentBatches
+        .filter((b) => selectedBatchSet.has(b.batchKey || String(b.id)))
+        .flatMap((b) => getDistinctOrdersInBatch(b).map((o) => o.guid))
+    ));
+    if (orderGuids.length === 0) return;
+
+    setSavingContractsBulk(true);
+    try {
+      const result = await contractsService.saveOrdersAsContractBulk(orderGuids);
+      showToast(result.message, result.failed?.length > 0 ? "error" : "success");
+      await loadSavedContractOrderIds();
+      setSelectedContractBatchKeys([]);
+      setIsContractSelectMode(false);
+    } catch (err) {
+      showToast(err?.response?.data?.message || "Failed to save selected orders as contracts", "error");
+    } finally {
+      setSavingContractsBulk(false);
+    }
+  };
 
   const getRestoredStatus = useCallback((item) => {
     const currentStatus = String(item?.status || "").trim();
@@ -364,7 +475,12 @@ export default function OrderTracking({
       // ✅ SKIP tab filtering if searching (Global Search)
       if (!term) {
         const isDraft = batch.status === "Draft";
-        if (activeTab === "active" && (!hasActive || batch.isCompleted || batch.isCancelled || batch.isHold || isDraft)) return false;
+        // Draft orders normally live only under their own tab — but "Pending"
+        // is meant to be a catch-all for "hasn't moved yet", and a Draft
+        // order that hasn't been confirmed is exactly that, so let it
+        // through into Active when that's the status being filtered for.
+        const showDraftUnderPending = activeTab === "active" && statusFilter === "Pending" && isDraft;
+        if (activeTab === "active" && (!hasActive || batch.isCompleted || batch.isCancelled || batch.isHold || (isDraft && !showDraftUnderPending))) return false;
         if (activeTab === "returned" && !hasReturns) return false;
         if (activeTab === "hold" && !batch.isHold) return false;
         if (activeTab === "completed" && !batch.isCompleted) return false;
@@ -401,6 +517,8 @@ export default function OrderTracking({
           if (!batch.items.some((i) => isItemReturned(i, returns))) return false;
         } else if (statusFilter === "Order On Hold") {
           if (batch.status !== "Order On Hold" && batch.status !== "Order Not Confirmed") return false;
+        } else if (statusFilter === "Pending") {
+          if (batch.status !== "Pending" && batch.status !== "Draft") return false;
         } else {
           if (batch.status !== statusFilter && batch.logisticsStatus !== statusFilter) return false;
         }
@@ -1354,8 +1472,6 @@ export default function OrderTracking({
         type="dispatch"
         onUpdated={onRefresh}
       />
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
       {/* HEADER */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-6 mb-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
@@ -1456,8 +1572,8 @@ export default function OrderTracking({
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[180px]">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               className="w-full border border-slate-200 bg-slate-50 pl-10 pr-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none"
@@ -1472,7 +1588,25 @@ export default function OrderTracking({
             <select
               className="border border-slate-200 bg-slate-50 px-4 py-2.5 rounded-xl text-sm outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500 focus:bg-white font-medium min-w-[150px]"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                // "On Hold" and "Returned" orders are excluded from the
+                // Active tab's own data entirely (they live under their own
+                // tabs) — picking them here while staying on Active always
+                // showed zero results, so jump to the tab that actually has
+                // them instead of just setting a filter that can never match.
+                if (value === "Order On Hold") {
+                  setActiveTab("hold");
+                  setStatusFilter("All");
+                  return;
+                }
+                if (value === "Returned") {
+                  setActiveTab("returned");
+                  setStatusFilter("All");
+                  return;
+                }
+                setStatusFilter(value);
+              }}
             >
               {FILTER_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
@@ -1502,28 +1636,67 @@ export default function OrderTracking({
           {canCreateOrder && (
             <button
               onClick={() => setIsCreating(true)}
-              className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-200 font-semibold text-sm flex-shrink-0 transition-all hover:-translate-y-0.5 active:translate-y-0"
+              className="flex items-center justify-center p-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-200 flex-shrink-0 transition-all hover:-translate-y-0.5 active:translate-y-0"
+              title="Create Order"
             >
-              <Sparkles size={16} /><span>Create Order</span>
+              <Sparkles size={16} />
             </button>
           )}
 
           {onRefresh && (
             <button
-              onClick={onRefresh}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 font-semibold text-sm flex-shrink-0"
+              onClick={async () => {
+                if (isRefreshingOrders) return;
+                setIsRefreshingOrders(true);
+                try {
+                  await onRefresh();
+                  showToast("Orders refreshed.", "success");
+                } catch (err) {
+                  // onRefresh (AppDataContext's refreshData) already swallows
+                  // its own fetch failures internally and just logs them —
+                  // this catch is only for anything unexpected escaping that,
+                  // so a broken refresh is never silent again.
+                  console.error("Refresh failed:", err);
+                  showToast(err?.message || "Failed to refresh orders", "error");
+                } finally {
+                  setIsRefreshingOrders(false);
+                }
+              }}
+              disabled={isRefreshingOrders}
+              className="flex items-center justify-center p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 flex-shrink-0 disabled:opacity-60"
+              title="Refresh orders"
             >
-              <RefreshCw size={16} />
+              <RefreshCw size={16} className={isRefreshingOrders ? "animate-spin" : ""} />
             </button>
           )}
 
           <button
             onClick={() => setShowExportPicker(true)}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-100 font-semibold text-sm flex-shrink-0"
-            title="Download order data as Excel"
+            className="flex items-center justify-center p-2.5 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-100 flex-shrink-0"
+            title="Export orders to Excel"
           >
-            <FileDown size={16} /><span className="hidden sm:inline">Export</span>
+            <FileDown size={16} />
           </button>
+
+          <ColumnPicker
+            columns={TOGGLABLE_COLUMNS}
+            visibleCols={visibleCols}
+            onToggle={toggleCol}
+            onSelectAll={selectAllCols}
+            onClearAll={clearAllCols}
+          />
+
+          {canEditOrder && (
+            <button
+              onClick={toggleContractSelectMode}
+              className={`flex items-center justify-center p-2.5 rounded-xl flex-shrink-0 ${
+                isContractSelectMode ? "bg-slate-800 text-white" : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+              }`}
+              title={isContractSelectMode ? "Cancel selection" : "Select orders to save as Contracts"}
+            >
+              {isContractSelectMode ? <X size={16} /> : <CheckSquare size={16} />}
+            </button>
+          )}
         </div>
       </div>
 
@@ -1585,21 +1758,36 @@ export default function OrderTracking({
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
+                {isContractSelectMode && (
+                  <th className="w-10 p-3 text-center">
+                    <input
+                      type="checkbox"
+                      onChange={handleSelectAllContractBatches}
+                      checked={
+                        currentBatches.some((b) => !isBatchFullySaved(b)) &&
+                        currentBatches.filter((b) => !isBatchFullySaved(b)).every((b) => selectedContractBatchKeys.includes(b.batchKey || String(b.id)))
+                      }
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                  </th>
+                )}
                 <th className="p-4 w-10 text-center text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">#</th>
                 <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Order ID</th>
-                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Platform</th>
-                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Items</th>
-                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Order Date</th>
-                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Last Delivery</th>
-                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Warranty Till</th>
-                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Upload on GeM</th>
-                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Contact No.</th>
-                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Order Value</th>
-                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">
-                  {activeTab === "cancelled" ? "Reason" : activeTab === "hold" ? "Hold Status" : "Live Status"}
-                </th>
-                {activeTab === "active" && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Billing / Dispatch</th>}
-                {activeTab === "draft" && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Billing</th>}
+                {visibleCols.has("platform") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Platform</th>}
+                {visibleCols.has("items") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Items</th>}
+                {visibleCols.has("orderDate") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Order Date</th>}
+                {visibleCols.has("lastDelivery") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Last Delivery</th>}
+                {visibleCols.has("warranty") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Warranty Till</th>}
+                {visibleCols.has("gemUpload") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Upload on GeM</th>}
+                {visibleCols.has("contact") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Contact No.</th>}
+                {visibleCols.has("orderValue") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Order Value</th>}
+                {visibleCols.has("status") && (
+                  <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">
+                    {activeTab === "cancelled" ? "Reason" : activeTab === "hold" ? "Hold Status" : "Live Status"}
+                  </th>
+                )}
+                {visibleCols.has("billing") && activeTab === "active" && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Billing / Dispatch</th>}
+                {visibleCols.has("billing") && activeTab === "draft" && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Billing</th>}
                 <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Action</th>
               </tr>
             </thead>
@@ -1684,6 +1872,20 @@ export default function OrderTracking({
                               isOnHold && !tagBgColor ? "bg-yellow-50/30" : ""
                         } ${isHighlighted ? 'ring-2 ring-indigo-400 bg-indigo-50/80' : ''}`}
                     >
+                      {isContractSelectMode && (
+                        <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          {isBatchFullySaved(batch) ? (
+                            <span title="Already saved as a contract"><CheckCircle size={15} className="text-emerald-500 inline" /></span>
+                          ) : (
+                            <input
+                              type="checkbox"
+                              checked={selectedContractBatchKeys.includes(batchKey)}
+                              onChange={() => handleSelectOneContractBatch(batchKey)}
+                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                          )}
+                        </td>
+                      )}
                       <td className="p-4 text-center text-slate-400 font-medium text-sm">
                         {(currentPage - 1) * itemsPerPage + index + 1}
                       </td>
@@ -1722,6 +1924,7 @@ export default function OrderTracking({
                         </div>
                       </td>
 
+                      {visibleCols.has("platform") && (
                       <td className="p-4">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold ${batch.firmName === "GeM" ? "bg-orange-100 text-orange-700" :
                             batch.firmName === "Amazon" ? "bg-yellow-100 text-yellow-700" :
@@ -1732,7 +1935,9 @@ export default function OrderTracking({
                           {batch.firmName || "Other"}
                         </span>
                       </td>
+                      )}
 
+                      {visibleCols.has("items") && (
                       <td className="p-4 text-center">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${isBulk
                             ? "bg-indigo-50 text-indigo-700 border border-indigo-100"
@@ -1754,15 +1959,21 @@ export default function OrderTracking({
                           </div>
                         )}
                       </td>
+                      )}
 
+                      {visibleCols.has("orderDate") && (
                       <td className="p-4 text-center text-xs text-slate-600 font-mono">
                         {orderDateFormatted || <span className="text-slate-300">—</span>}
                       </td>
+                      )}
 
+                      {visibleCols.has("lastDelivery") && (
                       <td className="p-4 text-center text-xs text-slate-600 font-mono">
                         {lastDeliveryFormatted || <span className="text-slate-300">—</span>}
                       </td>
+                      )}
 
+                      {visibleCols.has("warranty") && (
                       <td className="p-4 text-center text-xs">
                         {warrantyExpiryFormatted ? (
                           <div className="flex flex-col items-center gap-0.5">
@@ -1777,7 +1988,9 @@ export default function OrderTracking({
                           <span className="text-slate-300">—</span>
                         )}
                       </td>
+                      )}
 
+                      {visibleCols.has("gemUpload") && (
                       <td className="p-4 text-center">
                         {batch.firmName === "GeM" ? (
                           <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold ${isGemUploadDone
@@ -1790,7 +2003,9 @@ export default function OrderTracking({
                           </span>
                         ) : <span className="text-xs text-slate-300">—</span>}
                       </td>
+                      )}
 
+                      {visibleCols.has("contact") && (
                       <td className="p-4">
                         {batch.contactNumber ? (
                           <div className="flex items-center gap-1.5 text-xs text-slate-600">
@@ -1799,7 +2014,9 @@ export default function OrderTracking({
                           </div>
                         ) : <span className="text-xs text-slate-400">—</span>}
                       </td>
+                      )}
 
+                      {visibleCols.has("orderValue") && (
                       <td className="p-4 text-center">
                         <div className={`text-xs font-bold ${isCancelled ? "text-red-400 line-through" :
                             hasReturns ? "text-amber-600" :
@@ -1812,8 +2029,10 @@ export default function OrderTracking({
                           <div className="text-[10px] text-red-500 line-through">₹{financials.totalValue.toLocaleString()}</div>
                         )}
                       </td>
+                      )}
 
                       {/* ✅ Show status/reason based on tab */}
+                      {visibleCols.has("status") && (
                       <td className="p-4">
                         {activeTab === "cancelled" ? (
                           <div className="max-w-[150px]">
@@ -1865,8 +2084,9 @@ export default function OrderTracking({
                           </div>
                         )}
                       </td>
+                      )}
 
-                      {activeTab === "active" && (
+                      {visibleCols.has("billing") && activeTab === "active" && (
                         <td className="p-4 text-center">
                           {showBillingBtn ? (
                             <button
@@ -1889,7 +2109,7 @@ export default function OrderTracking({
                         </td>
                       )}
 
-                      {activeTab === "draft" && (
+                      {visibleCols.has("billing") && activeTab === "draft" && (
                         <td className="p-4 text-center">
                           <div className="flex flex-col items-center gap-1.5">
                             {batch.draftSentToBilling ? (
@@ -2040,6 +2260,21 @@ export default function OrderTracking({
         </div>
       </div>
 
+      {isContractSelectMode && selectedContractBatchKeys.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-full shadow-2xl flex items-center gap-4 z-50">
+          <span className="font-bold text-xs bg-slate-800 px-3 py-1 rounded-full border border-slate-700">{selectedContractBatchKeys.length} Selected</span>
+          <button
+            onClick={handleBulkSaveAsContract}
+            disabled={savingContractsBulk}
+            className="flex items-center gap-1.5 text-xs hover:text-indigo-400 transition font-medium disabled:opacity-50"
+          >
+            {savingContractsBulk ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+            {savingContractsBulk ? "Saving..." : "Save as Contracts"}
+          </button>
+          <button onClick={() => { setSelectedContractBatchKeys([]); setIsContractSelectMode(false); }} className="text-slate-500 hover:text-white transition"><X size={16} /></button>
+        </div>
+      )}
+
       {/* ==================== MODAL ==================== */}
       {modalOpen && selectedBatch && (
         <OrderDetailModal
@@ -2050,7 +2285,7 @@ export default function OrderTracking({
             handleReplaceExtraDoc, handleReplaceStandardDoc, handleReplaceSerial,
             handleRestoreBatch, handleSaveEdits, handleSavePaymentEdit, handleSaveItemWarrantyDate,
             handleToggleInstallation, handleToggleGemUpload, handleUpdateStatus, handleUploadExtraDoc,
-            handleViewDocument, isAdmin, isEditMode, isEditingPayment, isSupervisor,
+            handleViewDocument, isAdmin, isEditMode, isEditingPayment, isSupervisor, showToast,
             isUpdating, localSerials, localModels, modalDetailTab, newStatus, paymentEditForm,
             replaceWithSerialId, replacingItemId, restoringBatchKey, returns,
             selectedBatch, setCancellationReason, setContractFile, setInvoiceFile, setEditFormData,

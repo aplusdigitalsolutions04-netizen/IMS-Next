@@ -15,6 +15,7 @@ import { Palette } from "lucide-react";
 import DayFilterSelect from "@/components/common/DayFilterSelect";
 import { getDayFilterRange, isWithinDayFilter } from "@/lib/client/dayFilter";
 import { toLocalDateStr } from "@/lib/dateUtils";
+import { useToast } from "@/lib/client/ToastContext";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -30,6 +31,7 @@ export default function Billing({
     initialCustomStart = "",
     initialCustomEnd = "",
 }) {
+    const toast = useToast();
     const [activeTab, setActiveTab] = useState("billing");
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
@@ -312,12 +314,12 @@ export default function Billing({
                 "image/webp"
             ];
             if (!allowedTypes.includes(file.type)) {
-                alert("⚠️ Only PDF, JPG, PNG, and WEBP files are allowed for E-Way Bill.");
+                toast.warning("Only PDF, JPG, PNG, and WEBP files are allowed for E-Way Bill.");
                 e.target.value = "";
                 return;
             }
             if (file.size > 10 * 1024 * 1024) {
-                alert("⚠️ File size must be less than 10MB.");
+                toast.warning("File size must be less than 10MB.");
                 e.target.value = "";
                 return;
             }
@@ -332,15 +334,15 @@ export default function Billing({
         e.preventDefault();
 
         if (!isDraftBatch && editForm.status === "Send for Packing" && !editForm.invoiceNo.trim()) {
-            alert("⚠️ Invoice Number is required.");
+            toast.warning("Invoice Number is required.");
             return;
         }
 
         if (!isDraftBatch && editForm.status === "Send for Packing" && isEwayBillRequired) {
             if (!editForm.ewayBillFile && !editForm.existingEwayBillName) {
-                alert(
-                    `⚠️ E-Way Bill is mandatory for orders above ₹50,000.\n\n` +
-                    `Order Value: ₹${editingBatchOrderValue.toLocaleString("en-IN")}\n\n` +
+                toast.warning(
+                    `E-Way Bill is mandatory for orders above ₹50,000.\n` +
+                    `Order Value: ₹${editingBatchOrderValue.toLocaleString("en-IN")}\n` +
                     `Please upload an E-Way Bill document to proceed.`
                 );
                 return;
@@ -359,7 +361,7 @@ export default function Billing({
                 filename = uploadResponse.filename;
             } catch (uploadError) {
                 console.error("File upload failed", uploadError);
-                alert("Failed to upload invoice file.");
+                toast.error("Failed to upload invoice file.");
                 return;
             }
         }
@@ -376,7 +378,7 @@ export default function Billing({
                 ewayBillFilename = uploadResponse.filename;
             } catch (uploadError) {
                 console.error("E-Way Bill upload failed:", uploadError);
-                alert("⚠️ E-Way Bill upload failed. Please try again.");
+                toast.error("E-Way Bill upload failed. Please try again.");
                 return;
             }
         }
@@ -391,7 +393,7 @@ export default function Billing({
                 );
             } catch (uploadError) {
                 console.error("Additional doc upload failed:", uploadError);
-                alert("⚠️ Additional document upload failed. Please try again.");
+                toast.error("Additional document upload failed. Please try again.");
                 return;
             }
         }
@@ -408,7 +410,7 @@ export default function Billing({
                 challanFilename = uploadResponse.filename;
             } catch (uploadError) {
                 console.error("Challan upload failed:", uploadError);
-                alert("⚠️ Challan upload failed. Please try again.");
+                toast.error("Challan upload failed. Please try again.");
                 return;
             }
         }
@@ -431,7 +433,7 @@ export default function Billing({
                 });
             } catch (error) {
                 console.error("Failed to save draft billing details", error);
-                alert("Failed to save billing details.");
+                toast.error("Failed to save billing details.");
                 return;
             }
             closeEditModal();
@@ -477,7 +479,7 @@ export default function Billing({
             }
         } catch (error) {
             console.error("Update failed", error);
-            alert("Failed to update status.");
+            toast.error("Failed to update status.");
             return;
         }
 
@@ -492,7 +494,7 @@ export default function Billing({
                 if (onRefresh) onRefresh();
             } catch (error) {
                 console.error("Document reset failed", error);
-                alert("Status was updated, but clearing the invoice/e-way bill failed. Please retry that step.");
+                toast.error("Status was updated, but clearing the invoice/e-way bill failed. Please retry that step.");
             }
         }
 
@@ -504,7 +506,7 @@ export default function Billing({
         e.preventDefault();
 
         if (!paymentForm.utrId || !paymentForm.amount) {
-            alert("⚠️ UTR ID and Amount are required.");
+            toast.warning("UTR ID and Amount are required.");
             return;
         }
 
@@ -525,13 +527,13 @@ export default function Billing({
                 gemBillUploaded: showGemUpload ? paymentForm.gemUploaded : undefined
             }, { headers: { Authorization: `Bearer ${sessionStorage.getItem("pt_auth_token")}` } });
 
-            alert("Payment recorded successfully! Orders moved to Completed.");
+            toast.success("Payment recorded successfully! Orders moved to Completed.");
             setPaymentBatch(null);
             if (onRefresh) await onRefresh();
 
         } catch (error) {
             console.error("Payment save failed", error);
-            alert("Failed to save payment details. Check console.");
+            toast.error("Failed to save payment details. Check console.");
         }
     };
 

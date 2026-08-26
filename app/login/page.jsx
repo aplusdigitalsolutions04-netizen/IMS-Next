@@ -181,7 +181,16 @@ export default function LoginPage() {
             </form>
           </div>
 
-          <div className="mt-8 text-center">
+          <div className="mt-8 text-center space-y-2">
+            <p className="text-[10px] text-slate-400 font-medium">
+              <Link href="/privacy-policy" className="hover:text-emerald-500 transition-colors">
+                Privacy Policy
+              </Link>
+              <span className="mx-2">•</span>
+              <Link href="/terms-of-service" className="hover:text-emerald-500 transition-colors">
+                Terms of Service
+              </Link>
+            </p>
             <p className="text-[10px] text-slate-400 font-bold tracking-[0.2em] uppercase">
               © {new Date().getFullYear()} A PLUS DIGITAL SOLUTIONS
             </p>

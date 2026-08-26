@@ -1,8 +1,9 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { HardDrive, Loader2, CheckCircle2, XCircle, PlugZap, UploadCloud, AlertTriangle, FolderTree } from "lucide-react";
+import { HardDrive, Loader2, CheckCircle2, XCircle, PlugZap, UploadCloud, AlertTriangle, FolderTree, LogIn } from "lucide-react";
 import { googleDriveService } from "@/lib/services/googleDriveService";
 import { companyService } from "@/lib/services/companyService";
+import { getStoredToken } from "@/lib/client/auth";
 
 export default function GoogleDriveSettings() {
   const [testing, setTesting] = useState(false);
@@ -22,6 +23,16 @@ export default function GoogleDriveSettings() {
       if (list.length === 1) setReorgCompanyGuid(list[0].guid);
     });
   }, []);
+
+  // /api/google-drive/authorize needs to be a real browser navigation (it
+  // redirects to Google's consent screen), so it can't carry the app's usual
+  // Authorization header the way axios calls do — the session token is
+  // appended as ?token= instead, which the route folds into that header
+  // itself before checking permissions.
+  const handleConnect = () => {
+    const token = getStoredToken();
+    window.location.href = `/api/google-drive/authorize${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+  };
 
   const handleTest = async () => {
     setTesting(true);
@@ -116,9 +127,12 @@ export default function GoogleDriveSettings() {
                   : result.message || "Could not reach Google Drive."}
               </p>
               {!result.connected && (
-                <p className="text-xs text-red-500 mt-2">
-                  If the account was never authorized, visit <code className="bg-red-100 px-1 py-0.5 rounded">/api/google-drive/authorize</code> once to connect it.
-                </p>
+                <button
+                  onClick={handleConnect}
+                  className="mt-3 inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-bold text-sm transition-colors"
+                >
+                  <LogIn size={15} /> Connect Google Account
+                </button>
               )}
             </div>
           </div>
