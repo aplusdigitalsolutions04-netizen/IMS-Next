@@ -1022,8 +1022,20 @@ export default function OrderTracking({
   };
 
   const handleSaveEdits = async () => {
-    // Validate serials and find their IDs before saving
+    // Validate serials and find their IDs before saving — but only for
+    // items whose serial was actually retyped. Previously this ran for
+    // *every* item unconditionally, so editing something unrelated (e.g.
+    // just the customer name) still required the order's already-assigned
+    // serial to be findable in `localSerials` right now — if that list
+    // hadn't loaded/refreshed the serial yet (godown-scoped, soft-deleted,
+    // etc.), the whole save silently aborted on a toast that looked
+    // unrelated to what was actually edited.
     for (let item of editItems) {
+      const currentSerialId = item.serialNumberId || item.serialGuid || item.serialId;
+      if (normalizeSerial(item.serialValue) === normalizeSerial(item.originalSerialValue)) {
+        item.newSerialId = currentSerialId;
+        continue;
+      }
       // serialsService.getSerials() never sets a `.value` field on its
       // mapped objects — only `.serialNumber` — so comparing against
       // `s.value` here always came back undefined and made every typed
@@ -1033,7 +1045,6 @@ export default function OrderTracking({
         showToast(`Serial number ${item.serialValue} not found in inventory!`, "error");
         return;
       }
-      const currentSerialId = item.serialNumberId || item.serialGuid || item.serialId;
       if (matchedSerial.status !== "Available" && matchedSerial.id !== currentSerialId && matchedSerial.guid !== currentSerialId) {
         showToast(`Serial ${item.serialValue} is currently ${matchedSerial.status} and cannot be assigned!`, "error");
         return;
@@ -1113,7 +1124,7 @@ export default function OrderTracking({
       closeModal();
     } catch (err) {
       console.error("Save failed:", err);
-      showToast("Failed to save changes", "error");
+      showToast(err?.response?.data?.message || "Failed to save changes", "error");
     } finally {
       setIsUpdating(false);
     }
@@ -1336,6 +1347,11 @@ export default function OrderTracking({
     const normalizedItems = (batch.items || []).map((item) => ({
       ...item,
       installationRequired: isInstallationRequired(item.installationRequired) || false,
+      // Snapshot of the serial as loaded, kept separate from the editable
+      // `serialValue` field below so Save can tell "user actually retyped
+      // this serial" apart from "field just round-tripped through the form
+      // untouched" — see handleSaveEdits.
+      originalSerialValue: item.serialValue,
     }));
     const normalizedDisplayItems = batch.displayItems || normalizedItems;
     const normalizedFinancials = batch.financials || calculateBatchFinancials(normalizedItems, returns);

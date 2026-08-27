@@ -39,6 +39,41 @@ async function findLinkedOrder(conn, contractNumber, companyGuid) {
   return rows[0] || null;
 }
 
+// Contract field -> orders column, for the subset that has a direct
+// equivalent on `orders` (see [[ims-next-migration]] for the fuller field
+// mapping used when an order is first drafted from a contract in
+// app/api/orders/draft/route.js). Only fields the user actually edited get
+// pushed through, and only orderid/serials/status stay untouched — those are
+// operational state the order owns, not contract data.
+const ORDER_SYNC_FIELDS = {
+  organisation: "customerName",
+  buyerAddress: "buyerAddress",
+  buyerContact: "contactNumber",
+  buyerEmail: "buyerEmail",
+  buyerGstin: "gstNumber",
+  consigneeEmail: "consigneeEmail",
+  consigneeAddress: "shippingAddress",
+  bidNumber: "bidNumber",
+};
+
+// Keeps the linked order's copy of buyer/consignee/bid details in sync after
+// a contract edit — before this, editing a contract only ever touched the
+// `contracts` row, so Order Processing kept showing whatever was there when
+// the draft was first created, silently drifting from the contract.
+async function syncLinkedOrder(conn, contractNumber, companyGuid, body, updates) {
+  const syncKeys = updates.filter((k) => ORDER_SYNC_FIELDS[k]);
+  if (syncKeys.length === 0) return;
+  const linkedOrder = await findLinkedOrder(conn, contractNumber, companyGuid);
+  if (!linkedOrder) return;
+
+  const setClause = syncKeys.map((k) => `${ORDER_SYNC_FIELDS[k]}=?`).join(", ");
+  const values = syncKeys.map((k) => (body[k] === undefined ? null : body[k]));
+  await conn.query(
+    `UPDATE orders SET ${setClause} WHERE guid=? AND companyGuid=?`,
+    [...values, linkedOrder.guid, companyGuid]
+  );
+}
+
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
@@ -95,6 +130,11 @@ export const PUT = withErrorHandling(async (request, { params }) => {
     );
     if (result.affectedRows === 0) throw new ApiError(404, "Contract not found");
 
+    // Uses `current.contractNumber` (the value before this edit) — orderid
+    // never changes to follow a contractNumber edit, so the order stays
+    // linked by its original number regardless.
+    if (!isCancelling) await syncLinkedOrder(conn, current.contractNumber, user.companyId, body, updates);
+
     await conn.commit();
   } catch (err) {
     await conn.rollback();
@@ -106,7 +146,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   }
 
   broadcastRealtimeEvent(user.companyId, "contracts");
-  if (isCancelling) broadcastRealtimeEvent(user.companyId, "orders");
+  if (isCancelling || updates.some((k) => ORDER_SYNC_FIELDS[k])) broadcastRealtimeEvent(user.companyId, "orders");
   return NextResponse.json({ message: "Contract updated" });
 });
 
