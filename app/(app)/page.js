@@ -340,12 +340,22 @@ export default function DashboardPage() {
     (d) => inPeriod(d.orderDate || d.createdAt) && modelCategoryMatches(d.serialGuid || d.serialNumberId)
   );
 
-  // "Dispatched in period" — strictly dispatchDate, no createdAt fallback.
-  // Previously this reused periodDispatches (which falls back to createdAt
-  // for anything not yet dispatched), so "Dispatched Today" always matched
-  // "Orders Today" even when nothing had actually shipped.
+  // Mirrors components/dispatch/Dispatch.jsx's own "Active" tab cutoff
+  // (processedData's hiddenStatuses) — an order still sitting in Pending/
+  // Order Confirmed/Send for Billing hasn't reached the Dispatch tab yet,
+  // so it shouldn't count as "dispatched" here either even though
+  // dispatchDate got stamped the moment it was first recorded.
+  const NOT_YET_IN_DISPATCH_TAB = ["Draft", "Order On Hold", "Order Not Confirmed", "Order Cancelled", "Pending", "Order Confirmed", "Send for Billing"];
+
+  // "Dispatched in period" — strictly dispatchDate, no createdAt fallback,
+  // and only orders that have actually reached the Dispatch tab. Previously
+  // this reused periodDispatches (which falls back to createdAt for
+  // anything not yet dispatched, with no status check at all), so
+  // "Dispatched Today" always matched "Orders Today" even when everything
+  // was still sitting in Billing.
   const periodActuallyDispatched = activeDispatches.filter(
     (d) => d.dispatchDate && inPeriod(d.dispatchDate) && modelCategoryMatches(d.serialGuid || d.serialNumberId)
+      && !NOT_YET_IN_DISPATCH_TAB.includes(d.status)
   );
 
   const periodReturns = returns.filter((r) => {
