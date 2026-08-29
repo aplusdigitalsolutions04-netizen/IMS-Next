@@ -332,8 +332,20 @@ export default function DashboardPage() {
     return m.mainCategory === categoryFilter || m.category === categoryFilter;
   };
 
+  // "Orders in period" — orderDate (falling back to createdAt) so a brand
+  // new order counts here even before it's been physically dispatched. This
+  // also backs "best-selling models"/orderValue below, which are meant to
+  // track what was ordered, not what's shipped yet.
   const periodDispatches = activeDispatches.filter(
-    (d) => inPeriod(d.dispatchDate || d.createdAt) && modelCategoryMatches(d.serialGuid || d.serialNumberId)
+    (d) => inPeriod(d.orderDate || d.createdAt) && modelCategoryMatches(d.serialGuid || d.serialNumberId)
+  );
+
+  // "Dispatched in period" — strictly dispatchDate, no createdAt fallback.
+  // Previously this reused periodDispatches (which falls back to createdAt
+  // for anything not yet dispatched), so "Dispatched Today" always matched
+  // "Orders Today" even when nothing had actually shipped.
+  const periodActuallyDispatched = activeDispatches.filter(
+    (d) => d.dispatchDate && inPeriod(d.dispatchDate) && modelCategoryMatches(d.serialGuid || d.serialNumberId)
   );
 
   const periodReturns = returns.filter((r) => {
@@ -343,7 +355,7 @@ export default function DashboardPage() {
     return true;
   });
 
-  const todayDispatches = periodDispatches.length;
+  const todayDispatches = periodActuallyDispatched.length;
   const todayReturns = periodReturns.length;
   const periodDamagedCount = periodReturns.filter((r) => r.condition === "Damaged").length;
 

@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { FileText, Loader2, Trash2, X, ListOrdered, Pencil, Ban, Plus, Save, PackagePlus, Search, ArrowUpDown, Columns3 } from "lucide-react";
+import { FileText, Loader2, Trash2, X, ListOrdered, Pencil, Ban, Plus, Save, PackagePlus, Search, ArrowUpDown, Columns3, ChevronLeft, ChevronRight } from "lucide-react";
 import Swal from "sweetalert2";
 import { contractsService } from "@/lib/services/contractsService";
 import { printerService } from "@/lib/services/api";
@@ -375,6 +375,8 @@ export default function ContractsList({ statusFilter = "Active" }) {
   const [cancellingContract, setCancellingContract] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOrder, setSortOrder] = useState("desc"); // by Generated Date
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [visibleCols, setVisibleCols] = useState(() => new Set(TOGGLABLE_COLUMNS.map((c) => c.key)));
   const [wizardProduct, setWizardProduct] = useState(null);
   const wizardResolveRef = React.useRef(null);
@@ -574,6 +576,13 @@ export default function ContractsList({ statusFilter = "Active" }) {
       return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
     });
 
+  const totalPages = Math.max(1, Math.ceil(visibleContracts.length / pageSize));
+  const paginatedContracts = visibleContracts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, searchTerm, sortOrder, pageSize]);
+
   const totalCols =
     4 +
     TOGGLABLE_COLUMNS.filter((c) => visibleCols.has(c.key)).length +
@@ -643,12 +652,12 @@ export default function ContractsList({ statusFilter = "Active" }) {
                 </td>
               </tr>
             ) : (
-              visibleContracts.map((c, idx) => {
+              paginatedContracts.map((c, idx) => {
                 const isCancelled = c.status === "Cancelled";
                 return (
                   <React.Fragment key={c.guid}>
                   <tr className={`hover:bg-slate-50 ${isCancelled ? "opacity-60" : ""}`}>
-                    <td className="p-3 whitespace-nowrap">{idx + 1}</td>
+                    <td className="p-3 whitespace-nowrap">{(currentPage - 1) * pageSize + idx + 1}</td>
                     <td className="p-3 whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <button onClick={() => setEditingContract(c)} className="text-indigo-500 hover:text-indigo-700" title="Edit">
@@ -789,6 +798,41 @@ export default function ContractsList({ statusFilter = "Active" }) {
           </tbody>
         </table>
       </div>
+
+      {visibleContracts.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 text-sm">
+          <div className="flex items-center gap-2 text-slate-500">
+            <span>Rows per page</span>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="border border-slate-200 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <span>
+              {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, visibleContracts.length)} of {visibleContracts.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="px-3 text-slate-600 font-semibold">Page {currentPage} of {totalPages}</span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {editingContract && (
         <EditContractModal
