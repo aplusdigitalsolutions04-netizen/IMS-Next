@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Bell,
@@ -42,7 +43,6 @@ import {
 import { useCompany } from "@/lib/client/CompanyContext";
 
 export default function Sidebar({ currentUser, isAdmin, hasPermission = () => false }) {
-  const router = useRouter();
   const pathname = usePathname();
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const { activeCompany } = useCompany();
@@ -124,13 +124,13 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
         )}
         <nav className="flex-1 flex flex-col items-center gap-1.5 overflow-y-auto w-full px-2 py-1">
           {hasPermission('dashboard') && (
-            <button
-              onClick={() => router.push("/")}
+            <Link
+              href="/"
               title="Dashboard"
               className={`p-2.5 rounded-xl transition-colors ${activeTab === "dashboard" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
             >
               <LayoutDashboard size={20} />
-            </button>
+            </Link>
           )}
           {hasGroup("contracts") && (
             <button
@@ -169,31 +169,31 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
             </button>
           )}
           {hasPermission('billing') && (
-            <button
-              onClick={() => router.push("/billing")}
+            <Link
+              href="/billing"
               title="Billing"
               className={`p-2.5 rounded-xl transition-colors ${activeTab === "billing" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
             >
               <Receipt size={20} />
-            </button>
+            </Link>
           )}
           {hasPermission('warranty') && (
-            <button
-              onClick={() => router.push("/warranty")}
+            <Link
+              href="/warranty"
               title="Warranty Certs"
               className={`p-2.5 rounded-xl transition-colors ${activeTab === "warranty" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
             >
               <ShieldAlert size={20} />
-            </button>
+            </Link>
           )}
           {hasPermission('installation') && (
-            <button
-              onClick={() => router.push("/installations")}
+            <Link
+              href="/installations"
               title="Installations"
               className={`p-2.5 rounded-xl transition-colors ${activeTab === "installations" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
             >
               <Wrench size={20} />
-            </button>
+            </Link>
           )}
           {hasGroup("operations") && (
             <button
@@ -204,13 +204,13 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               <RotateCcw size={20} />
             </button>
           )}
-          <button
-            onClick={() => router.push("/profile")}
+          <Link
+            href="/profile"
             title="Settings"
             className={`p-2.5 rounded-xl transition-colors ${settingsGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
           >
             <Settings size={20} />
-          </button>
+          </Link>
         </nav>
         <button
           onClick={() => setIsSidebarVisible(true)}
@@ -249,9 +249,9 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
           <span className="font-bold text-indigo-600 text-base">Settings</span>
         </div>
         <nav className="flex-1 px-2 py-2 flex flex-col overflow-y-auto gap-1 min-h-0">
-          <button onClick={() => router.push('/profile')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'profile' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+          <Link href="/profile" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'profile' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <User size={18} /> <span>My Profile</span>
-          </button>
+          </Link>
           {(hasPermission('companyMaster') || hasPermission('platformMaster') || hasPermission('deliveryPartnerMaster')) && (
             <div className="space-y-1">
               <button onClick={() => toggleSubmenu('master')} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
@@ -261,19 +261,19 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               {expandedMenus.master && (
                 <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
                   {hasPermission('companyMaster') && (
-                    <button onClick={() => router.push('/companyMaster')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'companyMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/companyMaster" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'companyMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <Building2 size={14} className="flex-shrink-0" /> <span className="truncate">Company Master</span>
-                    </button>
+                    </Link>
                   )}
                   {hasPermission('platformMaster') && (
-                    <button onClick={() => router.push('/platformMaster')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'platformMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/platformMaster" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'platformMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <Globe size={14} className="flex-shrink-0" /> <span className="truncate">Selling Platforms</span>
-                    </button>
+                    </Link>
                   )}
                   {hasPermission('deliveryPartnerMaster') && (
-                    <button onClick={() => router.push('/deliveryPartnerMaster')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'deliveryPartnerMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/deliveryPartnerMaster" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'deliveryPartnerMaster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <Truck size={14} className="flex-shrink-0" /> <span className="truncate">Delivery Partners</span>
-                    </button>
+                    </Link>
                   )}
                 </div>
               )}
@@ -288,33 +288,33 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               {expandedMenus.user && (
                 <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
                   {hasPermission('users') && (
-                    <button onClick={() => router.push('/users')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/users" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <UsersIcon size={14} className="flex-shrink-0" /> <span className="truncate">User Management</span>
-                    </button>
+                    </Link>
                   )}
                   {hasPermission('roles') && (
-                    <button onClick={() => router.push('/roles')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'roles' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/roles" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'roles' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <Briefcase size={14} className="flex-shrink-0" /> <span className="truncate">Manage Roles</span>
-                    </button>
+                    </Link>
                   )}
                   {hasPermission('userActivity') && (
-                    <button onClick={() => router.push('/userActivity')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'userActivity' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/userActivity" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'userActivity' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <History size={14} className="flex-shrink-0" /> <span className="truncate">User Activity</span>
-                    </button>
+                    </Link>
                   )}
                 </div>
               )}
             </div>
           )}
           {hasPermission('reports') && (
-            <button onClick={() => router.push('/reports')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'reports' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <Link href="/reports" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'reports' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
               <FileText size={18} /> <span>Reports</span>
-            </button>
+            </Link>
           )}
           {hasPermission('notifications') && (
-            <button onClick={() => router.push('/notifications')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'notifications' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <Link href="/notifications" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'notifications' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
               <Bell size={18} /> <span>Notifications</span>
-            </button>
+            </Link>
           )}
           {(hasPermission('emailAccounts') || hasPermission('emailTemplates') || hasPermission('sentEmails') || hasPermission('emailInbox')) && (
             <div className="space-y-1">
@@ -325,24 +325,24 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               {expandedMenus.email && (
                 <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
                   {hasPermission('emailAccounts') && (
-                    <button onClick={() => router.push('/emailAccounts')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailAccounts' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/emailAccounts" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailAccounts' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <Mail size={14} className="flex-shrink-0" /> <span className="truncate">Email Accounts</span>
-                    </button>
+                    </Link>
                   )}
                   {hasPermission('emailTemplates') && (
-                    <button onClick={() => router.push('/emailTemplates')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailTemplates' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/emailTemplates" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailTemplates' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <FileText size={14} className="flex-shrink-0" /> <span className="truncate">Email Templates</span>
-                    </button>
+                    </Link>
                   )}
                   {hasPermission('sentEmails') && (
-                    <button onClick={() => router.push('/sentEmails')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'sentEmails' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/sentEmails" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'sentEmails' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <Send size={14} className="flex-shrink-0" /> <span className="truncate">Sent Emails</span>
-                    </button>
+                    </Link>
                   )}
                   {hasPermission('emailInbox') && (
-                    <button onClick={() => router.push('/emailInbox')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailInbox' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/emailInbox" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailInbox' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <Inbox size={14} className="flex-shrink-0" /> <span className="truncate">Email Inbox</span>
-                    </button>
+                    </Link>
                   )}
                 </div>
               )}
@@ -357,29 +357,29 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               {expandedMenus.admin && (
                 <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
                   {hasPermission('apiLogs') && (
-                    <button onClick={() => router.push('/apiLogs')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'apiLogs' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/apiLogs" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'apiLogs' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <ShieldAlert size={14} className="flex-shrink-0" /> <span className="truncate">API Logs</span>
-                    </button>
+                    </Link>
                   )}
                   {hasPermission('backupRestore') && (
-                    <button onClick={() => router.push('/backupRestore')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'backupRestore' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/backupRestore" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'backupRestore' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <DatabaseBackup size={14} className="flex-shrink-0" /> <span className="truncate">Backup &amp; Restore</span>
-                    </button>
+                    </Link>
                   )}
                   {hasPermission('rateLimitSettings') && (
-                    <button onClick={() => router.push('/rateLimitSettings')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'rateLimitSettings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/rateLimitSettings" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'rateLimitSettings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <ShieldHalf size={14} className="flex-shrink-0" /> <span className="truncate">Rate Limiting</span>
-                    </button>
+                    </Link>
                   )}
                   {hasPermission('aiSettings') && (
-                    <button onClick={() => router.push('/aiSettings')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'aiSettings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/aiSettings" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'aiSettings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <Sparkles size={14} className="flex-shrink-0" /> <span className="truncate">AI Settings</span>
-                    </button>
+                    </Link>
                   )}
                   {hasPermission('googleDrive') && (
-                    <button onClick={() => router.push('/googleDrive')} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'googleDrive' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Link href="/googleDrive" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'googleDrive' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <HardDrive size={14} className="flex-shrink-0" /> <span className="truncate">Google Drive</span>
-                    </button>
+                    </Link>
                   )}
                 </div>
               )}
@@ -387,9 +387,9 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
           )}
         </nav>
         <div className="shrink-0 px-2 pb-2 border-t border-slate-100 pt-2">
-          <button onClick={() => router.push('/')} className="w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-500 hover:bg-indigo-50 hover:text-indigo-600">
+          <Link href="/" className="w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-500 hover:bg-indigo-50 hover:text-indigo-600">
             <LayoutDashboard size={18} /> <span>Back to Dashboard</span>
-          </button>
+          </Link>
         </div>
       </aside>
     );
@@ -416,13 +416,13 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
       <div className="p-4 font-bold text-indigo-600 text-lg text-center">Inventory Management</div>
       <nav className="flex-1 px-2 space-y-1 overflow-y-auto pb-4">
         {hasPermission('dashboard') && (
-          <button
-            onClick={() => router.push("/")}
+          <Link
+            href="/"
             className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === "dashboard" ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-100"}`}
           >
             <LayoutDashboard size={18} />
             <span>Dashboard</span>
-          </button>
+          </Link>
         )}
 
         {/* CONTRACTS */}
@@ -435,9 +435,9 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
             {expandedMenus.contracts && (
               <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
                 {navItems.filter(i => i.group === "contracts").map(item => (
-                  <button key={item.id} onClick={() => router.push(item.path || `/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${pathname === (item.path || `/${item.id}`) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                  <Link key={item.id} href={item.path || `/${item.id}`} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${pathname === (item.path || `/${item.id}`) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                     {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
-                  </button>
+                  </Link>
                 ))}
               </div>
             )}
@@ -454,9 +454,9 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
             {expandedMenus.masters && (
               <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
                 {navItems.filter(i => i.group === "masters").map(item => (
-                  <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                  <Link key={item.id} href={`/${item.id}`} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                     {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
-                  </button>
+                  </Link>
                 ))}
               </div>
             )}
@@ -473,9 +473,9 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
             {expandedMenus.inventory && (
               <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
                 {navItems.filter(i => i.group === "inventory").map(item => (
-                  <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                  <Link key={item.id} href={`/${item.id}`} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                     {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
-                  </button>
+                  </Link>
                 ))}
               </div>
             )}
@@ -492,9 +492,9 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
             {expandedMenus.orders && (
               <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
                 {navItems.filter(i => i.group === "orders").map(item => (
-                  <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                  <Link key={item.id} href={`/${item.id}`} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                     {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
-                  </button>
+                  </Link>
                 ))}
               </div>
             )}
@@ -503,23 +503,23 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
 
         {/* BILLING */}
         {hasPermission('billing') && (
-          <button onClick={() => router.push('/billing')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'billing' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+          <Link href="/billing" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'billing' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <Receipt size={18} /> <span>Billing</span>
-          </button>
+          </Link>
         )}
 
         {/* WARRANTY */}
         {hasPermission('warranty') && (
-          <button onClick={() => router.push('/warranty')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'warranty' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+          <Link href="/warranty" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'warranty' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <ShieldAlert size={18} /> <span>Warranty Certs</span>
-          </button>
+          </Link>
         )}
 
         {/* INSTALLATIONS */}
         {hasPermission('installation') && (
-          <button onClick={() => router.push('/installations')} className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'installations' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+          <Link href="/installations" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'installations' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <Wrench size={18} /> <span>Installations</span>
-          </button>
+          </Link>
         )}
 
         {/* OPERATIONS */}
@@ -532,7 +532,7 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
             {expandedMenus.operations && (
               <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
                 {navItems.filter(i => i.group === "operations").map(item => (
-                  <button key={item.id} onClick={() => router.push(`/${item.id}`)} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors relative ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                  <Link key={item.id} href={`/${item.id}`} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors relative ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                     {item.icon && <item.icon size={14} />}
                     <span>{item.label}</span>
                     {item.badge && (
@@ -540,7 +540,7 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
                         {item.badge}
                       </span>
                     )}
-                  </button>
+                  </Link>
                 ))}
               </div>
             )}
@@ -548,9 +548,9 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
         )}
 
         {/* SETTINGS */}
-        <button onClick={() => router.push('/profile')} className="w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+        <Link href="/profile" className="w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
           <Settings size={18} /> <span>Settings</span>
-        </button>
+        </Link>
 
       </nav>
     </aside>

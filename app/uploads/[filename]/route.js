@@ -65,9 +65,12 @@ export async function GET(request, { params }) {
   // filename hits the fast local-disk path above instead of round-tripping
   // to the Drive API again. Filenames are unique per upload, so a file's
   // bytes never change after this point — safe to cache indefinitely.
-  fs.promises.writeFile(filePath, buffer).catch((err) => {
-    console.error(`Failed to cache Drive file "${safeName}" to disk:`, err);
-  });
+  fs.promises
+    .mkdir(uploadDir, { recursive: true })
+    .then(() => fs.promises.writeFile(filePath, buffer))
+    .catch((err) => {
+      console.error(`Failed to cache Drive file "${safeName}" to disk:`, err);
+    });
 
   return new NextResponse(buffer, {
     headers: {

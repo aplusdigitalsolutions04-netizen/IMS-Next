@@ -233,7 +233,6 @@ export const DELETE = withErrorHandling(async (request) => {
       if (!item) {
         results.failed.push(id);
         results.errors[id] = "Dispatch Item not found";
-        conn.release();
         continue;
       }
 

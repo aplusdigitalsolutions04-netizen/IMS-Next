@@ -59,11 +59,20 @@ export const GET = withErrorHandling(async (request) => {
            o.status, ol.logisticsStatus, oi.sellingPrice * COALESCE(oi.quantity, 1) as sellingPrice,
            COALESCE(NULLIF(s.landingPrice,0), itv.purchasePrice, 0) * COALESCE(oi.quantity, 1) as landingPrice,
            o.platform AS firmName, o.orderid AS customerName, itv.variantName as modelName, s.serialNumber as serialValue,
-           'Printers' as category, o.invoiceFilename as invoiceFile, o.ewayBillFilename as ewayBillFile
+           'Printers' as category, o.invoiceFilename as invoiceFile, o.ewayBillFilename as ewayBillFile,
+           o.commission,
+           -- packagingCost/freightCharges are stored once per order, but the
+           -- Reports UI groups by order and SUMS this column across every
+           -- item row in that order — dividing by the order's item count
+           -- here means the sum reconstructs the true order-level total
+           -- instead of multiplying it by however many items the order has.
+           o.packagingCost / oic.itemCount as packing,
+           o.freightCharges / oic.itemCount as freight
     FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid
     LEFT JOIN order_logistics ol ON o.guid=ol.orderGuid
     LEFT JOIN inventorystockinserial s ON oi.serialNumberGuid=s.guid
     LEFT JOIN inventoryitemvariant itv ON s.itemVariantId=itv.itemVariantId
+    JOIN (SELECT orderGuid, COUNT(*) as itemCount FROM order_items GROUP BY orderGuid) oic ON oic.orderGuid = o.guid
     ${s2.w}
   `, s2.params);
 
@@ -105,14 +114,38 @@ export const GET = withErrorHandling(async (request) => {
      WHERE iv.isDeleted=0${companyClause("iv")}`,
     companyParam
   );
-  // inventorystockinserial.landingPrice is unreliable (often left at 0 by the
-  // Stock-In finalize flow) — inventoryitemvariant.purchasePrice is the
-  // item's actual, maintained purchase price, so value each Available
-  // serial at its item's current purchasePrice instead.
+  // Per-serial landingPrice is often left at 0 by the Stock-In finalize flow,
+  // and inventoryitemvariant.purchasePrice alone is frequently stale/unset
+  // too — this mirrors app/Inventory/GetCurrentStock/route.js's fallback
+  // chain (already fixed for this exact "stock value reads 0" problem):
+  // avg landing price of this item's other Available serials, then the most
+  // recently created serial's landing price (any status), then
+  // inventoryvariantstock's purchase rates, then finally purchasePrice.
   const [printStock] = await mysqlPool.query(
-    `SELECT SUM(iv.purchasePrice) as total
+    `SELECT SUM(
+       IFNULL(NULLIF(lp.avgLandingPrice, 0),
+         IFNULL(NULLIF(lk.lastLandingPrice, 0),
+           IFNULL(NULLIF(ivs.lastPurchaseRate, 0),
+             IFNULL(NULLIF(ivs.avgPurchaseRate, 0), IFNULL(iv.purchasePrice, 0)))))
+     ) as total
      FROM inventorystockinserial s
      JOIN inventoryitemvariant iv ON s.itemVariantId = iv.itemVariantId AND iv.isDeleted = 0
+     LEFT JOIN inventoryvariantstock ivs ON iv.itemVariantId = ivs.itemVariantId
+     LEFT JOIN (
+       SELECT itemVariantId, AVG(NULLIF(landingPrice, 0)) as avgLandingPrice FROM inventorystockinserial
+       WHERE serialStatus = 'Available' AND isDeleted = 0 GROUP BY itemVariantId
+     ) lp ON s.itemVariantId = lp.itemVariantId
+     LEFT JOIN (
+       SELECT s1.itemVariantId, s1.landingPrice as lastLandingPrice
+       FROM inventorystockinserial s1
+       WHERE s1.isDeleted = 0
+         AND s1.guid = (
+           SELECT s2.guid FROM inventorystockinserial s2
+           WHERE s2.itemVariantId = s1.itemVariantId AND s2.isDeleted = 0
+           ORDER BY s2.createdAt DESC, s2.guid DESC
+           LIMIT 1
+         )
+     ) lk ON s.itemVariantId = lk.itemVariantId
      WHERE s.serialStatus = 'Available' AND s.isDeleted = 0${companyClause("s")}`,
     companyParam
   );

@@ -9,6 +9,8 @@ import {
   ArrowDownRight, ArrowUpRight, ArrowDownCircle, ArrowUpCircle
 } from "lucide-react";
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfYear, endOfYear } from "date-fns";
+import { platformsService } from "@/lib/services/platformsService";
+import { useCompany } from "@/lib/client/CompanyContext";
 
 // Helper to format numbers for CSV
 function formatCsvNumber(val) {
@@ -20,6 +22,7 @@ function formatCsvNumber(val) {
 
 export default function Reports({ isAdmin, isAccountant, isSupervisor, returns = [] }) {
   const toast = useToast();
+  const { activeCompany } = useCompany();
   const [dateRange, setDateRange] = useState("all");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -28,15 +31,23 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [platformFilter, setPlatformFilter] = useState("all");
   const [stockTypeFilter, setStockTypeFilter] = useState("all"); // 'all', 'in', 'out'
+  const [masterPlatforms, setMasterPlatforms] = useState([]);
 
+  // Platform Master (Settings > Selling Platforms) is the source of truth —
+  // was a hardcoded list before (including a stray "Wery" entry that isn't
+  // a real configured platform). Re-fetches on company switch since a
+  // company's allowedPlatforms scoping below depends on which company is
+  // active.
+  useEffect(() => {
+    platformsService.getPlatforms().then((rows) => setMasterPlatforms(Array.isArray(rows) ? rows : []));
+  }, [activeCompany?.guid]);
 
+  const allowedPlatforms = activeCompany?.allowedPlatforms;
   const platforms = [
     { id: "all", name: "All Platforms" },
-    { id: "Amazon", name: "Amazon" },
-    { id: "Flipkart", name: "Flipkart" },
-    { id: "GeM", name: "GeM" },
-    { id: "Wery", name: "Wery" },
-    { id: "Other", name: "Other" }
+    ...masterPlatforms
+      .filter((p) => !allowedPlatforms || allowedPlatforms.includes(p.name))
+      .map((p) => ({ id: p.name, name: p.name })),
   ];
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -81,7 +92,13 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
 
     if (start && end) {
       try {
-        const data = await printerService.getReports(start.toISOString(), end.toISOString());
+        // Send plain local calendar dates (YYYY-MM-DD), not .toISOString() —
+        // the backend (app/api/reports/route.js) takes the date portion of
+        // whatever string it's given and treats it as the intended IST
+        // calendar date. Converting a local IST midnight to UTC first shifts
+        // it back a day (IST is UTC+5:30), so "Today"/"This Week"/"This
+        // Year" silently pulled in an extra day of yesterday's transactions.
+        const data = await printerService.getReports(format(start, "yyyy-MM-dd"), format(end, "yyyy-MM-dd"));
         const transactionsArray = Array.isArray(data) ? data : (data?.transactions || []);
         setReportData({ 
           transactions: transactionsArray, 
@@ -595,16 +612,16 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
               <div className="absolute top-0 right-0 p-3 opacity-10"><Layers size={40} className="text-blue-600"/></div>
               <div>
                 <p className="text-[10px] font-bold text-blue-500 uppercase">Available Stock Value</p>
-                <h3 className="text-xl font-extrabold text-slate-800 mt-0.5">₹{summary.stockValue.toLocaleString('en-IN')}</h3>
+                <h3 className="text-xl font-extrabold text-slate-800 mt-0.5">₹{summary.stockValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</h3>
               </div>
               <div className="flex gap-3 mt-2 pt-2 border-t border-blue-50">
                 <div className="flex-1">
                   <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">Printers/AIO</p>
-                  <p className="text-xs font-bold text-slate-700 mt-1">₹{summary.printerStockValue.toLocaleString('en-IN')}</p>
+                  <p className="text-xs font-bold text-slate-700 mt-1">₹{summary.printerStockValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                 </div>
                 <div className="flex-1 border-l border-blue-50 pl-3">
                   <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">Stationery</p>
-                  <p className="text-xs font-bold text-slate-700 mt-1">₹{summary.stationeryStockValue.toLocaleString('en-IN')}</p>
+                  <p className="text-xs font-bold text-slate-700 mt-1">₹{summary.stationeryStockValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                 </div>
               </div>
             </div>
@@ -613,7 +630,7 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
               <div className="absolute top-0 right-0 p-3 opacity-10"><Truck size={40} className="text-amber-600"/></div>
               <div>
                 <p className="text-[10px] font-bold text-amber-500 uppercase">Order Booking (Active)</p>
-                <h3 className="text-xl font-extrabold text-slate-800 mt-1">₹{summary.bookingValue.toLocaleString('en-IN')}</h3>
+                <h3 className="text-xl font-extrabold text-slate-800 mt-1">₹{summary.bookingValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</h3>
               </div>
               <div className="mt-2 pt-2 border-t border-amber-50">
                 <p className="text-[9px] font-bold text-slate-400 uppercase">Pending Fulfillment</p>
@@ -625,7 +642,7 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
               <div className="absolute top-0 right-0 p-3 opacity-10"><CheckCircle size={40} className="text-emerald-600"/></div>
               <div>
                 <p className="text-[10px] font-bold text-emerald-600 uppercase">Total Revenue</p>
-                <h3 className="text-xl font-extrabold text-slate-800 mt-1">₹{summary.revenue.toLocaleString('en-IN')}</h3>
+                <h3 className="text-xl font-extrabold text-slate-800 mt-1">₹{summary.revenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</h3>
               </div>
               <div className="mt-2 pt-2 border-t border-emerald-50">
                 <p className="text-[9px] font-bold text-slate-400 uppercase">Processed Orders</p>
@@ -637,7 +654,7 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
               <div className="absolute top-0 right-0 p-3 opacity-10"><TrendingUp size={40} className="text-indigo-600"/></div>
               <div>
                 <p className={`text-[10px] font-bold uppercase ${summary.netProfit >= 0 ? 'text-indigo-600' : 'text-red-500'}`}>Net Profit (Margin)</p>
-                <h3 className={`text-xl font-extrabold mt-1 ${summary.netProfit >= 0 ? 'text-indigo-700' : 'text-red-600'}`}>₹{summary.netProfit.toLocaleString('en-IN')}</h3>
+                <h3 className={`text-xl font-extrabold mt-1 ${summary.netProfit >= 0 ? 'text-indigo-700' : 'text-red-600'}`}>₹{summary.netProfit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</h3>
               </div>
               <div className="mt-2 pt-2 border-t border-indigo-50">
                 <p className="text-[9px] font-bold text-slate-400 uppercase">Efficiency</p>
@@ -651,7 +668,7 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
               <div className="absolute top-0 right-0 p-3 opacity-10"><AlertTriangle size={40} className="text-red-600"/></div>
               <div>
                 <p className="text-[10px] font-bold text-red-500 uppercase">Loss (Damage & RTO)</p>
-                <h3 className="text-xl font-extrabold text-red-700 mt-1">₹{summary.damageLoss.toLocaleString('en-IN')}</h3>
+                <h3 className="text-xl font-extrabold text-red-700 mt-1">₹{summary.damageLoss.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</h3>
               </div>
               <div className="mt-2 pt-2 border-t border-red-100">
                 <p className="text-[9px] font-bold text-slate-400 uppercase">Impact on Revenue</p>
@@ -788,17 +805,17 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
                         </td>
 
                         <td className="px-4 py-3 text-right text-slate-600 bg-slate-50/50 font-bold">
-                          ₹{(t.landing || 0).toLocaleString('en-IN')}
+                          ₹{(t.landing || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                         </td>
 
                         {/* Render extra commerce details only when Stock In filters are not active */}
                         {stockTypeFilter !== "in" && (
                           <>
                             <td className="px-4 py-3 text-right font-bold text-indigo-700 bg-indigo-50/30">
-                              {isRowStockIn ? "-" : (t.selling > 0 ? "₹" + t.selling.toLocaleString('en-IN') : "-")}
+                              {isRowStockIn ? "-" : (t.selling > 0 ? "₹" + t.selling.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : "-")}
                             </td>
                             <td className="px-4 py-3 text-right font-bold text-orange-700 bg-orange-50/30">
-                              {isRowStockIn ? "-" : (t.refundAmount > 0 ? "-₹" + t.refundAmount.toLocaleString('en-IN') : "-")}
+                              {isRowStockIn ? "-" : (t.refundAmount > 0 ? "-₹" + t.refundAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : "-")}
                             </td>
                             <td className="px-4 py-3 text-center bg-amber-50/30">
                               {isRowStockIn ? "-" : (
@@ -821,30 +838,30 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
                                 ) : canEditCommission ? (
                                   <div className="flex items-center justify-center gap-2 group cursor-pointer hover:bg-amber-100/50 py-1 rounded transition" onClick={() => startEditing(t)} title="Click to Edit Commission">
                                     <span className={`text-xs font-bold ${t.commission > 0 ? 'text-amber-700' : 'text-slate-300'}`}>
-                                      ₹{(t.commission || 0).toLocaleString('en-IN')}
+                                      ₹{(t.commission || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                     </span>
                                     <Edit2 size={12} className="text-slate-300 group-hover:text-amber-600 opacity-0 group-hover:opacity-100 transition-all" />
                                   </div>
                                 ) : (
                                   <div className="flex items-center justify-center gap-2 py-1 rounded">
                                     <span className={`text-xs font-bold ${t.commission > 0 ? 'text-amber-700' : 'text-slate-300'}`}>
-                                      ₹{(t.commission || 0).toLocaleString('en-IN')}
+                                      ₹{(t.commission || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                     </span>
                                   </div>
                                 )
                               )}
                             </td>
                             <td className="px-4 py-3 text-right text-slate-500">
-                              {isRowStockIn ? "-" : `₹${(t.packing || 0).toLocaleString('en-IN')}`}
+                              {isRowStockIn ? "-" : `₹${(t.packing || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
                             </td>
                             <td className="px-4 py-3 text-right text-slate-500">
-                              {isRowStockIn ? "-" : `₹${(t.freight || 0).toLocaleString('en-IN')}`}
+                              {isRowStockIn ? "-" : `₹${(t.freight || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
                             </td>
                             <td className="px-4 py-3 text-right text-red-500 bg-red-50/30 font-semibold">
-                              {isRowStockIn ? "-" : (t.repairCost > 0 ? "₹" + t.repairCost.toLocaleString('en-IN') : "-")}
+                              {isRowStockIn ? "-" : (t.repairCost > 0 ? "₹" + t.repairCost.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : "-")}
                             </td>
                             <td className={`px-4 py-3 text-right font-bold bg-emerald-50/30 ${isRowStockIn ? "text-slate-400" : (t.netProfit >= 0 ? "text-emerald-600" : "text-red-600")}`}>
-                              {isRowStockIn ? "₹0" : `₹${(t.netProfit || 0).toLocaleString('en-IN')}`}
+                              {isRowStockIn ? "₹0" : `₹${(t.netProfit || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
                             </td>
                           </>
                         )}

@@ -10,6 +10,7 @@ import {
   History,
   Loader2,
   Package,
+  Pencil,
   Plus,
   Search,
   ShoppingCart,
@@ -22,7 +23,7 @@ import Swal from 'sweetalert2';
 import { printerService } from '@/lib/services/api';
 import { hasPermission } from '@/lib/client/rbac';
 import { modalTypes } from "./constants";
-import { CategoryChoice, SearchablePicker, StatusBadge, SummaryTile } from "./parts";
+import { CategoryChoice, Modal, SearchablePicker, StatusBadge, SummaryTile } from "./parts";
 import FbfModals from "./FbfModals";
 
 const tabs = ['FBF', 'FBA'];
@@ -65,6 +66,9 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
   const [activeView, setActiveView] = useState('list');
   const [sellHistory, setSellHistory] = useState([]);
   const [loadingSellHistory, setLoadingSellHistory] = useState(false);
+  const [editingSellOut, setEditingSellOut] = useState(null);
+  const [editSellOutForm, setEditSellOutForm] = useState({ referenceId: '', amount: '', transactionDate: '' });
+  const [savingSellOutEdit, setSavingSellOutEdit] = useState(false);
   const [showSerialSelector, setShowSerialSelector] = useState(false);
   const [serialViewItem, setSerialViewItem] = useState(null);
   const [stockCategory, setStockCategory] = useState('');
@@ -251,6 +255,34 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
   const openSellHistoryView = () => {
     setActiveView('sell_history');
     fetchSellHistory();
+  };
+
+  const openEditSellOut = (t) => {
+    setEditingSellOut(t);
+    setEditSellOutForm({
+      referenceId: t.referenceId || '',
+      amount: t.amount ?? '',
+      transactionDate: t.transactionDate ? format(new Date(t.transactionDate), 'yyyy-MM-dd') : '',
+    });
+  };
+
+  const handleSaveSellOutEdit = async (event) => {
+    event.preventDefault();
+    setSavingSellOutEdit(true);
+    try {
+      await printerService.updateFbfFbaSellOut(editingSellOut.guid, {
+        referenceId: editSellOutForm.referenceId.trim(),
+        amount: editSellOutForm.amount === '' ? null : Number(editSellOutForm.amount),
+        transactionDate: editSellOutForm.transactionDate,
+      });
+      setEditingSellOut(null);
+      await fetchSellHistory();
+      Swal.fire('Updated', 'Sell out record updated.', 'success');
+    } catch (err) {
+      Swal.fire('Update failed', err.message || 'Please try again.', 'error');
+    } finally {
+      setSavingSellOutEdit(false);
+    }
   };
 
   const fetchModels = useCallback(async () => {
@@ -802,6 +834,7 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
                     <th className="px-4 py-3">Warehouse</th>
                     <th className="px-4 py-3">Serials</th>
                     <th className="px-4 py-3">By</th>
+                    {canManage && <th className="px-4 py-3 text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -828,6 +861,17 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
                         {t.serialNumbers?.length ? t.serialNumbers.join(', ') : '—'}
                       </td>
                       <td className="px-4 py-3 text-slate-500">{t.createdBy || '—'}</td>
+                      {canManage && (
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => openEditSellOut(t)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 shadow-sm hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-200 transition"
+                          >
+                            <Pencil size={13} />
+                            Edit
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -835,6 +879,61 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
             </div>
           )}
         </div>
+
+        {editingSellOut && (
+          <Modal title="Edit Sell Out Record" onClose={() => setEditingSellOut(null)} size="sm">
+            <form onSubmit={handleSaveSellOutEdit} className="space-y-4 p-4">
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-700">Order ID / Reference</label>
+                <input
+                  type="text"
+                  value={editSellOutForm.referenceId}
+                  onChange={(e) => setEditSellOutForm((prev) => ({ ...prev, referenceId: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-700">Amount</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editSellOutForm.amount}
+                  onChange={(e) => setEditSellOutForm((prev) => ({ ...prev, amount: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-700">Date</label>
+                <input
+                  type="date"
+                  required
+                  value={editSellOutForm.transactionDate}
+                  onChange={(e) => setEditSellOutForm((prev) => ({ ...prev, transactionDate: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <p className="text-xs text-slate-400">Quantity and serials can't be edited here — they already moved stock when this sell out was made.</p>
+              <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingSellOut(null)}
+                  className="rounded-lg px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingSellOutEdit}
+                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {savingSellOutEdit ? <Loader2 className="animate-spin" size={16} /> : null}
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </Modal>
+        )}
       </div>
     );
   }
