@@ -53,7 +53,7 @@ export const GET = withErrorHandling(async (request) => {
          SELECT jt.serialValue, t.type, t.warehouseGuid,
            ROW_NUMBER() OVER (PARTITION BY jt.serialValue, t.type ORDER BY t.createdAt DESC) as rn
          FROM fbf_fba_transactions t
-         JOIN JSON_TABLE(t.serialNumbers, '$[*]' COLUMNS (serialValue VARCHAR(100) PATH '$')) jt
+         JOIN JSON_TABLE(t.serialNumbers, '$[*]' COLUMNS (serialValue VARCHAR(100) COLLATE utf8mb4_unicode_ci PATH '$')) jt
          WHERE t.transactionType = 'IN' AND t.companyGuid = ?
        ) tx ON tx.serialValue = s.serialNumber
             AND tx.type = IF(s.serialStatus = 'Sold', s.fbfFbaType, s.serialStatus)
