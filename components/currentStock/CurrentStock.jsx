@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { PackageSearch, Search, Layers, TrendingUp, AlertTriangle, FileDown, Loader2, Hash, X, Trash2 } from 'lucide-react';
+import { PackageSearch, Search, Layers, TrendingUp, AlertTriangle, FileDown, Loader2, Hash, X, Trash2, List, LayoutGrid } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 import { useToast } from '@/lib/client/ToastContext';
@@ -13,6 +13,7 @@ const CurrentStock = () => {
   const [activeBrandId, setActiveBrandId] = useState("all");
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'card'
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -276,6 +277,22 @@ const CurrentStock = () => {
             className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-slate-800 font-medium focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
           />
         </div>
+        <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 shrink-0">
+          <button
+            onClick={() => setViewMode('list')}
+            title="List view"
+            className={`p-2.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <List size={18} />
+          </button>
+          <button
+            onClick={() => setViewMode('card')}
+            title="Card view"
+            className={`p-2.5 rounded-lg transition-all ${viewMode === 'card' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <LayoutGrid size={18} />
+          </button>
+        </div>
         <button
           onClick={handleExportExcel}
           disabled={exportingExcel}
@@ -286,7 +303,48 @@ const CurrentStock = () => {
         </button>
       </div>
 
-      {/* Table */}
+      {/* List / Card view */}
+      {viewMode === 'card' ? (
+        loading ? (
+          <div className="flex justify-center py-16">
+            <div className="animate-spin w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full"></div>
+          </div>
+        ) : stockData.length === 0 ? (
+          <div className="flex flex-col items-center justify-center text-slate-400 py-16">
+            <PackageSearch size={48} className="mb-3 opacity-20" />
+            <p className="font-medium">No stock data found</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {stockData.map((item, index) => (
+              <div
+                key={item.itemVariantId || index}
+                onClick={() => openVariantSerials(item)}
+                title={item.isTrackable ? "Click to view serial numbers" : ""}
+                className={`bg-white rounded-xl border border-slate-200 border-t-4 border-t-indigo-500 p-4 shadow-sm hover:shadow-md transition-all ${item.isTrackable ? "cursor-pointer" : ""}`}
+              >
+                <h3 className="font-bold text-slate-800 truncate" title={item.variantName}>{item.variantName}</h3>
+                <div className="flex flex-wrap items-center gap-1.5 mt-2 mb-4">
+                  {item.categoryName && (
+                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wide">{item.categoryName}</span>
+                  )}
+                  {item.brandName && (
+                    <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 text-[10px] font-bold uppercase tracking-wide">{item.brandName}</span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                  <span className="text-xs text-slate-500">Stock: <span className="font-bold text-slate-800">{item.availablePCS || 0}</span></span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    item.availablePCS > 0 ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"
+                  }`}>
+                    {item.availablePCS > 0 ? "In Stock" : "Out"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
       <div className="overflow-x-auto rounded-2xl border border-slate-200">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -357,6 +415,7 @@ const CurrentStock = () => {
           </tbody>
         </table>
       </div>
+      )}
       {/* Pagination Controls */}
       {totalRecords > 0 && (
         <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-4 mt-4 rounded-b-2xl">

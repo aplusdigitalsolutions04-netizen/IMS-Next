@@ -72,12 +72,15 @@ export const GET = withErrorHandling(async (request) => {
 
   const [rows] = await mysqlPool.query(`
     SELECT v.itemVariantId, v.variantName, i.itemName, i.brandId, u.unitName, i.isTrackable,
+           cat.categoryName, br.brandName,
            IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) as availablePCS,
            ${priceExpr} as avgPurchaseRate,
            (IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * ${priceExpr}) as totalValue
     FROM inventoryitemvariant v
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
     LEFT JOIN inventoryunitmaster u ON i.unitId = u.unitId
+    LEFT JOIN inventorycategorymaster cat ON i.categoryId = cat.categoryId
+    LEFT JOIN inventorybrandmaster br ON i.brandId = br.brandId
     LEFT JOIN inventoryvariantstock s ON v.itemVariantId = s.itemVariantId
     LEFT JOIN (
       SELECT itemVariantId, COUNT(*) as availableCount FROM inventorystockinserial

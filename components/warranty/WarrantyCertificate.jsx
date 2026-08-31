@@ -8,6 +8,7 @@ import {
   Printer, ShieldCheck, Image, Upload, Code2, Paperclip,
   Loader2, Plus, RefreshCw, X, Copy, ChevronLeft, ChevronRight
 } from "lucide-react";
+import { hasPermission } from "@/lib/client/rbac";
 
 const LIST_PAGE_SIZE = 20;
 const getStoredToken = () => typeof window !== "undefined" ? sessionStorage.getItem("pt_auth_token") : null;
@@ -45,7 +46,14 @@ function PlatformBadge({ platform, gemOrderType }) {
 export default function WarrantyCertificate({ isAdmin, currentUser }) {
   const [page, setPage]         = useState("list"); // "list" | "view" | "template"
   const [listTab, setListTab]   = useState("generate");
-  const canManage = isAdmin || !!currentUser?.allow_edit_warranty;
+  // "warranty" isn't a PROTECTED_EDIT_PERMISSIONS tab — same orphaned-flag
+  // bug already fixed elsewhere (allow_edit_warranty has no checkbox
+  // anywhere in Manage Roles). View access to "warranty" alone should be
+  // enough.
+  const canManage = isAdmin || hasPermission(currentUser, 'warranty') || !!currentUser?.allow_edit_warranty;
+  // Delete is Admin-only by default, delegable via the "Delete Warranty"
+  // Manage Roles checkbox (allow_delete_warranty) — see lib/warrantyAuth.js.
+  const canDelete = isAdmin || !!currentUser?.allow_delete_warranty;
 
   // Orders & certs lists
   const [orders, setOrders]             = useState([]);
@@ -908,7 +916,7 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-400">{c.createdBy || "—"}</td>
                         <td className="px-4 py-3 text-right">
-                          {canManage && (
+                          {canDelete && (
                             <button onClick={e => deleteCert(c.guid, e)}
                               className="text-slate-300 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50">
                               <Trash2 size={13} />

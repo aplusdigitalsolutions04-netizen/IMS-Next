@@ -13,6 +13,7 @@ import { getDayFilterRange, isWithinDayFilter } from "@/lib/client/dayFilter";
 import axios from "axios";
 import { printerService } from "@/lib/services/api";
 import { useToast } from "@/lib/client/ToastContext";
+import { hasPermission } from "@/lib/client/rbac";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const UPLOADS_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
@@ -50,7 +51,15 @@ export default function Damaged({ returns = [], onRefresh, currentUser, initialD
   const [orderDetailsError, setOrderDetailsError] = useState("");
   const [loadingOrderDetails, setLoadingOrderDetails] = useState(false);
 
-  const canManage = currentUser?.role === 'Admin' || !!currentUser?.allow_edit_damaged;
+  // "damage" isn't a PROTECTED_EDIT_PERMISSIONS tab (see lib/auth.js) — same
+  // orphaned-flag bug already fixed in FbfFbaManagement.jsx/FbfFbaMaster.jsx:
+  // allow_edit_damaged has no checkbox anywhere in Manage Roles, so no
+  // non-Admin role could ever pass this gate. View access to "damage" alone
+  // should be enough, matching every other non-protected tab.
+  const canManage = currentUser?.role === 'Admin' || hasPermission(currentUser, 'damage') || !!currentUser?.allow_edit_damaged;
+  // Delete hits the returns API (records are stored as returns) — Admin-only
+  // by default, delegable via the "Delete Returns" Manage Roles checkbox.
+  const canDelete = currentUser?.role === 'Admin' || !!currentUser?.allow_delete_returns;
 
   const getReturnDispatchId = (item) => {
     const rawValue =
@@ -133,8 +142,8 @@ export default function Damaged({ returns = [], onRefresh, currentUser, initialD
       return;
     }
 
-    if (!canManage) {
-      toast.error("Access Denied.");
+    if (!canDelete) {
+      toast.error("Access Denied: Requires Delete Permission.");
       return;
     }
 
@@ -393,7 +402,7 @@ export default function Damaged({ returns = [], onRefresh, currentUser, initialD
                           >
                             <Edit2 size={16} />
                           </button>
-                    {canManage && <button 
+                    {canDelete && <button
                           onClick={() => handleDelete(item)}
                           disabled={isDeleting}
                           className={`p-2 rounded-xl transition-all opacity-60 group-hover:opacity-100 ${

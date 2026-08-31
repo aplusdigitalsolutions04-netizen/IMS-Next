@@ -4,6 +4,7 @@ import Swal from 'sweetalert2';
 
 import { printerService } from "@/lib/services/api";
 import { useToast } from "@/lib/client/ToastContext";
+import { hasPermission } from "@/lib/client/rbac";
 import { 
   RotateCcw, History, Trash2, CheckCircle2, AlertTriangle, 
   Search, ScanLine, Box, Calendar, ShoppingCart, Zap, X,
@@ -26,7 +27,13 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 export default function Returns({ returns = [], isLoaded = false, onRefresh, isAdmin, isSupervisor, currentUser }) {
   const toast = useToast();
-  const canManage = currentUser?.role === 'Admin' || !!currentUser?.allow_edit_returns;
+  // "returns" isn't a PROTECTED_EDIT_PERMISSIONS tab — same orphaned-flag bug
+  // already fixed elsewhere (allow_edit_returns has no checkbox anywhere in
+  // Manage Roles). View access to "returns" alone should be enough.
+  const canManage = currentUser?.role === 'Admin' || hasPermission(currentUser, 'returns') || !!currentUser?.allow_edit_returns;
+  // Delete is Admin-only by default, delegable via the "Delete Returns"
+  // Manage Roles checkbox (allow_delete_returns) — see lib/returnsAuth.js.
+  const canDelete = currentUser?.role === 'Admin' || !!currentUser?.allow_delete_returns;
   const [serialInput, setSerialInput] = useState("");
   const [returnsList, setReturnsList] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -641,7 +648,7 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
       return;
     }
 
-    if (!canManage) { toast.error("Access Denied: Requires Edit Permissions."); return; }
+    if (!canDelete) { toast.error("Access Denied: Requires Delete Permission."); return; }
 
     const result = await Swal.fire({
       title: "Are you sure?",
@@ -1094,7 +1101,7 @@ export default function Returns({ returns = [], isLoaded = false, onRefresh, isA
                               <Edit size={13} />
                             </button>
                           )}
-                          {canManage ? (
+                          {canDelete ? (
                             <button
                               onClick={() => handleDelete(item)}
                               disabled={deletingId === (item.guid || item.guid)}

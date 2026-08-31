@@ -365,9 +365,12 @@ function CancelContractModal({ contract, onClose, onCancelled }) {
   );
 }
 
-export default function ContractsList({ statusFilter = "Active" }) {
+export default function ContractsList({ statusFilter = "Active", currentUser }) {
   const { activeCompany } = useCompany();
   const { subscribeRealtime } = useAppData();
+  // Delete is Admin-only by default, delegable via the "Delete Contracts"
+  // Manage Roles checkbox (allow_delete_contracts) — see app/api/contracts/route.js.
+  const canDelete = currentUser?.role === 'Admin' || !!currentUser?.allow_delete_contracts;
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedContractId, setExpandedContractId] = useState(null);
@@ -412,6 +415,10 @@ export default function ContractsList({ statusFilter = "Active" }) {
   }, []);
 
   const handleDelete = async (id) => {
+    if (!canDelete) {
+      Swal.fire("Access Denied", "You do not have permission to delete contracts.", "error");
+      return;
+    }
     const confirm = await Swal.fire({
       title: "Delete contract?",
       text: "This cannot be undone.",
@@ -673,9 +680,11 @@ export default function ContractsList({ statusFilter = "Active" }) {
                             </button>
                           </>
                         )}
+                        {canDelete && (
                         <button onClick={() => handleDelete(c.guid)} className="text-rose-500 hover:text-rose-700" title="Delete">
                           <Trash2 size={16} />
                         </button>
+                        )}
                       </div>
                     </td>
                     <td className="p-3 whitespace-nowrap">

@@ -20,6 +20,7 @@ const authorize = (user, method) =>
   authorizeReadWrite(user, method, {
     permission: "contracts",
     adminOnlyDelete: true,
+    deleteFlag: "allow_delete_contracts",
     denyMessage: "You do not have permission to manage contracts.",
   });
 

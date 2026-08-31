@@ -19,6 +19,7 @@ import {
 import { format } from 'date-fns';
 import Swal from 'sweetalert2';
 import { printerService } from '@/lib/services/api';
+import { hasPermission } from '@/lib/client/rbac';
 import { modalTypes } from "./constants";
 import { CategoryChoice, SearchablePicker, StatusBadge, SummaryTile } from "./parts";
 import FbfModals from "./FbfModals";
@@ -43,7 +44,14 @@ const getTodayDateInputValue = () => {
 
 
 export default function FbfFbaManagement({ isAdmin, currentUser }) {
-  const canManage = isAdmin || !!currentUser?.allow_edit_fbf_fba;
+  // "fbfFbaManagement" isn't a PROTECTED_EDIT_PERMISSIONS tab (see
+  // lib/auth.js) — same bug already fixed in the sibling FbfFbaMaster.jsx:
+  // allow_edit_fbf_fba has no checkbox anywhere in Manage Roles to actually
+  // grant it (see components/users/constants.js's EDIT_PERMISSIONS), so no
+  // non-Admin role could ever pass this gate no matter what was checked —
+  // granting "FBF/FBA Stock" view access alone should be enough, matching
+  // every other non-protected tab.
+  const canManage = isAdmin || hasPermission(currentUser, 'fbfFbaManagement') || !!currentUser?.allow_edit_fbf_fba;
   const [activeTab, setActiveTab] = useState('FBF');
   const [stock, setStock] = useState([]);
   const [models, setModels] = useState([]);

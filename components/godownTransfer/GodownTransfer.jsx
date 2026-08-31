@@ -4,6 +4,7 @@ import { ArrowRightLeft, CheckSquare, History, Loader2, Square } from 'lucide-re
 import Swal from 'sweetalert2';
 import { printerService } from '@/lib/services/api';
 import SearchableSelect from '@/components/common/SearchableSelect';
+import { hasPermission } from '@/lib/client/rbac';
 
 export default function GodownTransfer({ currentUser }) {
   const [activeTab, setActiveTab] = useState('transfer'); // transfer, history
@@ -31,7 +32,11 @@ export default function GodownTransfer({ currentUser }) {
   const [historyPage, setHistoryPage] = useState(1);
   const [historyTotal, setHistoryTotal] = useState(0);
 
-  const canManage = currentUser?.role === 'Admin' || !!currentUser?.allow_edit_godown;
+  // Same orphaned-flag bug already fixed in GodownMaster.jsx (identical
+  // allow_edit_godown flag, no checkbox anywhere in Manage Roles) — this
+  // sibling file (a separate Sidebar permission, "godownTransfer") was
+  // missed. View access alone should be enough, same as GodownMaster.
+  const canManage = currentUser?.role === 'Admin' || hasPermission(currentUser, 'godownTransfer') || !!currentUser?.allow_edit_godown;
 
   useEffect(() => {
     (async () => {

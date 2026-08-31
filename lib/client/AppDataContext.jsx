@@ -29,12 +29,27 @@ const getReturnsArray = (payload) => {
 // current role has the matching permission — a role missing e.g. "returns"
 // would otherwise 403 on every single page load, forever, since this
 // provider wraps the whole app and never unmounts between navigations.
+//
+// `permission` can be a single ID or an array — dispatches needs either of
+// two: components/billing/Billing.jsx renders entirely from this same
+// `dispatches` array (it has no data source of its own), but the Billing
+// *page* only requires the "billing" permission to open (see
+// components/common/Sidebar.jsx). A role with "billing" checked but not
+// "dispatch" could open Billing and see it permanently empty — indistinguishable
+// from "no orders yet" — because this fetch never ran for them.
 const CORE_KEYS = [
   { key: "models", permission: "print_models", fetch: () => printerService.getModels(), transform: (v) => (Array.isArray(v) ? v : []) },
   { key: "serials", permission: "print_serials", fetch: () => printerService.getSerials(), transform: (v) => (Array.isArray(v) ? v : []) },
-  { key: "dispatches", permission: "dispatch", fetch: () => printerService.getDispatches(true), transform: (v) => (Array.isArray(v) ? v : []) },
-  { key: "returns", permission: "returns", fetch: () => printerService.getReturns(), transform: getReturnsArray },
+  { key: "dispatches", permission: ["dispatch", "billing"], fetch: () => printerService.getDispatches(true), transform: (v) => (Array.isArray(v) ? v : []) },
+  // Damaged (permission "damage") and Order Processing's own Returned tab/
+  // financials (permission "orders") both consume this same shared array —
+  // same Billing/dispatch-style mismatch: without this, a role with just
+  // "damage" or "orders" (no "returns") sees those permanently empty.
+  { key: "returns", permission: ["returns", "damage", "orders"], fetch: () => printerService.getReturns(), transform: getReturnsArray },
 ];
+
+const hasAnyPermission = (user, permission) =>
+  Array.isArray(permission) ? permission.some((p) => hasPermission(user, p)) : hasPermission(user, permission);
 
 export function AppDataProvider({ children, currentUser }) {
   const [models, setModels] = useState([]);
@@ -65,7 +80,7 @@ export function AppDataProvider({ children, currentUser }) {
   const coreSetters = { models: setModels, serials: setSerials, dispatches: setDispatches, returns: setReturns };
 
   const loadCoreData = useCallback(async () => {
-    const allowed = CORE_KEYS.filter((c) => hasPermission(currentUser, c.permission));
+    const allowed = CORE_KEYS.filter((c) => hasAnyPermission(currentUser, c.permission));
     const results = await Promise.allSettled(allowed.map((c) => c.fetch()));
 
     let hasFailure = false;
@@ -84,7 +99,7 @@ export function AppDataProvider({ children, currentUser }) {
     // Nothing to fetch for permissions the role doesn't have — mark them
     // "loaded" (with whatever empty default state already holds) rather
     // than leaving dataStatus stuck at false forever.
-    CORE_KEYS.filter((c) => !hasPermission(currentUser, c.permission)).forEach((c) => {
+    CORE_KEYS.filter((c) => !hasAnyPermission(currentUser, c.permission)).forEach((c) => {
       loadedKeys[c.key] = true;
     });
 

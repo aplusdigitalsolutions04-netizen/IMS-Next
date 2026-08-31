@@ -24,6 +24,9 @@ export default function GodownMaster({ currentUser }) {
   // only checked allow_edit_godown, so granting "Godown Master" alone left
   // Add/Edit disabled here even though the API would have accepted it.
   const canManage = hasPermission(currentUser, 'godownMaster') || !!currentUser?.allow_edit_godown;
+  // Delete is Admin-only by default, delegable via the "Delete Godown"
+  // Manage Roles checkbox (allow_delete_godownMaster) — see lib/godownsAuth.js.
+  const canDelete = currentUser?.role === 'Admin' || !!currentUser?.allow_delete_godownMaster;
 
   const fetchGodowns = async () => {
     try {
@@ -193,7 +196,7 @@ export default function GodownMaster({ currentUser }) {
                         <button onClick={() => openModal(godown)} disabled={!canManage} className="rounded-lg p-1.5 text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50" title="Edit">
                           <Edit2 size={18} />
                         </button>
-                        <button onClick={() => handleDelete(godown)} disabled={!canManage} className="rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-50 disabled:opacity-50" title="Delete">
+                        <button onClick={() => handleDelete(godown)} disabled={!canDelete} className="rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-50 disabled:opacity-50" title="Delete">
                           <Trash2 size={18} />
                         </button>
                       </div>

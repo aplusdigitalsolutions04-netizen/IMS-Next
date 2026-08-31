@@ -103,6 +103,20 @@ export const PERMISSION_GROUPS = [
 // so those no longer need a separate entry here. Only Delete (still
 // flag-gated everywhere, see lib/auth.js) and these 4 protected edit-flags
 // remain.
+// These 5 tabs default their DELETE action to Admin-only at the API level
+// (adminOnlyDelete in lib/auth.js, or returnsAuth.js's own bespoke check for
+// Returns) with no way to delegate it — unlike every other tab covered by
+// MASTER_EDIT_ENTRIES/FULL_CRUD_ENTRIES above, which already had a working
+// allow_delete_<key> checkbox. Checking one of these grants delete for that
+// specific non-Admin role instead of it being permanently impossible.
+const ADMIN_ONLY_DELETE_ENTRIES = [
+  { key: "allow_delete_returns",       label: "Delete Returns",           icon: Trash2, group: "Orders" },
+  { key: "allow_delete_contracts",     label: "Delete Contracts",         icon: Trash2, group: "Admin & Analytics" },
+  { key: "allow_delete_godownMaster",  label: "Delete Godown",            icon: Trash2, group: "Master Data" },
+  { key: "allow_delete_warranty",      label: "Delete Warranty",          icon: Trash2, group: "Inventory" },
+  { key: "allow_delete_fbfFbaMaster",  label: "Delete FBF/FBA Master",    icon: Trash2, group: "Master Data" },
+];
+
 export const EDIT_PERMISSIONS = [
   { key: "allow_create_order",          label: "Create Orders",             icon: Plus,         group: "Orders" },
   { key: "allow_edit_order_processing", label: "Edit Orders",               icon: ShoppingCart, group: "Orders" },
@@ -110,6 +124,7 @@ export const EDIT_PERMISSIONS = [
   { key: "allow_edit_dispatch",         label: "Edit Dispatch",             icon: Truck,        group: "Orders" },
   ...MASTER_EDIT_ENTRIES,
   ...FULL_CRUD_ENTRIES,
+  ...ADMIN_ONLY_DELETE_ENTRIES,
 ];
 
 export const INITIAL_FORM = {

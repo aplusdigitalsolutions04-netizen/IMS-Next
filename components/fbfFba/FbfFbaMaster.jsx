@@ -13,6 +13,9 @@ export default function FbfFbaMaster({ isAdmin, currentUser }) {
   // — granting "FBF/FBA Master" alone left Add Warehouse/Platform/State
   // disabled here even though the API would have accepted it.
   const canManage = isAdmin || hasPermission(currentUser, 'fbfFbaMaster') || !!currentUser?.allow_edit_fbf_fba;
+  // Delete is Admin-only by default, delegable via the "Delete FBF/FBA Master"
+  // Manage Roles checkbox (allow_delete_fbfFbaMaster) — see lib/fbfFbaMasterAuth.js.
+  const canDelete = isAdmin || !!currentUser?.allow_delete_fbfFbaMaster;
   const [activeTab, setActiveTab] = useState('Warehouses');
   const [warehouses, setWarehouses] = useState([]);
   const [platforms, setPlatforms] = useState([]);
@@ -179,7 +182,7 @@ export default function FbfFbaMaster({ isAdmin, currentUser }) {
                 <td className="whitespace-nowrap px-6 py-4 text-right text-sm">
                   <div className="flex justify-end gap-2">
                     <button onClick={() => handleOpenModal(w)} disabled={!canManage} className="rounded-lg p-1.5 text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed"><Edit2 size={18} /></button>
-                    <button onClick={() => handleDelete(w.guid)} disabled={!isAdmin} className="rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed"><Trash2 size={18} /></button>
+                    <button onClick={() => handleDelete(w.guid)} disabled={!canDelete} className="rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed"><Trash2 size={18} /></button>
                   </div>
                 </td>
               </tr>
@@ -209,7 +212,7 @@ export default function FbfFbaMaster({ isAdmin, currentUser }) {
               <tr key={d.guid} className="transition hover:bg-slate-50">
                 <td className="whitespace-nowrap px-6 py-4 text-sm font-bold text-slate-900">{d.name}</td>
                 <td className="whitespace-nowrap px-6 py-4 text-right text-sm">
-                  <button onClick={() => handleDelete(d.guid)} disabled={!isAdmin} className="rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-50"><Trash2 size={18} /></button>
+                  <button onClick={() => handleDelete(d.guid)} disabled={!canDelete} className="rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-50"><Trash2 size={18} /></button>
                 </td>
               </tr>
             ))}

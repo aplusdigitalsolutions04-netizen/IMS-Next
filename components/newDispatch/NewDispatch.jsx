@@ -12,7 +12,7 @@ import {
   Wrench, Activity, CheckSquare, X, Eye, EyeOff,
   TrendingUp, TrendingDown, Clock, CreditCard,
   Plus, Minus, Database, Building2, ListChecks,
-  Zap, Shield, Box, CircleDot
+  Zap, Shield, Box, CircleDot, Loader2
 } from "lucide-react";
 import MasterDropdown from "@/components/common/MasterDropdown";
 import SearchableSelect from "../common/SearchableSelect";
@@ -47,6 +47,7 @@ export default function NewDispatch({
   const [itemMasterVariants, setItemMasterVariants] = useState([]);
   const [loadingItemMaster, setLoadingItemMaster] = useState(false);
   const [batchList, setBatchList] = useState([]);
+  const [extractingAi, setExtractingAi] = useState(false);
   const inputRef = useRef(null);
   const debounceRef = useRef(null);
   // processSerial closes over activeTab/batchList/form.quantity/serials/models
@@ -524,13 +525,36 @@ export default function NewDispatch({
   };
 
 
+  // AI-extracted fields overlaid onto the manual form — modelName/companyName/
+  // sellingPrice/quantity are intentionally excluded, they're driven by the
+  // serial-scan lookup elsewhere in this form and shouldn't be overwritten.
+  const runAiExtraction = async (file) => {
+    setExtractingAi(true);
+    try {
+      const data = await printerService.parseOrderFile(file);
+      const { modelName, companyName, sellingPrice, quantity, ...orderFields } = data || {};
+      const cleaned = Object.fromEntries(
+        Object.entries(orderFields).filter(([, v]) => v !== null && v !== undefined && v !== "")
+      );
+      setForm((prev) => ({ ...prev, ...cleaned }));
+      Swal.fire({ icon: "success", title: "Extracted", text: "Order fields have been filled in from the uploaded file — please review before saving.", timer: 2200, showConfirmButton: false });
+    } catch (error) {
+      Swal.fire("Error", error?.response?.data?.message || "Failed to extract order data", "error");
+    } finally {
+      setExtractingAi(false);
+    }
+  };
+
   const handleFileChange = (e) => {
     const file = e.target.files[0] || null;
     setForm((prev) => ({ ...prev, gemContractFile: file }));
+    if (file) runAiExtraction(file);
   };
 
   const handleInvoiceFileChange = (e) => {
-    setForm((prev) => ({ ...prev, invoiceFile: e.target.files[0] || null }));
+    const file = e.target.files[0] || null;
+    setForm((prev) => ({ ...prev, invoiceFile: file }));
+    if (file) runAiExtraction(file);
   };
 
   const multipleQuantity = Number(form.quantity) || 0;
@@ -1090,17 +1114,24 @@ export default function NewDispatch({
                     </div>
                   </div>
 
-                  {/* Contract Upload — plain file attach, no AI extraction here */}
+                  {/* Contract Upload — auto-extracts order fields with AI on upload */}
                   {showOrderStatus && (
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-1">
                         <UploadCloud size={10} className="text-slate-400" /> Contract File
+                        {extractingAi && (
+                          <span className="flex items-center gap-1 text-violet-600 normal-case font-semibold ml-1">
+                            <Loader2 size={10} className="animate-spin" /> Extracting with AI...
+                          </span>
+                        )}
                       </label>
                       <div className="relative">
                         <input
                           type="file"
+                          accept="application/pdf,image/*"
                           onChange={handleFileChange}
-                          className="w-full border border-dashed border-slate-300 p-3 rounded-xl text-sm bg-white hover:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 outline-none transition-all file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200"
+                          disabled={extractingAi}
+                          className="w-full border border-dashed border-slate-300 p-3 rounded-xl text-sm bg-white hover:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 outline-none transition-all file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200 disabled:opacity-60"
                         />
                       </div>
                     </div>
@@ -1179,12 +1210,20 @@ export default function NewDispatch({
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-slate-600">Invoice Upload</label>
+                          <label className="text-xs font-medium text-slate-600 flex items-center gap-1">
+                            Invoice Upload
+                            {extractingAi && (
+                              <span className="flex items-center gap-1 text-violet-600 font-semibold ml-1">
+                                <Loader2 size={10} className="animate-spin" /> Extracting with AI...
+                              </span>
+                            )}
+                          </label>
                           <input
                             type="file"
                             accept="application/pdf,image/*"
                             onChange={handleInvoiceFileChange}
-                            className="w-full border border-dashed border-slate-300 p-2.5 rounded-xl text-sm bg-white hover:border-indigo-400 outline-none transition-all file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700"
+                            disabled={extractingAi}
+                            className="w-full border border-dashed border-slate-300 p-2.5 rounded-xl text-sm bg-white hover:border-indigo-400 outline-none transition-all file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 disabled:opacity-60"
                           />
                           {form.invoiceFile && (
                             <p className="text-xs text-slate-500">Selected: {form.invoiceFile.name}</p>
