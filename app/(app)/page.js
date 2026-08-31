@@ -344,12 +344,16 @@ export default function DashboardPage() {
     return m.mainCategory === categoryFilter || m.category === categoryFilter;
   };
 
-  // "Orders in period" — orderDate (falling back to createdAt) so a brand
-  // new order counts here even before it's been physically dispatched. This
-  // also backs "best-selling models"/orderValue below, which are meant to
-  // track what was ordered, not what's shipped yet.
+  // "Orders in period" — createdAt (when it was entered into this system),
+  // not orderDate: orderDate is whatever date the platform's own order was
+  // placed on (e.g. a GeM order date, often backdated to days before it's
+  // actually entered here), so it doesn't reflect "orders today" the way
+  // this card means it. A brand new order counts here even before it's
+  // been physically dispatched — this also backs "best-selling models"/
+  // orderValue below, which are meant to track what was ordered, not what's
+  // shipped yet.
   const periodDispatches = activeDispatches.filter(
-    (d) => inPeriod(d.orderDate || d.createdAt) && modelCategoryMatches(d.serialGuid || d.serialNumberId)
+    (d) => inPeriod(d.createdAt) && modelCategoryMatches(d.serialGuid || d.serialNumberId)
   );
 
   // Mirrors components/dispatch/Dispatch.jsx's own "Active" tab cutoff
