@@ -51,7 +51,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
   const [rows] = await mysqlPool.query(`
     SELECT
         oi.guid as id, oi.serialNumberGuid as serialGuid, oi.modelGuid, oi.sellingPrice, oi.warranty, oi.quantity, oi.contractFilename, oi.warrantyStartDate as itemWarrantyStartDate,
-        o.guid as _orderId, o.orderid, o.platform, o.orderDate, o.dispatchDate, o.dispatchedBy, o.status,
+        o.guid as _orderId, o.orderid, o.platform, o.orderDate, o.createdAt, o.dispatchDate, o.dispatchedBy, o.status,
         o.gemOrderType, o.bidNumber, o.customerName as customer, o.consigneeName, o.buyerEmail, o.consigneeEmail,
         o.paymentAuthorityEmail,
         o.shippingAddress, o.address, o.buyerAddress, o.gstNumber, o.contactNumber, o.altContactNumber, o.invoiceNumber,
