@@ -1,6 +1,6 @@
 "use client";
 
-import { X, CheckCircle2, AlertOctagon, Truck, XCircle, RotateCcw } from "lucide-react";
+import { X, CheckCircle2, AlertOctagon, Truck, XCircle, RotateCcw, ShoppingCart } from "lucide-react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import { useAppData } from "@/lib/client/AppDataContext";
@@ -134,6 +134,33 @@ export default function GlobalSearchModal({ showFinancials }) {
                     {searchResult.cancelledDispatch.cancelledAt ? format(new Date(searchResult.cancelledDispatch.cancelledAt), "dd MMM yyyy") : "N/A"}
                   </span>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {searchResult.status === "Sold" && searchResult.fbfFbaSellOut && (
+            <div className="bg-violet-50 p-4 rounded-xl border border-violet-200 relative">
+              <div className="absolute top-0 right-0 bg-violet-500 text-white text-[9px] font-bold px-2 py-1 rounded-bl-lg">SOLD VIA {searchResult.fbfFbaSellOut.type}</div>
+              <h4 className="text-[10px] font-bold text-violet-600 uppercase mb-3 flex items-center gap-1.5">
+                <ShoppingCart size={14} /> Sell Out Details
+              </h4>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between py-1.5 border-b border-violet-100">
+                  <span className="text-slate-500">Order ID / Reference</span>
+                  <span className="font-semibold text-slate-700">{searchResult.fbfFbaSellOut.referenceId || "—"}</span>
+                </div>
+                <div className="flex justify-between py-1.5 border-b border-violet-100">
+                  <span className="text-slate-500">Date</span>
+                  <span className="font-semibold text-slate-700">
+                    {searchResult.fbfFbaSellOut.transactionDate ? format(new Date(searchResult.fbfFbaSellOut.transactionDate), "dd MMM yyyy") : "—"}
+                  </span>
+                </div>
+                {showFinancials && searchResult.fbfFbaSellOut.amount !== null && searchResult.fbfFbaSellOut.amount !== undefined && (
+                  <div className="flex justify-between py-1.5">
+                    <span className="text-slate-500">Amount</span>
+                    <span className="text-base font-extrabold text-emerald-600">₹{Number(searchResult.fbfFbaSellOut.amount).toLocaleString("en-IN")}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}

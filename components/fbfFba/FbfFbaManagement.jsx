@@ -7,6 +7,7 @@ import {
   Barcode,
   Boxes,
   CheckCircle2,
+  History,
   Loader2,
   Package,
   Plus,
@@ -62,6 +63,8 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeModal, setActiveModal] = useState(null);
   const [activeView, setActiveView] = useState('list');
+  const [sellHistory, setSellHistory] = useState([]);
+  const [loadingSellHistory, setLoadingSellHistory] = useState(false);
   const [showSerialSelector, setShowSerialSelector] = useState(false);
   const [serialViewItem, setSerialViewItem] = useState(null);
   const [stockCategory, setStockCategory] = useState('');
@@ -232,6 +235,24 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
     }
   }, [activeTab]);
 
+  const fetchSellHistory = useCallback(async () => {
+    setLoadingSellHistory(true);
+    try {
+      const data = await printerService.getFbfFbaSellOutHistory(activeTab);
+      setSellHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to fetch sell out history', err);
+      Swal.fire('Could not load sell out history', err.message || 'Please try again.', 'error');
+    } finally {
+      setLoadingSellHistory(false);
+    }
+  }, [activeTab]);
+
+  const openSellHistoryView = () => {
+    setActiveView('sell_history');
+    fetchSellHistory();
+  };
+
   const fetchModels = useCallback(async () => {
     try {
       const [modelData, stationeryData, serialData, warehouseData] = await Promise.all([
@@ -257,6 +278,10 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
     fetchStock();
     fetchModels();
   }, [fetchModels, fetchStock]);
+
+  useEffect(() => {
+    if (activeView === 'sell_history') fetchSellHistory();
+  }, [activeView, fetchSellHistory]);
 
   const resetAddForm = () => {
     setStockCategory('');
@@ -727,6 +752,92 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
       patchReturnState({ saving: false });
     }
   };
+
+  if (activeView === 'sell_history') {
+    return (
+      <div className="w-full space-y-6 pb-20 animate-in fade-in zoom-in-95 duration-300">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-black tracking-tight text-slate-950">Sell Out History — {activeTab}</h1>
+              {!loadingSellHistory && (
+                <span className="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
+                  {sellHistory.length} {sellHistory.length === 1 ? 'record' : 'records'}
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Every sell out recorded from {activeTab}, with the Order ID / Reference, amount and date entered at the time.
+            </p>
+          </div>
+          <button
+            onClick={() => setActiveView('list')}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 shadow-sm hover:bg-slate-50 transition"
+          >
+            <X size={18} />
+            Close
+          </button>
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          {loadingSellHistory ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
+              <Loader2 size={20} className="animate-spin" /> Loading sell out history...
+            </div>
+          ) : sellHistory.length === 0 ? (
+            <div className="py-16 text-center text-sm font-medium text-slate-400">
+              No sell out transactions recorded for {activeTab} yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">#</th>
+                    <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Item</th>
+                    <th className="px-4 py-3">Qty</th>
+                    <th className="px-4 py-3">Amount</th>
+                    <th className="px-4 py-3">Order ID / Reference</th>
+                    <th className="px-4 py-3">Warehouse</th>
+                    <th className="px-4 py-3">Serials</th>
+                    <th className="px-4 py-3">By</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {sellHistory.map((t, idx) => (
+                    <tr key={t.guid} className="hover:bg-slate-50/60">
+                      <td className="px-4 py-3 text-slate-400 font-medium">{idx + 1}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-slate-600">
+                        {t.transactionDate ? format(new Date(t.transactionDate), 'dd MMM yyyy') : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-slate-800">{t.itemName || 'Unknown item'}</div>
+                        {t.brand && <div className="text-xs text-slate-400">{t.brand}</div>}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-700">{t.quantity}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {t.amount !== null && t.amount !== undefined ? `₹${Number(t.amount).toLocaleString('en-IN')}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-indigo-700">{t.referenceId || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {t.warehouseName || 'No warehouse recorded'}
+                        {t.warehouseState && <span className="text-xs text-slate-400"> · {t.warehouseState}</span>}
+                      </td>
+                      <td className="px-4 py-3 text-xs font-mono text-slate-500">
+                        {t.serialNumbers?.length ? t.serialNumbers.join(', ') : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500">{t.createdBy || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (activeView === 'return_stock') {
     return (
@@ -1369,6 +1480,13 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                onClick={openSellHistoryView}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
+              >
+                <History size={18} />
+                Sell Out History
+              </button>
               <button
                 onClick={openReturnView}
                 className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"

@@ -46,6 +46,11 @@ const CORE_KEYS = [
   // same Billing/dispatch-style mismatch: without this, a role with just
   // "damage" or "orders" (no "returns") sees those permanently empty.
   { key: "returns", permission: ["returns", "damage", "orders"], fetch: () => printerService.getReturns(), transform: getReturnsArray },
+  // FBF/FBA sell-outs never create an `orders` row (see sell-out/route.js),
+  // so the top-bar search's "Sold" result had no order details to show for
+  // one — this is what fills that in (matched by serial number, see the
+  // globalSearch effect below).
+  { key: "fbfFbaSellOuts", permission: "fbfFbaManagement", fetch: () => printerService.getFbfFbaSellOutHistory(), transform: (v) => (Array.isArray(v) ? v : []) },
 ];
 
 const hasAnyPermission = (user, permission) =>
@@ -56,6 +61,7 @@ export function AppDataProvider({ children, currentUser }) {
   const [serials, setSerials] = useState([]);
   const [dispatches, setDispatches] = useState([]);
   const [returns, setReturns] = useState([]);
+  const [fbfFbaSellOuts, setFbfFbaSellOuts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [installations, setInstallations] = useState([]);
   const [installationStats, setInstallationStats] = useState(null);
@@ -64,6 +70,7 @@ export function AppDataProvider({ children, currentUser }) {
     serials: false,
     dispatches: false,
     returns: false,
+    fbfFbaSellOuts: false,
     orders: false,
     installations: false,
     installationStats: false,
@@ -77,7 +84,7 @@ export function AppDataProvider({ children, currentUser }) {
     setDataStatus((prev) => ({ ...prev, ...nextStatus }));
   }, []);
 
-  const coreSetters = { models: setModels, serials: setSerials, dispatches: setDispatches, returns: setReturns };
+  const coreSetters = { models: setModels, serials: setSerials, dispatches: setDispatches, returns: setReturns, fbfFbaSellOuts: setFbfFbaSellOuts };
 
   const loadCoreData = useCallback(async () => {
     const allowed = CORE_KEYS.filter((c) => hasAnyPermission(currentUser, c.permission));
@@ -285,6 +292,15 @@ export function AppDataProvider({ children, currentUser }) {
         .filter((r) => r.serialGuid === foundSerial.id)
         .sort((a, b) => new Date(b.returnDate) - new Date(a.returnDate))[0];
 
+      // 'Sold' with no dispatchInfo means it was sold out from FBF/FBA, not
+      // via a normal order (see sell-out/route.js) — look up the matching
+      // transaction by serial number for the Order ID / Reference entered
+      // at sell-out time, so the result isn't just a bare "Sold" with nothing else.
+      const lowerSerial = (foundSerial.serialNumber || "").toLowerCase();
+      const fbfFbaSellOutInfo = foundSerial.status === "Sold" && !dispatchInfo
+        ? fbfFbaSellOuts.find((t) => (t.serialNumbers || []).some((sn) => sn.toLowerCase() === lowerSerial))
+        : null;
+
       setSearchResult({
         serial: foundSerial.serialNumber,
         model: model?.name || "Unknown",
@@ -293,6 +309,7 @@ export function AppDataProvider({ children, currentUser }) {
         dispatch: dispatchInfo,
         cancelledDispatch: cancelledDispatchInfo,
         returnRecord: returnInfo,
+        fbfFbaSellOut: fbfFbaSellOutInfo,
         landingPrice: foundSerial.landingPrice,
       });
       setShowSearchModal(true);
@@ -313,6 +330,7 @@ export function AppDataProvider({ children, currentUser }) {
     serials,
     dispatches,
     returns,
+    fbfFbaSellOuts,
     orders,
     installations,
     installationStats,
