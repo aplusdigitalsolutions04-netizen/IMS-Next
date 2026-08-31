@@ -18,6 +18,22 @@ export const GET = withErrorHandling(async (request) => {
   const { searchParams } = new URL(request.url);
   const transactionType = searchParams.get("transactionType") || "OUT";
   const type = searchParams.get("type"); // optional FBF/FBA filter
+  const serialNumber = searchParams.get("serialNumber"); // optional — single-serial lookup (global search)
+
+  const conditions = ["t.companyGuid = ?", "t.transactionType = ?"];
+  const params = [user.companyId, transactionType];
+  if (type) {
+    conditions.push("t.type = ?");
+    params.push(type);
+  }
+  if (serialNumber) {
+    // fbf_fba_transactions.serialNumbers is stored as a genuine JSON array
+    // (see JSON_TABLE usage in return-lookup/route.js), so JSON_CONTAINS
+    // compares JSON values rather than raw strings — no collation mismatch
+    // like the one fixed in return-lookup/route.js's JSON_TABLE join.
+    conditions.push("JSON_CONTAINS(t.serialNumbers, JSON_QUOTE(?))");
+    params.push(serialNumber);
+  }
 
   const [rows] = await mysqlPool.query(
     `SELECT
@@ -33,10 +49,10 @@ export const GET = withErrorHandling(async (request) => {
      LEFT JOIN inventoryitemmaster i ON t.itemId = i.itemId
      LEFT JOIN inventorybrandmaster b ON i.brandId = b.brandId
      LEFT JOIN fbf_fba_warehouses w ON t.warehouseGuid = w.guid
-     WHERE t.companyGuid = ? AND t.transactionType = ?
-       ${type ? "AND t.type = ?" : ""}
-     ORDER BY t.transactionDate DESC, t.createdAt DESC`,
-    type ? [user.companyId, transactionType, type] : [user.companyId, transactionType]
+     WHERE ${conditions.join(" AND ")}
+     ORDER BY t.transactionDate DESC, t.createdAt DESC
+     ${serialNumber ? "LIMIT 1" : ""}`,
+    params
   );
 
   return NextResponse.json(

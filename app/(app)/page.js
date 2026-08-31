@@ -189,6 +189,7 @@ export default function DashboardPage() {
   const [loadingStationery, setLoadingStationery] = useState(true);
   const [todayStockIn, setTodayStockIn] = useState(0);
   const [fyFilter, setFyFilter] = useState(String(getCurrentFYStartYear()));
+  const [stockAvailableSummary, setStockAvailableSummary] = useState(null);
   const [selectedSalesMonth, setSelectedSalesMonth] = useState(null); // {year, monthIndex, label} — drill-down for the Sales chart
 
   const fyOptions = buildFYOptions();
@@ -245,6 +246,17 @@ export default function DashboardPage() {
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayFilter, customStart, customEnd]);
+
+  // Serialized + non-serialized available stock, for any role that can see
+  // the dashboard's "Stock Available" card — not just roles with the
+  // "Serials" permission (see app/api/dashboard/stock-summary/route.js).
+  useEffect(() => {
+    printerService
+      .getStockSummary({ fyStart: fyStart.toISOString(), fyEnd: fyEnd.toISOString() })
+      .then((res) => setStockAvailableSummary(res))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fyFilter, activeCompany?.guid]);
 
   /* ================= CALCULATIONS ================= */
   const LOW_STOCK_THRESHOLD = 3;
@@ -380,7 +392,9 @@ export default function DashboardPage() {
     return !Number.isNaN(d.getTime()) && d >= fyStart && d <= fyEnd;
   };
 
-  const totalStockAvailable = serials.filter((s) => s.status === "Available" && inFY(s.createdAt)).length;
+  // Falls back to the serials-only count (what's already loaded client-side)
+  // until the dedicated summary fetch above resolves, or if it fails.
+  const totalStockAvailable = stockAvailableSummary?.total ?? serials.filter((s) => s.status === "Available" && inFY(s.createdAt)).length;
 
   const fyActiveDispatches = dispatches.filter((d) => !d.isDeleted && inFY(d.dispatchDate || d.createdAt));
 
@@ -641,7 +655,7 @@ export default function DashboardPage() {
 
       {(showOpsCards || showFinanceCards) && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {showOpsCards && (
+          {(showOpsCards || showFinanceCards) && (
             <div
               onClick={() => onNavigate("currentStock")}
               className="group relative bg-white rounded-xl px-3 py-2.5 border border-slate-200/60 shadow-sm hover:shadow-md hover:shadow-teal-500/10 transition-all cursor-pointer overflow-hidden flex items-center gap-3"
@@ -650,7 +664,7 @@ export default function DashboardPage() {
                 <Package size={14} className="text-white" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Stock Available · {fyLabel}</p>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Stock Available · Current</p>
                 <h3 className="text-lg font-extrabold text-slate-800 leading-tight">{totalStockAvailable}</h3>
               </div>
               <ArrowUpRight size={13} className="text-slate-300 group-hover:text-teal-500 shrink-0 transition-all" />
