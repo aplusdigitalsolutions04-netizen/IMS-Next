@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import Swal from "sweetalert2";
-import axios from "axios";
 import {
   PackagePlus, Search, Store, FileText, Trash2, Edit2, Edit,
   Settings, Save, Loader2, ListOrdered, CheckCircle2, Upload, FileDown, Filter, X, Lock
@@ -1122,8 +1121,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
                        const formData = new FormData();
                        formData.append("file", file);
                        try {
-                         const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
-                         const res = await axios.post(`${apiBase}/Inventory/UploadInvoice`, formData, { headers: { Authorization: `Bearer ${sessionStorage.getItem("token")}` } });
+                         const res = await legacyApi.post(`/Inventory/UploadInvoice`, formData);
                          setInvoiceFile(res.data.filePath);
                          Swal.fire("Success", "Invoice attached successfully", "success");
                          // Trigger an autosave if we have enough header info

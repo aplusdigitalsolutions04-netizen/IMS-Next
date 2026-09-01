@@ -188,6 +188,14 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
   });
   const [finishing, setFinishing] = useState(false);
 
+  // Existing variants under the chosen item — lets the user combine this
+  // contract row into a variant that's already there (e.g. same printer
+  // model listed slightly differently) instead of creating a duplicate.
+  const [existingVariants, setExistingVariants] = useState([]);
+  const [loadingVariants, setLoadingVariants] = useState(false);
+  const [selectedVariant, setSelectedVariant] = useState(null);
+  const [newVariantName, setNewVariantName] = useState(product?.productName || "");
+
   const loadAll = async () => {
     setLoading(true);
     try {
@@ -287,12 +295,40 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
+  const loadVariantsForItem = async (item) => {
+    setLoadingVariants(true);
+    try {
+      const res = await legacyApi.get("/Inventory/GetItemVariantList", {
+        params: { itemId: item.itemId, page: 1, limit: 200 },
+      });
+      setExistingVariants(res.data?.data || []);
+    } catch (err) {
+      console.error("Failed to load variants for item:", err);
+      setExistingVariants([]);
+    } finally {
+      setLoadingVariants(false);
+    }
+  };
+
+  const handleSelectExistingItem = (it) => {
+    setExistingItem(it);
+    setSelectedVariant(null);
+    setExistingVariants([]);
+    loadVariantsForItem(it);
+  };
+
   const finishAsVariant = async () => {
     if (!existingItem) return;
+    // Combine into an already-existing variant instead of creating a duplicate.
+    if (selectedVariant) {
+      onLinked(selectedVariant.itemVariantId);
+      return;
+    }
+    if (!newVariantName.trim()) return;
     setFinishing(true);
     try {
       const res = await legacyApi.post("/Inventory/SaveOrUpdateItemVariant", {
-        ItemVariantId: "", ItemId: existingItem.itemId, VariantCode: product.productName,
+        ItemVariantId: "", ItemId: existingItem.itemId, VariantCode: newVariantName.trim(),
       });
       onLinked(res.data.itemVariantId);
     } catch (err) {
@@ -476,7 +512,7 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
                             return (
                               <button
                                 key={it.itemId}
-                                onClick={() => setExistingItem(it)}
+                                onClick={() => handleSelectExistingItem(it)}
                                 className={`relative text-left px-3.5 py-3 rounded-xl text-sm font-bold border-2 transition-all ${
                                   isSelected
                                     ? "bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100"
@@ -490,16 +526,72 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
                           })}
                         </div>
                       )}
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 mb-4">
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">New variant name</span>
-                        <p className="text-sm font-black text-slate-700">{product?.productName}</p>
-                      </div>
+
+                      {existingItem && (
+                        <>
+                          {loadingVariants && (
+                            <p className="text-xs text-slate-400 font-semibold flex items-center gap-1.5 mb-4">
+                              <Loader2 className="animate-spin" size={13} /> Loading existing variants…
+                            </p>
+                          )}
+
+                          {!loadingVariants && existingVariants.length > 0 && (
+                            <div className="mb-4">
+                              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
+                                Combine with an existing variant (avoids a duplicate model)
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                {existingVariants.map((v) => {
+                                  const isSelected = selectedVariant?.itemVariantId === v.itemVariantId;
+                                  return (
+                                    <button
+                                      key={v.itemVariantId}
+                                      onClick={() => setSelectedVariant(isSelected ? null : v)}
+                                      className={`relative text-left px-3.5 py-3 rounded-xl text-sm font-bold border-2 transition-all ${
+                                        isSelected
+                                          ? "bg-emerald-600 border-emerald-600 text-white shadow-md shadow-emerald-100"
+                                          : "bg-white border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-emerald-50/50"
+                                      }`}
+                                    >
+                                      {v.variantCode}
+                                      {isSelected && <CheckCircle2 size={15} className="absolute top-2 right-2" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {!selectedVariant && (
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 mb-4">
+                              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">
+                                Or create a new variant — name
+                              </label>
+                              <input
+                                value={newVariantName}
+                                onChange={(e) => setNewVariantName(e.target.value)}
+                                placeholder="Variant name"
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 transition-all"
+                              />
+                            </div>
+                          )}
+
+                          {selectedVariant && (
+                            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mb-4">
+                              <span className="text-xs font-bold text-emerald-700 uppercase tracking-wide">Combining into</span>
+                              <p className="text-sm font-black text-emerald-800">{selectedVariant.variantCode}</p>
+                            </div>
+                          )}
+                        </>
+                      )}
+
                       <button
                         onClick={finishAsVariant}
-                        disabled={!existingItem || finishing}
+                        disabled={!existingItem || finishing || (!selectedVariant && !newVariantName.trim())}
                         className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 shadow-md shadow-emerald-100 transition-all"
                       >
-                        {finishing ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />} Create Variant &amp; Link
+                        {finishing ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                        {selectedVariant ? "Link to Existing Variant" : "Create Variant & Link"}
                       </button>
                     </div>
                   )}

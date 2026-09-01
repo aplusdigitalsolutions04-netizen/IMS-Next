@@ -54,7 +54,7 @@ export default function NotificationPanel() {
   // few worker processes/threads Passenger-based shared hosting gives this
   // app, and every other request queues behind it and hangs.
   useEffect(() => {
-    const POLL_INTERVAL = 25000;
+    const POLL_INTERVAL = 4000;
     const interval = setInterval(() => {
       if (!document.hidden) fetchNotifications();
     }, POLL_INTERVAL);

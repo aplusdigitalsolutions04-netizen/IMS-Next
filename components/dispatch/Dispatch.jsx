@@ -204,11 +204,11 @@ export default function Dispatch({
     setAppearanceModalOpen(true);
   };
 
-  const isDeliveredLogisticsLocked = Array.isArray(logisticsBatch)
-    && logisticsBatch.length > 0
-    && logisticsBatch.every(
-      (item) => String(item?.logisticsStatus || "").trim() === "Delivered"
-    );
+  // Previously froze every logistics field (courier, dates, charges,
+  // tracking, packaging) once an order hit "Delivered", saving only the
+  // status itself on any further edit — left no way to correct a wrong
+  // Courier Partner (or anything else) after the fact. Unlocked per request.
+  const isDeliveredLogisticsLocked = false;
 
   const getDetails = useCallback((id, item = null) => {
     if (item && item.serialValue) {
@@ -1234,28 +1234,6 @@ export default function Dispatch({
                   />
                 </div>
               </div>
-              {isDelhiveryCourier && !logisticsForm.trackingId && !isDeliveredLogisticsLocked && (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Shipment Type</label>
-                  <div className="inline-flex rounded-xl border border-slate-200 overflow-hidden">
-                    {["B2C", "B2B"].map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => setLogisticsForm({ ...logisticsForm, shipmentMode: mode })}
-                        className={`px-4 py-1.5 text-xs font-bold transition ${
-                          logisticsForm.shipmentMode === mode ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
-                        }`}
-                      >
-                        {mode === "B2C" ? "B2C (Express)" : "B2B (LTL Freight)"}
-                      </button>
-                    ))}
-                  </div>
-                  {logisticsForm.shipmentMode === "B2B" && (
-                    <p className="text-[11px] text-amber-600 mt-1">B2B shipment creation isn&apos;t connected yet — needs Delhivery&apos;s B2B waybill API details.</p>
-                  )}
-                </div>
-              )}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
                   Tracking ID {isPorterCourier && <span className="text-slate-400 normal-case font-medium">(Optional)</span>}

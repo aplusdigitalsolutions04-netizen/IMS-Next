@@ -186,10 +186,21 @@ export function AppDataProvider({ children, currentUser }) {
     };
   }, []);
 
-  const POLL_INTERVAL = 25000;
+  const POLL_INTERVAL = 4000;
+  // Minimum gap enforced between two ticks — guards against the burst that
+  // "visibilitychange" would otherwise cause: opening/closing a native
+  // <input type="file"> picker (e.g. Stock In's invoice upload) toggles tab
+  // visibility in most desktop browsers, so onVisible below fires right on
+  // top of whatever request the user's own action just triggered. On
+  // Passenger's limited worker pool a resulting burst of concurrent
+  // requests risks one of them transiently 401ing — and the response
+  // interceptor treats any single 401 as "session over" and force-logs-out,
+  // even though it was just this passive background refresh.
+  const lastTickRef = useRef(0);
 
   const pollTick = useCallback(async () => {
     if (typeof document !== "undefined" && document.hidden) return;
+    lastTickRef.current = Date.now();
     await loadCoreData();
     if (dataStatusRef.current.orders) await loadOrdersData();
     if (dataStatusRef.current.installations || dataStatusRef.current.installationStats) await loadInstallationData();
@@ -200,7 +211,9 @@ export function AppDataProvider({ children, currentUser }) {
   useEffect(() => {
     const interval = setInterval(pollTick, POLL_INTERVAL);
     const onVisible = () => {
-      if (!document.hidden) pollTick();
+      if (document.hidden) return;
+      if (Date.now() - lastTickRef.current < POLL_INTERVAL / 2) return;
+      pollTick();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
