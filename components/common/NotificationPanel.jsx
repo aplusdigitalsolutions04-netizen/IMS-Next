@@ -3,8 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Package, Receipt, Truck, Clock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import api, { API_URL } from "@/lib/client/apiClient";
-import { getStoredToken } from "@/lib/client/auth";
+import api from "@/lib/client/apiClient";
 
 const parseOrderId = (text) => {
   if (!text) return null;
@@ -18,11 +17,25 @@ export default function NotificationPanel() {
   const [unreadCount, setUnreadCount] = useState(0);
   const panelRef = useRef(null);
   const router = useRouter();
+  // Tracks guids already seen so a poll tick can tell which notifications
+  // are genuinely new (to fire a desktop Notification) vs. just a refetch
+  // of the same list. null until the first fetch completes.
+  const seenGuidsRef = useRef(null);
 
   async function fetchNotifications() {
     try {
       const { data } = await api.get("/notifications?limit=50");
-      setNotifications(data.notifications || []);
+      const list = data.notifications || [];
+
+      if (seenGuidsRef.current) {
+        const newOnes = list.filter((n) => !n.isRead && !seenGuidsRef.current.has(n.guid));
+        if (newOnes.length && typeof Notification !== "undefined" && Notification.permission === "granted") {
+          newOnes.forEach((n) => new Notification(n.title, { body: n.message }));
+        }
+      }
+      seenGuidsRef.current = new Set(list.map((n) => n.guid));
+
+      setNotifications(list);
       setUnreadCount(data.unreadCount || 0);
     } catch (err) {
       console.error("Failed to fetch notifications:", err);
@@ -36,54 +49,22 @@ export default function NotificationPanel() {
     return () => window.removeEventListener("notificationsUpdated", handleSync);
   }, []);
 
-  // Real-time — a dedicated SSE connection for notifications (separate from
-  // AppDataContext's models/serials/dispatches/returns stream).
+  // Polling instead of a dedicated SSE connection — see AppDataContext.jsx's
+  // pollTick for why: a permanently-open connection per tab pins one of the
+  // few worker processes/threads Passenger-based shared hosting gives this
+  // app, and every other request queues behind it and hangs.
   useEffect(() => {
-    let evtSource = null;
-    let retryTimer = null;
-    let retryDelay = 5000;
-    let stopped = false;
-
-    function connect() {
-      const token = getStoredToken();
-      if (!token || stopped) return;
-
-      evtSource = new EventSource(`${API_URL}/notifications/stream?token=${token}`);
-
-      evtSource.onmessage = (event) => {
-        if (!event.data) return; // heartbeat
-        retryDelay = 5000;
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === "NEW_NOTIFICATION") {
-            const newNotif = data.payload;
-            setNotifications((prev) => [newNotif, ...prev]);
-            setUnreadCount((prev) => prev + 1);
-            window.dispatchEvent(new Event("notificationsUpdated"));
-            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-              new Notification(newNotif.title, { body: newNotif.message });
-            }
-          }
-        } catch {
-          // ignore malformed event
-        }
-      };
-
-      evtSource.onerror = () => {
-        evtSource?.close();
-        evtSource = null;
-        if (stopped) return;
-        retryDelay = Math.min(retryDelay * 2, 60000);
-        retryTimer = setTimeout(connect, retryDelay);
-      };
-    }
-
-    connect();
-
+    const POLL_INTERVAL = 25000;
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchNotifications();
+    }, POLL_INTERVAL);
+    const onVisible = () => {
+      if (!document.hidden) fetchNotifications();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
-      stopped = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      evtSource?.close();
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 

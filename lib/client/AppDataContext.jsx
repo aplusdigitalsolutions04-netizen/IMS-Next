@@ -2,8 +2,6 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { printerService } from "@/lib/services/api";
-import api, { API_URL } from "@/lib/client/apiClient";
-import { getStoredToken } from "@/lib/client/auth";
 import { hasPermission } from "@/lib/client/rbac";
 
 // Fallback used until the real value loads (and if the request ever fails)
@@ -168,12 +166,13 @@ export function AppDataProvider({ children, currentUser }) {
     [dataStatus.orders, dataStatus.installations, dataStatus.installationStats, loadCoreData, loadOrdersData, loadInstallationData]
   );
 
-  // Real-time sync — a single app-wide SSE connection (opened once here,
-  // since AppDataProvider wraps every page and isn't remounted on
-  // navigation) that keeps every open tab in sync whenever any user in the
-  // same company adds/edits/deletes models, serials, dispatches, returns,
-  // orders, etc. Other features (e.g. Contracts) that don't live in this
-  // context can still piggyback on the same connection via subscribeRealtime.
+  // Real-time-ish sync — polling instead of a persistent SSE connection.
+  // A permanently-open EventSource per browser tab used to keep every tab in
+  // sync live, but on Passenger-based shared hosting (limited worker
+  // processes/threads per app) every open tab pins one of those few workers
+  // forever — new requests from any user then queue behind them and hang.
+  // Polling avoids holding a connection open, at the cost of a shorter delay
+  // (POLL_INTERVAL) before other tabs see a change instead of instant push.
   const realtimeSubscribers = useRef(new Map()); // Map<entity, Set<callback>>
   const dataStatusRef = useRef(dataStatus);
   dataStatusRef.current = dataStatus;
@@ -187,60 +186,28 @@ export function AppDataProvider({ children, currentUser }) {
     };
   }, []);
 
+  const POLL_INTERVAL = 25000;
+
+  const pollTick = useCallback(async () => {
+    if (typeof document !== "undefined" && document.hidden) return;
+    await loadCoreData();
+    if (dataStatusRef.current.orders) await loadOrdersData();
+    if (dataStatusRef.current.installations || dataStatusRef.current.installationStats) await loadInstallationData();
+
+    realtimeSubscribers.current.forEach((set) => set.forEach((cb) => cb()));
+  }, [loadCoreData, loadOrdersData, loadInstallationData]);
+
   useEffect(() => {
-    let evtSource = null;
-    let retryTimer = null;
-    let retryDelay = 5000;
-    let stopped = false;
-
-    const CORE_ENTITIES = new Set(["models", "serials", "dispatches", "returns"]);
-
-    function connect() {
-      const token = getStoredToken();
-      if (!token || stopped) return;
-
-      evtSource = new EventSource(`${API_URL}/realtime/stream?token=${token}`);
-
-      evtSource.onmessage = (event) => {
-        if (!event.data) return; // heartbeat
-        retryDelay = 5000;
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type !== "DATA_CHANGED") return;
-
-          if (CORE_ENTITIES.has(data.entity)) {
-            loadCoreData();
-          } else if (data.entity === "orders" && dataStatusRef.current.orders) {
-            loadOrdersData();
-          } else if (data.entity === "installations" && (dataStatusRef.current.installations || dataStatusRef.current.installationStats)) {
-            loadInstallationData();
-          }
-
-          const set = realtimeSubscribers.current.get(data.entity);
-          if (set) set.forEach((cb) => cb());
-        } catch {
-          // ignore malformed event
-        }
-      };
-
-      evtSource.onerror = () => {
-        evtSource?.close();
-        evtSource = null;
-        if (stopped) return;
-        retryDelay = Math.min(retryDelay * 2, 60000);
-        retryTimer = setTimeout(connect, retryDelay);
-      };
-    }
-
-    connect();
-
-    return () => {
-      stopped = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      evtSource?.close();
+    const interval = setInterval(pollTick, POLL_INTERVAL);
+    const onVisible = () => {
+      if (!document.hidden) pollTick();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [pollTick]);
 
   useEffect(() => {
     const query = globalSearch;
