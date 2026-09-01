@@ -393,11 +393,16 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
   const selectAllCols = () => setVisibleCols(new Set([...TOGGLABLE_COLUMNS, ...CANCEL_COLUMNS].map((c) => c.key)));
   const clearAllCols = () => setVisibleCols(new Set());
 
-  const loadContracts = async () => {
-    setLoading(true);
+  // `silent` skips the full-table spinner — used for the background poll
+  // refresh (every few seconds via subscribeRealtime) so an unchanged list
+  // doesn't visibly blank out and "flicker" on its own; the spinner still
+  // shows for the real initial load and company switches below, where
+  // there's genuinely nothing on screen yet.
+  const loadContracts = async (silent = false) => {
+    if (!silent) setLoading(true);
     const data = await contractsService.getContracts();
     setContracts(Array.isArray(data) ? data : []);
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   useEffect(() => {
@@ -410,7 +415,7 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
   // this stays in sync with every other user in the same company the same
   // way models/serials/dispatches/returns do everywhere else in the app.
   useEffect(() => {
-    return subscribeRealtime("contracts", loadContracts);
+    return subscribeRealtime("contracts", () => loadContracts(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
