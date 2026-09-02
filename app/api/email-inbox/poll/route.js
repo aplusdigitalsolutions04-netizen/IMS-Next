@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest, requirePermission } from "@/lib/auth";
+import { authenticateRequest, requirePermission, isSuperUser } from "@/lib/auth";
+import { normalizeRole } from "@/lib/helpers";
 import { pollAllInboxes } from "@/lib/imapReader";
 import { withErrorHandling } from "@/lib/apiResponse";
 
@@ -14,6 +15,7 @@ export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requirePermission(user, "emailInbox", "Only Admin can poll the email inbox.");
 
-  const results = await pollAllInboxes();
+  const isAdmin = isSuperUser(normalizeRole(user.role));
+  const results = await pollAllInboxes(isAdmin ? null : user.id);
   return NextResponse.json({ message: "Poll complete", results });
 });

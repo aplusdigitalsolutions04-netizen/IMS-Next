@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, ApiError } from "@/lib/auth";
+import { authenticateRequest, ApiError, isSuperUser } from "@/lib/auth";
 import { authorizeWarranty } from "@/lib/warrantyAuth";
+import { normalizeRole } from "@/lib/helpers";
 import { sendWarrantyEmail } from "@/lib/mailer";
 import { logUserActivity } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
@@ -10,9 +11,16 @@ import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
   const user = await authenticateRequest(request);
-  authorizeWarranty(user, "POST");
+  // The Order Tracking compose flow needs "warranty"; the standalone
+  // Compose (Settings > Email Inbox, no order involved) only makes sense
+  // for someone who can already see a specific account's Inbox/Sent, so
+  // accept that instead of forcing them to also hold "warranty".
+  const canSendFromInbox = user.permissions?.includes("emailAccounts") || user.permissions?.includes("emailInbox");
+  if (!isSuperUser(normalizeRole(user.role)) && !canSendFromInbox) {
+    authorizeWarranty(user, "POST");
+  }
 
-  const { to, cc, bcc, subject, body: emailBody, attachments, accountGuid, purpose } = body;
+  const { to, cc, bcc, subject, body: emailBody, bodyHtml, attachments, accountGuid, purpose } = body;
   if (!to) throw new ApiError(400, '"To" email is required');
   if (!subject) throw new ApiError(400, "Subject is required");
   const validEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s).trim());
@@ -24,7 +32,7 @@ export const POST = withErrorHandling(async (request) => {
     // `purpose` comes from whichever template the user picked in the compose
     // flow — that decides which connected email account the send resolves
     // to (falls back to "warranty" for older callers that don't send it).
-    await sendWarrantyEmail({ companyGuid: user.companyId, purpose: purpose || "warranty", accountGuid, to, cc, bcc, subject, body: emailBody, attachments });
+    await sendWarrantyEmail({ companyGuid: user.companyId, purpose: purpose || "warranty", accountGuid, to, cc, bcc, subject, body: emailBody, bodyHtml, attachments });
   } catch (err) {
     console.error("[warranty] POST /send-email:", err);
     throw new ApiError(500, err.message || "Failed to send email");

@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import { FileText, Plus, Pencil, Trash2, X, Loader2, Save, Eye, EyeOff } from "lucide-react";
+import { FileText, Plus, Pencil, Trash2, X, Loader2, Save, Eye, EyeOff, Tags, Lock } from "lucide-react";
 import Swal from "sweetalert2";
 import api from "@/lib/client/apiClient";
 
@@ -27,7 +27,10 @@ const KNOWN_VARIABLES = [
   { name: "ORDER_ID", desc: "Order number" },
   { name: "INVOICE_NUMBER", desc: "Invoice number" },
   { name: "GEM_NUMBER", desc: "GeM/order/bid number" },
-  { name: "ADDRESS", desc: "Shipping address" },
+  { name: "ADDRESS", desc: "Shipping/billing/buyer address, whichever is set" },
+  { name: "SHIPPING_ADDRESS", desc: "Shipping address only" },
+  { name: "BILLING_ADDRESS", desc: "Billing address only" },
+  { name: "BUYER_ADDRESS", desc: "Buyer address only" },
   { name: "CONTACT_NUMBER", desc: "Customer phone number" },
   { name: "PRODUCT_NAME", desc: "Model/product name" },
   { name: "SERIAL_NUMBER", desc: "One serial number" },
@@ -41,6 +44,28 @@ const KNOWN_VARIABLES = [
   { name: "GST_NUMBER", desc: "Buyer GST number" },
   { name: "COMPANY_NAME", desc: "Your company name" },
   { name: "CERT_NUMBER", desc: "Auto-generated certificate number" },
+  // The rest of what the order's own detail view shows.
+  { name: "PLATFORM", desc: "Order platform (GeM, Amazon, ...)" },
+  { name: "ORDER_STATUS", desc: "Order status" },
+  { name: "GEM_ORDER_TYPE", desc: "GeM order type" },
+  { name: "BUYER_EMAIL", desc: "Buyer email" },
+  { name: "CONSIGNEE_EMAIL", desc: "Consignee email" },
+  { name: "PAYMENT_AUTHORITY_EMAIL", desc: "Payment authority email" },
+  { name: "ALT_CONTACT_NUMBER", desc: "Alternate contact number" },
+  { name: "INVOICE_DATE", desc: "Invoice date" },
+  { name: "GSTIN", desc: "Buyer GSTIN" },
+  { name: "EWAY_BILL_NUMBER", desc: "E-way bill number" },
+  { name: "FREIGHT_CHARGES", desc: "Freight charges" },
+  { name: "PACKAGING_COST", desc: "Packaging cost" },
+  { name: "COMMISSION", desc: "Commission" },
+  { name: "ORDER_REMARKS", desc: "Order-level remarks" },
+  { name: "ITEM_REMARKS", desc: "Item-level remarks" },
+  { name: "COURIER_PARTNER", desc: "Courier partner" },
+  { name: "TRACKING_ID", desc: "Tracking ID" },
+  { name: "LOGISTICS_STATUS", desc: "Logistics status" },
+  { name: "LOGISTICS_DISPATCH_DATE", desc: "Logistics dispatch date" },
+  { name: "LAST_DELIVERY_DATE", desc: "Last delivery date" },
+  { name: "WARRANTY_START_DATE", desc: "Warranty start date" },
 ];
 
 function insertAtCursor(ref, text) {
@@ -61,8 +86,10 @@ export default function EmailTemplates() {
   const [templates, setTemplates] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [purposes, setPurposes] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showPurposes, setShowPurposes] = useState(false);
   const [preview, setPreview] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -79,10 +106,14 @@ export default function EmailTemplates() {
       // — a role with just Email Templates access legitimately can't call
       // it. allSettled + a per-call fallback keeps templates/purposes
       // loading even when that one 403s, instead of failing the whole page.
-      const [tplRes, compRes, purpRes] = await Promise.allSettled([
+      // /email-accounts needs the "emailAccounts" permission too — a role
+      // with just Email Templates access may not have it, same reasoning
+      // as /companies above.
+      const [tplRes, compRes, purpRes, acctRes] = await Promise.allSettled([
         api.get("/email-templates"),
         api.get("/companies"),
         api.get("/email-purposes"),
+        api.get("/email-accounts"),
       ]);
       if (tplRes.status === "fulfilled") setTemplates(tplRes.value.data?.data || []);
       else console.error("Failed to load email templates:", tplRes.reason);
@@ -90,6 +121,8 @@ export default function EmailTemplates() {
       else setCompanies([]);
       if (purpRes.status === "fulfilled") setPurposes(purpRes.value.data?.data || []);
       else console.error("Failed to load email purposes:", purpRes.reason);
+      if (acctRes.status === "fulfilled") setAccounts(acctRes.value.data?.data || []);
+      else setAccounts([]);
     } finally {
       setLoading(false);
     }
@@ -181,6 +214,25 @@ export default function EmailTemplates() {
 
   const purposeLabel = (key) => purposes.find((p) => p.purposeKey === key)?.label || key;
 
+  // Mirrors lib/mailer.js's resolveEmailAccount priority order — this
+  // template's own purpose/company don't pick a webmail directly, they
+  // just narrow down which Email Account gets used to actually send it.
+  // Surfacing that match here (instead of it only being visible once an
+  // email actually goes out) also catches the case where more than one
+  // account shares a purpose — the sender only ever sees one of them, and
+  // that ambiguity used to be invisible until now.
+  const resolveAccountsFor = (purpose, companyGuid) => {
+    const active = accounts.filter((a) => a.isActive);
+    const exact = active.filter((a) => (a.companyGuid || "") === (companyGuid || "") && a.purpose === purpose);
+    if (exact.length) return exact;
+    const companyGeneral = active.filter((a) => (a.companyGuid || "") === (companyGuid || "") && a.purpose === "general");
+    if (companyGeneral.length) return companyGeneral;
+    const globalMatch = active.filter((a) => !a.companyGuid && a.purpose === purpose);
+    if (globalMatch.length) return globalMatch;
+    const globalGeneral = active.filter((a) => !a.companyGuid && a.purpose === "general");
+    return globalGeneral;
+  };
+
   const SAMPLE_DATA = {
     CUSTOMER_NAME: "Ministry of Finance",
     ORDER_ID: "GEMC-511687780612696",
@@ -202,12 +254,20 @@ export default function EmailTemplates() {
             Subject &amp; body templates per company and purpose, with {"{{PLACEHOLDER}}"} substitution — used automatically when a feature sends that purpose's email.
           </p>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={() => setShowPurposes(true)}
+          className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2"
+        >
+          <Tags size={16} /> Manage Purposes
+        </button>
         <button
           onClick={openNew}
-          className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 shadow-md shadow-indigo-100 shrink-0"
+          className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 shadow-md shadow-indigo-100"
         >
           <Plus size={16} /> New Template
         </button>
+        </div>
       </div>
 
       {loading ? (
@@ -264,7 +324,7 @@ export default function EmailTemplates() {
 
       {showForm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
               <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
                 <FileText size={18} className="text-indigo-600" /> {form.guid ? "Edit" : "New"} Email Template
@@ -288,7 +348,7 @@ export default function EmailTemplates() {
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
                     Click to insert into Subject/Body at your cursor — auto-filled from the order when sent
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
                     {KNOWN_VARIABLES.map((v) => (
                       <button
                         key={v.name}
@@ -362,6 +422,31 @@ export default function EmailTemplates() {
                   </select>
                 </div>
               </div>
+
+              {(() => {
+                const matches = resolveAccountsFor(form.purpose, form.companyGuid);
+                if (matches.length === 0) {
+                  return (
+                    <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                      No connected webmail matches this Purpose/Company — this template can&apos;t actually send until one does. Add or adjust one under Email Accounts.
+                    </div>
+                  );
+                }
+                if (matches.length > 1) {
+                  return (
+                    <div className="flex items-start gap-2 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                      <span>
+                        Multiple webmails match — the send will pick just one of these unpredictably: {matches.map((a) => a.accountName).join(", ")}.
+                      </span>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                    Sends from <span className="font-bold text-slate-700">{matches[0].accountName}</span> ({matches[0].fromEmail})
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Email Subject</label>
@@ -441,6 +526,118 @@ export default function EmailTemplates() {
           </div>
         </div>
       )}
+
+      {showPurposes && (
+        <ManagePurposesModal purposes={purposes} onClose={() => setShowPurposes(false)} onChanged={load} />
+      )}
+    </div>
+  );
+}
+
+function ManagePurposesModal({ purposes, onClose, onChanged }) {
+  const [label, setLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleAdd = async () => {
+    if (!label.trim()) return;
+    setSaving(true);
+    try {
+      await api.post("/email-purposes", { purposeKey: label.trim(), label: label.trim() });
+      setLabel("");
+      await onChanged();
+    } catch (err) {
+      Swal.fire("Error", err?.response?.data?.message || "Failed to add purpose", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleActive = async (p) => {
+    try {
+      await api.put(`/email-purposes/${p.guid}`, { label: p.label, isActive: !p.isActive });
+      await onChanged();
+    } catch (err) {
+      Swal.fire("Error", err?.response?.data?.message || "Failed to update purpose", "error");
+    }
+  };
+
+  const handleDelete = async (p) => {
+    const confirm = await Swal.fire({
+      title: `Delete "${p.label}"?`,
+      text: "This cannot be undone.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+    });
+    if (!confirm.isConfirmed) return;
+    try {
+      await api.delete(`/email-purposes/${p.guid}`);
+      await onChanged();
+    } catch (err) {
+      Swal.fire("Error", err?.response?.data?.message || "Failed to delete purpose", "error");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
+          <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+            <Tags size={18} className="text-indigo-600" /> Manage Purposes
+          </h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-5 overflow-y-auto space-y-3">
+          <div className="flex gap-2">
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. Installation, Returns, OTP"
+              className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
+            />
+            <button
+              onClick={handleAdd}
+              disabled={saving || !label.trim()}
+              className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-1.5"
+            >
+              {saving ? <Loader2 className="animate-spin" size={14} /> : <Plus size={14} />} Add
+            </button>
+          </div>
+
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {purposes.map((p) => (
+              <div key={p.guid} className="flex items-center justify-between px-3 py-2 rounded-xl border border-slate-100 bg-slate-50">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-slate-700">{p.label}</span>
+                  {p.isSystem && (
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400 bg-white border border-slate-200 rounded-full px-1.5 py-0.5">
+                      <Lock size={9} /> system
+                    </span>
+                  )}
+                  {!p.isActive && (
+                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-1.5 py-0.5">inactive</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {!p.isSystem && (
+                    <button onClick={() => toggleActive(p)} className="text-xs font-bold text-indigo-600 hover:text-indigo-800">
+                      {p.isActive ? "Deactivate" : "Activate"}
+                    </button>
+                  )}
+                  {!p.isSystem && (
+                    <button onClick={() => handleDelete(p)} className="text-rose-500 hover:text-rose-700">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

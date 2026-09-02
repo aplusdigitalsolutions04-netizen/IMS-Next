@@ -16,17 +16,21 @@ export const GET = withErrorHandling(async (request, { params }) => {
     SELECT
       o.guid AS orderGuid, o.orderid AS orderNumber,
       o.orderDate, o.dispatchDate,
-      o.platform, o.gemOrderType, o.bidNumber,
+      o.platform, o.gemOrderType, o.bidNumber, o.status,
       o.customerName AS customer, o.consigneeName,
       o.buyerEmail, o.consigneeEmail, o.paymentAuthorityEmail,
       o.shippingAddress, o.address, o.buyerAddress,
       o.contactNumber, o.altContactNumber,
-      o.invoiceNumber, o.gstNumber,
-      oi.sellingPrice, oi.warranty, oi.quantity,
+      o.invoiceNumber, o.invoiceDate, o.gstNumber, o.gstin,
+      o.ewayBillNumber, o.freightCharges, o.packagingCost, o.commission,
+      o.remarks AS orderRemarks,
+      ol.courierPartner, ol.trackingId, ol.logisticsStatus, ol.logisticsDispatchDate, ol.lastDeliveryDate,
+      oi.sellingPrice, oi.warranty, oi.quantity, oi.remarks AS itemRemarks, oi.warrantyStartDate,
       s.serialNumber AS serialValue,
       fbiv.variantName AS modelName, fbbm.brandName AS companyName
     FROM orders o
     LEFT JOIN order_items oi ON oi.orderGuid = o.guid AND oi.companyGuid = o.companyGuid
+    LEFT JOIN order_logistics ol ON ol.orderGuid = o.guid AND ol.companyGuid = o.companyGuid
     LEFT JOIN inventorystockinserial s ON oi.serialNumberGuid = s.guid AND s.companyGuid = o.companyGuid
     LEFT JOIN inventoryitemvariant fbiv ON s.itemVariantId = fbiv.itemVariantId AND fbiv.companyGuid = o.companyGuid
     LEFT JOIN inventoryitemmaster fbim ON fbiv.itemId = fbim.itemId AND fbim.companyGuid = o.companyGuid
@@ -95,6 +99,9 @@ export const GET = withErrorHandling(async (request, { params }) => {
     "{{CUSTOMER_NAME}}": order.customer || order.consigneeName || "",
     "{{CONSIGNEE_NAME}}": order.consigneeName || order.customer || "",
     "{{ADDRESS}}": (order.shippingAddress || order.address || order.buyerAddress || "").replace(/\n/g, " "),
+    "{{SHIPPING_ADDRESS}}": (order.shippingAddress || "").replace(/\n/g, " "),
+    "{{BILLING_ADDRESS}}": (order.address || "").replace(/\n/g, " "),
+    "{{BUYER_ADDRESS}}": (order.buyerAddress || "").replace(/\n/g, " "),
     "{{CONTACT_NUMBER}}": order.contactNumber || "",
     "{{MODEL_NAME}}": order.modelName || "",
     "{{SERIAL_NUMBER}}": order.serialValue || "",
@@ -112,6 +119,32 @@ export const GET = withErrorHandling(async (request, { params }) => {
     "{{ORDER_ID}}": String(order.orderNumber || ""),
     "{{PRODUCT_NAME}}": order.modelName || "",
     "{{AMOUNT}}": order.sellingPrice != null ? Number(order.sellingPrice).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "",
+
+    // The rest of what the order's own detail view shows, not just the
+    // warranty-certificate subset above — requested so any template can
+    // pull in whatever field it needs instead of being limited to the
+    // fixed warranty set.
+    "{{PLATFORM}}": order.platform || "",
+    "{{ORDER_STATUS}}": order.status || "",
+    "{{GEM_ORDER_TYPE}}": order.gemOrderType || "",
+    "{{BUYER_EMAIL}}": order.buyerEmail || "",
+    "{{CONSIGNEE_EMAIL}}": order.consigneeEmail || "",
+    "{{PAYMENT_AUTHORITY_EMAIL}}": order.paymentAuthorityEmail || "",
+    "{{ALT_CONTACT_NUMBER}}": order.altContactNumber || "",
+    "{{INVOICE_DATE}}": fmt(order.invoiceDate),
+    "{{GSTIN}}": order.gstin || order.gstNumber || "",
+    "{{EWAY_BILL_NUMBER}}": order.ewayBillNumber || "",
+    "{{FREIGHT_CHARGES}}": order.freightCharges != null ? Number(order.freightCharges).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "",
+    "{{PACKAGING_COST}}": order.packagingCost != null ? Number(order.packagingCost).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "",
+    "{{COMMISSION}}": order.commission != null ? Number(order.commission).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "",
+    "{{ORDER_REMARKS}}": order.orderRemarks || "",
+    "{{ITEM_REMARKS}}": order.itemRemarks || "",
+    "{{COURIER_PARTNER}}": order.courierPartner || "",
+    "{{TRACKING_ID}}": order.trackingId || "",
+    "{{LOGISTICS_STATUS}}": order.logisticsStatus || "",
+    "{{LOGISTICS_DISPATCH_DATE}}": fmt(order.logisticsDispatchDate),
+    "{{LAST_DELIVERY_DATE}}": fmt(order.lastDeliveryDate),
+    "{{WARRANTY_START_DATE}}": fmt(order.warrantyStartDate),
   };
 
   const fillText = (text) => {

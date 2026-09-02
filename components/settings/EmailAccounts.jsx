@@ -1,8 +1,9 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { Mail, Plus, Pencil, Trash2, X, Loader2, Save, ShieldCheck, Tags, Lock } from "lucide-react";
+import { Mail, Plus, Pencil, Trash2, X, Loader2, Save, ShieldCheck } from "lucide-react";
 import Swal from "sweetalert2";
 import api from "@/lib/client/apiClient";
+import RichTextEditor from "./RichTextEditor";
 
 const EMPTY_FORM = {
   guid: null,
@@ -21,6 +22,7 @@ const EMPTY_FORM = {
   imapHost: "",
   imapPort: 993,
   imapSecure: true,
+  signature: "",
 };
 
 export default function EmailAccounts() {
@@ -29,7 +31,6 @@ export default function EmailAccounts() {
   const [purposes, setPurposes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [showPurposes, setShowPurposes] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -90,6 +91,7 @@ export default function EmailAccounts() {
       imapHost: acc.imapHost || "",
       imapPort: acc.imapPort || 993,
       imapSecure: acc.imapSecure === undefined ? true : !!acc.imapSecure,
+      signature: acc.signature || "",
     });
     setTestResult(null);
     setShowForm(true);
@@ -185,12 +187,6 @@ export default function EmailAccounts() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={() => setShowPurposes(true)}
-            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2"
-          >
-            <Tags size={16} /> Manage Purposes
-          </button>
-          <button
             onClick={openNew}
             className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 shadow-md shadow-indigo-100"
           >
@@ -255,7 +251,7 @@ export default function EmailAccounts() {
 
       {showForm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
               <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
                 <ShieldCheck size={18} className="text-indigo-600" /> {form.guid ? "Edit" : "New"} Email Account
@@ -276,32 +272,18 @@ export default function EmailAccounts() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Purpose</label>
-                  <select
-                    value={form.purpose}
-                    onChange={(e) => handleField("purpose", e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
-                  >
-                    {purposes.filter((p) => p.isActive).map((p) => (
-                      <option key={p.purposeKey} value={p.purposeKey}>{p.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Company</label>
-                  <select
-                    value={form.companyGuid}
-                    onChange={(e) => handleField("companyGuid", e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
-                  >
-                    <option value="">All Companies (default)</option>
-                    {companies.map((c) => (
-                      <option key={c.guid} value={c.guid}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Company</label>
+                <select
+                  value={form.companyGuid}
+                  onChange={(e) => handleField("companyGuid", e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="">All Companies (default)</option>
+                  {companies.map((c) => (
+                    <option key={c.guid} value={c.guid}>{c.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -390,6 +372,18 @@ export default function EmailAccounts() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">
+                  Signature <span className="normal-case font-medium text-slate-400">(inserted with one click when composing)</span>
+                </label>
+                <RichTextEditor
+                  value={form.signature}
+                  onChange={(html) => handleField("signature", html)}
+                  placeholder="e.g. Regards, Support Team"
+                  minHeight={100}
+                />
+              </div>
+
               <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 cursor-pointer">
                 <input type="checkbox" checked={form.isActive} onChange={(e) => handleField("isActive", e.target.checked)} />
                 Active
@@ -446,117 +440,6 @@ export default function EmailAccounts() {
         </div>
       )}
 
-      {showPurposes && (
-        <ManagePurposesModal purposes={purposes} onClose={() => setShowPurposes(false)} onChanged={load} />
-      )}
-    </div>
-  );
-}
-
-function ManagePurposesModal({ purposes, onClose, onChanged }) {
-  const [label, setLabel] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const handleAdd = async () => {
-    if (!label.trim()) return;
-    setSaving(true);
-    try {
-      await api.post("/email-purposes", { purposeKey: label.trim(), label: label.trim() });
-      setLabel("");
-      await onChanged();
-    } catch (err) {
-      Swal.fire("Error", err?.response?.data?.message || "Failed to add purpose", "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleActive = async (p) => {
-    try {
-      await api.put(`/email-purposes/${p.guid}`, { label: p.label, isActive: !p.isActive });
-      await onChanged();
-    } catch (err) {
-      Swal.fire("Error", err?.response?.data?.message || "Failed to update purpose", "error");
-    }
-  };
-
-  const handleDelete = async (p) => {
-    const confirm = await Swal.fire({
-      title: `Delete "${p.label}"?`,
-      text: "This cannot be undone.",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Delete",
-    });
-    if (!confirm.isConfirmed) return;
-    try {
-      await api.delete(`/email-purposes/${p.guid}`);
-      await onChanged();
-    } catch (err) {
-      Swal.fire("Error", err?.response?.data?.message || "Failed to delete purpose", "error");
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden max-h-[85vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
-          <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-            <Tags size={18} className="text-indigo-600" /> Manage Purposes
-          </h3>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="p-5 overflow-y-auto space-y-3">
-          <div className="flex gap-2">
-            <input
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Installation, Returns, OTP"
-              className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
-            />
-            <button
-              onClick={handleAdd}
-              disabled={saving || !label.trim()}
-              className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-1.5"
-            >
-              {saving ? <Loader2 className="animate-spin" size={14} /> : <Plus size={14} />} Add
-            </button>
-          </div>
-
-          <div className="space-y-1.5 max-h-64 overflow-y-auto">
-            {purposes.map((p) => (
-              <div key={p.guid} className="flex items-center justify-between px-3 py-2 rounded-xl border border-slate-100 bg-slate-50">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-slate-700">{p.label}</span>
-                  {p.isSystem && (
-                    <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400 bg-white border border-slate-200 rounded-full px-1.5 py-0.5">
-                      <Lock size={9} /> system
-                    </span>
-                  )}
-                  {!p.isActive && (
-                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-1.5 py-0.5">inactive</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {!p.isSystem && (
-                    <button onClick={() => toggleActive(p)} className="text-xs font-bold text-indigo-600 hover:text-indigo-800">
-                      {p.isActive ? "Deactivate" : "Activate"}
-                    </button>
-                  )}
-                  {!p.isSystem && (
-                    <button onClick={() => handleDelete(p)} className="text-rose-500 hover:text-rose-700">
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

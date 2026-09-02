@@ -34,7 +34,12 @@ export default function EmailComposeTab({ orderGuid }) {
   const [pendingVars, setPendingVars] = React.useState([]);
   const [pendingVarValues, setPendingVarValues] = React.useState({});
 
-  const loadEmailDraft = async (templateGuid) => {
+  // `blank` = "Skip" was picked in the template step — recipient still
+  // comes from the order (that's just useful default data, not a
+  // template), but subject/body come back empty instead of prefilled from
+  // the default warranty_template, so it reads like a normal blank compose
+  // window rather than forcing a template's wording on the sender.
+  const loadEmailDraft = async (templateGuid, { blank = false } = {}) => {
     setEmailDraft({ to: "", cc: "", bcc: "", subject: "", body: "", loading: true });
     setPendingVars([]);
     setPendingVarValues({});
@@ -45,8 +50,13 @@ export default function EmailComposeTab({ orderGuid }) {
     try {
       const qs = templateGuid ? `?templateGuid=${encodeURIComponent(templateGuid)}` : "";
       const res = await api.get(`/warranty/email-preview/${orderGuid}${qs}`);
-      setEmailDraft({ ...res.data, loading: false });
-      setPendingVars(res.data?.unresolvedVariables || []);
+      if (blank) {
+        setEmailDraft({ to: res.data?.to || "", cc: "", bcc: "", subject: "", body: "", loading: false });
+        setPendingVars([]);
+      } else {
+        setEmailDraft({ ...res.data, loading: false });
+        setPendingVars(res.data?.unresolvedVariables || []);
+      }
       setEmailError("");
     } catch (e) {
       setEmailDraft((d) => ({ ...d, loading: false }));
@@ -81,6 +91,16 @@ export default function EmailComposeTab({ orderGuid }) {
   const confirmTemplate = async () => {
     setTemplatePicker(null);
     await loadEmailDraft(pickedTemplateGuid);
+  };
+
+  // "Skip" — template pick isn't mandatory, write a normal email instead.
+  // Falls back to purpose "general" for send-account resolution, same as
+  // any other non-template send.
+  const skipTemplate = async () => {
+    setPickedTemplateGuid(null);
+    setPickedTemplatePurpose("general");
+    setTemplatePicker(null);
+    await loadEmailDraft(null, { blank: true });
   };
 
   const reopenTemplatePicker = async () => {
@@ -187,13 +207,21 @@ export default function EmailComposeTab({ orderGuid }) {
             </div>
           </div>
 
-          <button
-            onClick={confirmTemplate}
-            disabled={!pickedTemplateGuid}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold py-2.5 rounded-xl transition"
-          >
-            Continue to Compose
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={confirmTemplate}
+              disabled={!pickedTemplateGuid}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold py-2.5 rounded-xl transition"
+            >
+              Continue to Compose
+            </button>
+            <button
+              onClick={skipTemplate}
+              className="px-4 text-sm font-bold text-slate-500 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 rounded-xl transition"
+            >
+              Skip — write from scratch
+            </button>
+          </div>
         </div>
       )}
 
