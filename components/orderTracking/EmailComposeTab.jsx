@@ -25,9 +25,19 @@ export default function EmailComposeTab({ orderGuid }) {
   const [templatePicker, setTemplatePicker] = React.useState(null); // { templates } | null
   const [pickedTemplateGuid, setPickedTemplateGuid] = React.useState(null);
   const [pickedTemplatePurpose, setPickedTemplatePurpose] = React.useState(null);
+  // Any {{VAR}} the template used that isn't one of the fixed order fields
+  // (see app/api/warranty/email-preview/[orderGuid]/route.js) — the server
+  // leaves those literally in the subject/body and tells us their names via
+  // unresolvedVariables. This is also how a template author adds a brand
+  // new variable: just type {{ANYTHING}} in the template, no separate
+  // place to register it — it shows up here to fill in at send time.
+  const [pendingVars, setPendingVars] = React.useState([]);
+  const [pendingVarValues, setPendingVarValues] = React.useState({});
 
   const loadEmailDraft = async (templateGuid) => {
     setEmailDraft({ to: "", cc: "", bcc: "", subject: "", body: "", loading: true });
+    setPendingVars([]);
+    setPendingVarValues({});
     setEmailSent(false);
     setEmailError("");
     setEmailPreview(false);
@@ -36,6 +46,7 @@ export default function EmailComposeTab({ orderGuid }) {
       const qs = templateGuid ? `?templateGuid=${encodeURIComponent(templateGuid)}` : "";
       const res = await api.get(`/warranty/email-preview/${orderGuid}${qs}`);
       setEmailDraft({ ...res.data, loading: false });
+      setPendingVars(res.data?.unresolvedVariables || []);
       setEmailError("");
     } catch (e) {
       setEmailDraft((d) => ({ ...d, loading: false }));
@@ -90,10 +101,23 @@ export default function EmailComposeTab({ orderGuid }) {
     e.target.value = "";
   };
 
+  const applyPendingVar = (varName) => {
+    const value = (pendingVarValues[varName] || "").trim();
+    if (!value) return;
+    const token = `{{${varName}}}`;
+    setEmailDraft((d) => ({
+      ...d,
+      subject: d.subject.split(token).join(value),
+      body: d.body.split(token).join(value),
+    }));
+    setPendingVars((prev) => prev.filter((v) => v !== varName));
+  };
+
   const handleSendEmail = async () => {
     if (!emailDraft?.to?.trim()) { setEmailError('"To" email is required'); return; }
     if (!emailDraft?.subject?.trim()) { setEmailError('Subject is required'); return; }
     if (!emailDraft?.body?.trim()) { setEmailError('Email body is required'); return; }
+    if (pendingVars.length > 0) { setEmailError(`Fill in the highlighted variable${pendingVars.length > 1 ? "s" : ""} below before sending.`); return; }
     setEmailSending(true);
     setEmailError("");
     try {
@@ -112,7 +136,16 @@ export default function EmailComposeTab({ orderGuid }) {
         })),
       });
       setEmailSent(true);
-      setTimeout(() => setEmailDraft(null), 2000);
+      // Used to just null out emailDraft here, which left the tab
+      // completely blank afterward — templatePicker was already null (set
+      // in confirmTemplate) and "Change Template" only exists inside the
+      // now-gone compose view, so there was no way back to it without
+      // leaving and reopening the order. Reload the template picker instead
+      // so the tab always has something usable on screen, sent or not.
+      setTimeout(() => {
+        setEmailDraft(null);
+        loadTemplateOptions();
+      }, 2000);
     } catch (e) {
       setEmailError(e?.response?.data?.message || "Failed to send email");
     } finally {
@@ -189,6 +222,35 @@ export default function EmailComposeTab({ orderGuid }) {
               </button>
             </div>
           </div>
+
+          {pendingVars.length > 0 && (
+            <div className="p-4 bg-amber-50 border-b border-amber-100 space-y-2.5">
+              <p className="text-xs font-bold text-amber-800">
+                This template uses {pendingVars.length} variable{pendingVars.length > 1 ? "s" : ""} we can&apos;t fill in from the order — enter a value for each:
+              </p>
+              {pendingVars.map((varName) => (
+                <div key={varName} className="flex items-center gap-2">
+                  <span className="shrink-0 font-mono text-[11px] font-bold text-amber-700 bg-amber-100 px-2 py-1.5 rounded-lg">{`{{${varName}}}`}</span>
+                  <input
+                    type="text"
+                    value={pendingVarValues[varName] || ""}
+                    onChange={(e) => setPendingVarValues((prev) => ({ ...prev, [varName]: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyPendingVar(varName); } }}
+                    placeholder="Enter value"
+                    className="flex-1 border border-amber-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-amber-300 bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => applyPendingVar(varName)}
+                    disabled={!pendingVarValues[varName]?.trim()}
+                    className="shrink-0 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-40 px-3 py-1.5 rounded-lg transition"
+                  >
+                    Apply
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           {emailPreview ? (
             <div className="p-4">
@@ -270,7 +332,8 @@ export default function EmailComposeTab({ orderGuid }) {
             </div>
             <button
               onClick={handleSendEmail}
-              disabled={emailSending || emailSent}
+              disabled={emailSending || emailSent || pendingVars.length > 0}
+              title={pendingVars.length > 0 ? "Fill in the variables above first" : undefined}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-bold px-5 py-2 rounded-xl transition"
             >
               {emailSending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}

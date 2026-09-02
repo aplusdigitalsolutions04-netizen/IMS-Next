@@ -60,12 +60,15 @@ export const GET = withErrorHandling(async (request) => {
            COALESCE(NULLIF(s.landingPrice,0), itv.purchasePrice, 0) * COALESCE(oi.quantity, 1) as landingPrice,
            o.platform AS firmName, o.orderid AS customerName, itv.variantName as modelName, s.serialNumber as serialValue,
            'Printers' as category, o.invoiceFilename as invoiceFile, o.ewayBillFilename as ewayBillFile,
-           o.commission,
-           -- packagingCost/freightCharges are stored once per order, but the
-           -- Reports UI groups by order and SUMS this column across every
-           -- item row in that order — dividing by the order's item count
-           -- here means the sum reconstructs the true order-level total
-           -- instead of multiplying it by however many items the order has.
+           -- commission/packagingCost/freightCharges are all stored once per
+           -- order, but the Reports UI groups by order and SUMS each of
+           -- these columns across every item row in that order — dividing
+           -- by the order's item count here means the sum reconstructs the
+           -- true order-level total instead of multiplying it by however
+           -- many items the order has. commission used to skip this (it was
+           -- summed raw), so a 5-item order with ₹20 commission reported
+           -- ₹100 and understated netProfit by the extra ₹80.
+           o.commission / oic.itemCount as commission,
            o.packagingCost / oic.itemCount as packing,
            o.freightCharges / oic.itemCount as freight
     FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid
@@ -108,10 +111,21 @@ export const GET = withErrorHandling(async (request) => {
     GROUP BY o.stockOutId,o.orderId,o.refNo,o.issueDate,o.platformId,o.issuedBy,o.packingCost,o.freightCost,o.commission,o.sellingPrice,o.invoiceFile
   `, s4.params);
 
+  // "Stationery" here means non-serialized stock value, mirroring the
+  // Printer/Stationery split used for `transactions` above. Must exclude
+  // trackable (serialized) items explicitly — inventoryvariantstock's
+  // availablePCS is only ever incremented for those (Stock In, Add Serial
+  // No.), never decremented on dispatch/return (see GetCurrentStock's own
+  // comment on this), so it drifts stale/inflated over time. Without this
+  // filter, a company with only serialized printers and zero real
+  // stationery still showed a non-zero "stationery" total, entirely from
+  // that stale counter.
   const [statStock] = await mysqlPool.query(
     `SELECT SUM(availablePCS*IFNULL(NULLIF(lastPurchaseRate,0),IFNULL(avgPurchaseRate,0))) as total
-     FROM inventoryvariantstock ivs JOIN inventoryitemvariant iv ON ivs.itemVariantId=iv.itemVariantId
-     WHERE iv.isDeleted=0${companyClause("iv")}`,
+     FROM inventoryvariantstock ivs
+     JOIN inventoryitemvariant iv ON ivs.itemVariantId=iv.itemVariantId
+     JOIN inventoryitemmaster im ON iv.itemId=im.itemId
+     WHERE iv.isDeleted=0 AND im.isTrackable=0${companyClause("iv")}`,
     companyParam
   );
   // Per-serial landingPrice is often left at 0 by the Stock-In finalize flow,

@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { FileText, Plus, Pencil, Trash2, X, Loader2, Save, Eye, EyeOff } from "lucide-react";
 import Swal from "sweetalert2";
 import api from "@/lib/client/apiClient";
@@ -16,6 +16,47 @@ const EMPTY_FORM = {
   isActive: true,
 };
 
+// Mirrors the fixed set app/api/warranty/email-preview/[orderGuid]/route.js
+// auto-fills from the order. Anything typed that isn't one of these still
+// works — the compose screen prompts the sender to fill it in manually
+// (see EmailComposeTab.jsx's pendingVars) — this list is just what's
+// auto-filled for you, so it's worth knowing before inventing a new one.
+const KNOWN_VARIABLES = [
+  { name: "CUSTOMER_NAME", desc: "Buyer/customer name" },
+  { name: "CONSIGNEE_NAME", desc: "Consignee name" },
+  { name: "ORDER_ID", desc: "Order number" },
+  { name: "INVOICE_NUMBER", desc: "Invoice number" },
+  { name: "GEM_NUMBER", desc: "GeM/order/bid number" },
+  { name: "ADDRESS", desc: "Shipping address" },
+  { name: "CONTACT_NUMBER", desc: "Customer phone number" },
+  { name: "PRODUCT_NAME", desc: "Model/product name" },
+  { name: "SERIAL_NUMBER", desc: "One serial number" },
+  { name: "SERIAL_NUMBERS", desc: "All serials, comma-separated" },
+  { name: "QUANTITY", desc: "Quantity" },
+  { name: "AMOUNT", desc: "Selling price" },
+  { name: "PURCHASE_DATE", desc: "Order date" },
+  { name: "DISPATCH_DATE", desc: "Dispatch date" },
+  { name: "WARRANTY_PERIOD", desc: "e.g. 1 Year" },
+  { name: "WARRANTY_EXPIRY", desc: "Calculated expiry date" },
+  { name: "GST_NUMBER", desc: "Buyer GST number" },
+  { name: "COMPANY_NAME", desc: "Your company name" },
+  { name: "CERT_NUMBER", desc: "Auto-generated certificate number" },
+];
+
+function insertAtCursor(ref, text) {
+  const el = ref.current;
+  if (!el) return null;
+  const start = el.selectionStart ?? el.value.length;
+  const end = el.selectionEnd ?? el.value.length;
+  const newVal = el.value.slice(0, start) + text + el.value.slice(end);
+  const newPos = start + text.length;
+  requestAnimationFrame(() => {
+    el.focus();
+    el.setSelectionRange(newPos, newPos);
+  });
+  return newVal;
+}
+
 export default function EmailTemplates() {
   const [templates, setTemplates] = useState([]);
   const [companies, setCompanies] = useState([]);
@@ -25,20 +66,30 @@ export default function EmailTemplates() {
   const [preview, setPreview] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [customVarName, setCustomVarName] = useState("");
+
+  const subjectRef = useRef(null);
+  const bodyRef = useRef(null);
+  const lastFocus = useRef("body"); // 'subject' | 'body'
 
   const load = async () => {
     setLoading(true);
     try {
-      const [tplRes, compRes, purpRes] = await Promise.all([
+      // /companies is Admin-only (used for the Company scope dropdown below)
+      // — a role with just Email Templates access legitimately can't call
+      // it. allSettled + a per-call fallback keeps templates/purposes
+      // loading even when that one 403s, instead of failing the whole page.
+      const [tplRes, compRes, purpRes] = await Promise.allSettled([
         api.get("/email-templates"),
         api.get("/companies"),
         api.get("/email-purposes"),
       ]);
-      setTemplates(tplRes.data?.data || []);
-      setCompanies(compRes.data || []);
-      setPurposes(purpRes.data?.data || []);
-    } catch (err) {
-      console.error("Failed to load email templates:", err);
+      if (tplRes.status === "fulfilled") setTemplates(tplRes.value.data?.data || []);
+      else console.error("Failed to load email templates:", tplRes.reason);
+      if (compRes.status === "fulfilled") setCompanies(compRes.value.data || []);
+      else setCompanies([]);
+      if (purpRes.status === "fulfilled") setPurposes(purpRes.value.data?.data || []);
+      else console.error("Failed to load email purposes:", purpRes.reason);
     } finally {
       setLoading(false);
     }
@@ -72,6 +123,25 @@ export default function EmailTemplates() {
   };
 
   const handleField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const insertVariable = (name) => {
+    const token = `{{${name}}}`;
+    const targetKey = lastFocus.current === "subject" ? "emailSubject" : "emailBody";
+    const targetRef = lastFocus.current === "subject" ? subjectRef : bodyRef;
+    const newVal = insertAtCursor(targetRef, token);
+    if (newVal !== null) handleField(targetKey, newVal);
+  };
+
+  const insertCustomVariable = () => {
+    // Same {{A-Z0-9_}} shape the compose screen looks for (see
+    // email-preview route's unresolvedVariables regex) — normalize so a
+    // sloppily-typed name still gets picked up as a fillable variable
+    // there instead of silently not matching.
+    const name = customVarName.trim().toUpperCase().replace(/[^A-Z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+    if (!name) return;
+    insertVariable(name);
+    setCustomVarName("");
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -213,11 +283,47 @@ export default function EmailTemplates() {
             </div>
 
             <div className="p-5 overflow-y-auto space-y-4">
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">
-                  Use any {"{{PLACEHOLDER}}"} in the subject/body — filled in by whatever data the sending feature passes (e.g. {"{{CUSTOMER_NAME}}"}, {"{{ORDER_ID}}"}, {"{{AMOUNT}}"}).
-                </p>
-              </div>
+              {!preview && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                    Click to insert into Subject/Body at your cursor — auto-filled from the order when sent
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {KNOWN_VARIABLES.map((v) => (
+                      <button
+                        key={v.name}
+                        type="button"
+                        title={v.desc}
+                        onClick={() => insertVariable(v.name)}
+                        className="text-[11px] font-mono font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-1 rounded-lg transition-colors"
+                      >
+                        {`{{${v.name}}}`}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 border-t border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide shrink-0">New variable</span>
+                    <input
+                      value={customVarName}
+                      onChange={(e) => setCustomVarName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); insertCustomVariable(); } }}
+                      placeholder="e.g. Alternate Contact"
+                      className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={insertCustomVariable}
+                      disabled={!customVarName.trim()}
+                      className="shrink-0 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 px-3 py-1.5 rounded-lg transition"
+                    >
+                      Insert
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Not on the list above and not sent by the feature automatically — whoever sends this template gets asked to fill it in by hand.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Template Name</label>
@@ -265,8 +371,10 @@ export default function EmailTemplates() {
                   </div>
                 ) : (
                   <input
+                    ref={subjectRef}
                     value={form.emailSubject}
                     onChange={(e) => handleField("emailSubject", e.target.value)}
+                    onFocus={() => { lastFocus.current = "subject"; }}
                     placeholder="e.g. Your order {{ORDER_ID}} has been dispatched"
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
                   />
@@ -302,9 +410,11 @@ export default function EmailTemplates() {
                   </div>
                 ) : (
                   <textarea
+                    ref={bodyRef}
                     rows={11}
                     value={form.emailBody}
                     onChange={(e) => handleField("emailBody", e.target.value)}
+                    onFocus={() => { lastFocus.current = "body"; }}
                     placeholder={`Dear {{CUSTOMER_NAME}},\n\nYour order {{ORDER_ID}} for {{PRODUCT_NAME}} has been dispatched.\n\nThanks,\n{{COMPANY_NAME}}`}
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100 font-mono resize-y"
                   />

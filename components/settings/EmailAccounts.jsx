@@ -32,20 +32,30 @@ export default function EmailAccounts() {
   const [showPurposes, setShowPurposes] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [accRes, compRes, purpRes] = await Promise.all([
+      // /companies is Admin-only (the "companyMaster" permission, used for
+      // the multi-company scope dropdown below) — a role with just
+      // "Email Accounts" access legitimately can't call it. That 403 used
+      // to reject this whole Promise.all and blank out accounts/purposes
+      // too, even though those two calls succeed fine on their own.
+      // allSettled + a per-call fallback keeps the rest of the page
+      // working; the company dropdown just stays empty for that role.
+      const [accRes, compRes, purpRes] = await Promise.allSettled([
         api.get("/email-accounts"),
         api.get("/companies"),
         api.get("/email-purposes"),
       ]);
-      setAccounts(accRes.data?.data || []);
-      setCompanies(compRes.data || []);
-      setPurposes(purpRes.data?.data || []);
-    } catch (err) {
-      console.error("Failed to load email accounts:", err);
+      if (accRes.status === "fulfilled") setAccounts(accRes.value.data?.data || []);
+      else console.error("Failed to load email accounts:", accRes.reason);
+      if (compRes.status === "fulfilled") setCompanies(compRes.value.data || []);
+      else setCompanies([]);
+      if (purpRes.status === "fulfilled") setPurposes(purpRes.value.data?.data || []);
+      else console.error("Failed to load email purposes:", purpRes.reason);
     } finally {
       setLoading(false);
     }
@@ -58,6 +68,7 @@ export default function EmailAccounts() {
   const openNew = () => {
     const defaultPurpose = purposes.find((p) => p.purposeKey === "general" && p.isActive) || purposes.find((p) => p.isActive);
     setForm({ ...EMPTY_FORM, purpose: defaultPurpose?.purposeKey || "general" });
+    setTestResult(null);
     setShowForm(true);
   };
 
@@ -80,10 +91,48 @@ export default function EmailAccounts() {
       imapPort: acc.imapPort || 993,
       imapSecure: acc.imapSecure === undefined ? true : !!acc.imapSecure,
     });
+    setTestResult(null);
     setShowForm(true);
   };
 
-  const handleField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
+  const SMTP_FIELDS = ["smtpHost", "smtpPort", "smtpSecure", "smtpUser", "smtpPass"];
+  const handleField = (key, value) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    // A previous "Connection successful" doesn't mean anything once one of
+    // the credentials it was tested with has changed.
+    if (SMTP_FIELDS.includes(key)) setTestResult(null);
+  };
+
+  const handleTestConnection = async () => {
+    if (!form.smtpHost?.trim() || !form.smtpUser?.trim()) {
+      setTestResult({ ok: false, message: "Fill in SMTP host and username first." });
+      return;
+    }
+    // Editing an existing account leaves the password blank ("keep
+    // current") — there's nothing here to actually test against in that
+    // case, so ask for it explicitly rather than silently testing a blank
+    // password and reporting a misleading failure.
+    if (!form.smtpPass?.trim()) {
+      setTestResult({ ok: false, message: form.guid ? "Enter the password to test this connection (it's blank because it's unchanged)." : "Enter the SMTP password first." });
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await api.post("/email-accounts/test-connection", {
+        smtpHost: form.smtpHost,
+        smtpPort: form.smtpPort,
+        smtpSecure: form.smtpSecure,
+        smtpUser: form.smtpUser,
+        smtpPass: form.smtpPass,
+      });
+      setTestResult({ ok: true, message: res.data?.message || "Connection successful" });
+    } catch (err) {
+      setTestResult({ ok: false, message: err?.response?.data?.message || err.message || "Connection failed" });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -302,6 +351,23 @@ export default function EmailAccounts() {
                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
                   />
                 </div>
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={testing}
+                  className="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors"
+                >
+                  {testing ? <Loader2 className="animate-spin" size={16} /> : <ShieldCheck size={16} />}
+                  {testing ? "Testing..." : "Test Connection"}
+                </button>
+                {testResult && (
+                  <p className={`mt-2 text-xs font-semibold ${testResult.ok ? "text-emerald-700" : "text-red-600"}`}>
+                    {testResult.ok ? "✓ " : "✗ "}{testResult.message}
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

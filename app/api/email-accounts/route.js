@@ -50,7 +50,7 @@ export const POST = withErrorHandling(async (request) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       guid, companyGuid || null, purpose, accountName.trim(), smtpHost.trim(),
-      Number(smtpPort) || 587, smtpSecure ? 1 : 0, smtpUser.trim(), smtpPass,
+      Number(smtpPort) || 587, smtpSecure ? 1 : 0, smtpUser.trim(), smtpPass.trim(),
       fromName?.trim() || null, fromEmail.trim(), isActive === false ? 0 : 1,
       imapEnabled ? 1 : 0, imapHost?.trim() || null, Number(imapPort) || 993, imapSecure === false ? 0 : 1,
     ]

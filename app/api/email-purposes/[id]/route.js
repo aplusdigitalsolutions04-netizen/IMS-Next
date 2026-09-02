@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can manage email purposes.");
+  requirePermission(user, "emailAccounts", "You do not have permission to manage email purposes.");
   const { id } = await params;
 
   const { label, isActive } = await parseJsonBody(request);
@@ -22,7 +22,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 
 export const DELETE = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can manage email purposes.");
+  requirePermission(user, "emailAccounts", "You do not have permission to manage email purposes.");
   const { id } = await params;
 
   const [[existing]] = await mysqlPool.query("SELECT * FROM email_purposes WHERE guid = ?", [id]);

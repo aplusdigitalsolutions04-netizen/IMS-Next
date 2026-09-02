@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireRoles, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 // "general" is the reserved fallback purpose lib/mailer.js's account
@@ -9,9 +9,15 @@ import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 // duplicated as a plain slug.
 const RESERVED_KEY = "general";
 
+// Manage Purposes lives inside the Email Accounts screen ("Email Accounts >
+// Manage Purposes"), so it should follow that screen's own emailAccounts
+// permission like every other route there (app/api/email-accounts/route.js)
+// — this used to hardcode an Admin-role check instead, so a role granted
+// "Email Accounts" access (e.g. Supervisor, Accountant) could open the
+// screen but still got denied here specifically.
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can view email purposes.");
+  requirePermission(user, "emailAccounts", "You do not have permission to view email purposes.");
 
   const [rows] = await mysqlPool.query("SELECT * FROM email_purposes ORDER BY isSystem DESC, label ASC");
   return NextResponse.json({ data: rows });
@@ -19,7 +25,7 @@ export const GET = withErrorHandling(async (request) => {
 
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireRoles(user, ["Admin"], "Only Admin can manage email purposes.");
+  requirePermission(user, "emailAccounts", "You do not have permission to manage email purposes.");
 
   const { purposeKey, label } = await parseJsonBody(request);
   const key = String(purposeKey || "").trim().toLowerCase().replace(/\s+/g, "-");

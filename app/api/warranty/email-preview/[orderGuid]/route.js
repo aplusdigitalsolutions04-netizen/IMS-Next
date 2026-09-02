@@ -129,11 +129,23 @@ export const GET = withErrorHandling(async (request, { params }) => {
     ? (order.paymentAuthorityEmail || order.consigneeEmail || order.buyerEmail || template.emailTo || "")
     : (order.consigneeEmail || order.buyerEmail || template.emailTo || "");
 
+  const subject = fillText(template.emailSubject || "");
+  const body = fillText(template.emailBody || "");
+
+  // Anything still in {{...}} form after fillText() isn't one of the fixed
+  // vars above — rather than silently leaving literal "{{FOO}}" text in the
+  // sent email, surface these so the compose UI can prompt the user for a
+  // value. This is also how a template author gets a brand-new variable:
+  // just write {{ANYTHING}} in the template — no separate place to
+  // "register" it first.
+  const unresolvedVariables = [...new Set([...subject.matchAll(/\{\{([A-Z0-9_]+)\}\}/g), ...body.matchAll(/\{\{([A-Z0-9_]+)\}\}/g)].map((m) => m[1]))];
+
   return NextResponse.json({
     to,
     cc: template.emailCc || "",
     bcc: template.emailBcc || "",
-    subject: fillText(template.emailSubject || ""),
-    body: fillText(template.emailBody || ""),
+    subject,
+    body,
+    unresolvedVariables,
   });
 });
