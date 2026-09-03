@@ -517,11 +517,20 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
     }
   };
 
-  // Matches each selected PDF to a contract by filename == Contract Number
-  // (extension and surrounding whitespace stripped, case-insensitive) — the
-  // only piece of information a plain multi-file picker gives us to go on.
-  // Only contracts missing a real Drive file are eligible targets, same as
-  // the single-contract upload button.
+  // GeM contract numbers carry a long unique numeric order ID (e.g.
+  // "GEMC-511687700880541") — real downloaded filenames wrap that same ID
+  // in all kinds of formatting a plain exact-match would miss: a trailing
+  // date ("GEMC-511687700880541-24062026.pdf"), a "GEM" vs "GEMC" prefix
+  // typo, extra dashes/spaces. Concatenating every digit run and checking
+  // "does the file's digit string contain the contract's digit string"
+  // ignores all of that formatting noise while still being effectively
+  // unique — no two contracts share a 12+ digit order ID.
+  const digitId = (s) => (String(s || "").match(/\d+/g) || []).join("");
+
+  // Matches each selected PDF to a contract by its embedded numeric ID —
+  // the only piece of information a plain multi-file picker gives us to go
+  // on. Only contracts missing a real Drive file are eligible targets, same
+  // as the single-contract upload button.
   const handleBulkPdfFilesChosen = async (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
@@ -534,8 +543,12 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
     const failed = [];
     try {
       for (const file of files) {
-        const baseName = file.name.replace(/\.pdf$/i, "").trim().toLowerCase();
-        const match = visibleContracts.find((c) => (c.contractNumber || "").trim().toLowerCase() === baseName);
+        const baseName = file.name.replace(/\.pdf$/i, "").trim();
+        const fileDigits = digitId(baseName);
+        const match = visibleContracts.find((c) => {
+          const cDigits = digitId(c.contractNumber);
+          return cDigits.length >= 6 && fileDigits.includes(cDigits);
+        });
         if (!match) {
           unmatched.push(file.name);
           continue;
@@ -562,13 +575,14 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
         : "";
     Swal.fire({
       title: "Bulk upload finished",
-      html: `<div style="text-align:left;font-size:13px">
+      html: `<div style="text-align:left;font-size:13px;max-height:60vh;overflow-y:auto">
         ${section("Uploaded", uploaded, "text-emerald-600")}
         ${section("Skipped — already has a PDF", skipped, "text-amber-600")}
         ${section("No contract matched this filename", unmatched, "text-slate-500")}
         ${section("Failed", failed, "text-rose-600")}
       </div>`,
       icon: failed.length > 0 || unmatched.length > 0 ? "warning" : "success",
+      width: 700,
       customClass: { popup: "rounded-2xl" },
     });
   };
