@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, authorizeReadWrite, requireCompany, requirePermission, ApiError } from "@/lib/auth";
+import { authenticateRequest, authorizeReadWrite, hasAllCompaniesAccess, requireCompany, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 import { saveUploadedFile, deleteUploadedFile, getCompanyName } from "@/lib/upload";
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
@@ -22,23 +22,33 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   authorize(user, "PUT");
   const { id } = await params;
 
+  // Looked up by guid alone, then checked against the contract's own
+  // companyGuid — not the session's currently active company. Someone
+  // viewing the "All Companies" contract list can be uploading a PDF for a
+  // contract that belongs to a different company than whichever one their
+  // session happens to be scoped to right now; using user.companyId here
+  // would either 404 (mismatch) or file the PDF under the wrong company's
+  // Drive folder.
   const [[current]] = await mysqlPool.query(
-    "SELECT pdfFilename FROM contracts WHERE guid=? AND companyGuid=? AND isDeleted=0",
-    [id, user.companyId]
+    "SELECT pdfFilename, companyGuid FROM contracts WHERE guid=? AND isDeleted=0",
+    [id]
   );
   if (!current) throw new ApiError(404, "Contract not found");
+  if (current.companyGuid !== user.companyId && !hasAllCompaniesAccess(user)) {
+    throw new ApiError(403, "You do not have access to this contract's company.");
+  }
 
   const formData = await request.formData();
   const file = formData.get("file");
   if (!file || typeof file.arrayBuffer !== "function") throw new ApiError(400, "PDF file is required");
 
-  const companyName = await getCompanyName(user.companyId);
+  const companyName = await getCompanyName(current.companyGuid);
   const saved = await saveUploadedFile(file, { prefix: "contract", folder: "contract", companyName });
   if (!saved) throw new ApiError(400, "Failed to upload file");
 
   await mysqlPool.query(
-    "UPDATE contracts SET pdfFilename=?, modifiedBy=?, modifiedAt=NOW() WHERE guid=? AND companyGuid=?",
-    [saved.filename, user.username || user.fullName || "Unknown", id, user.companyId]
+    "UPDATE contracts SET pdfFilename=?, modifiedBy=?, modifiedAt=NOW() WHERE guid=?",
+    [saved.filename, user.username || user.fullName || "Unknown", id]
   );
 
   // Best-effort — only relevant when this replaces a file that was already there.
@@ -46,6 +56,6 @@ export const PUT = withErrorHandling(async (request, { params }) => {
     deleteUploadedFile(current.pdfFilename).catch(() => {});
   }
 
-  broadcastRealtimeEvent(user.companyId, "contracts");
+  broadcastRealtimeEvent(current.companyGuid, "contracts");
   return NextResponse.json({ message: "Contract PDF uploaded.", pdfFilename: saved.filename });
 });

@@ -35,7 +35,23 @@ export const GET = withErrorHandling(async (request) => {
     `SELECT * FROM contracts WHERE isDeleted=0 ${clause} ORDER BY createdAt DESC`,
     params
   );
-  return NextResponse.json(rows);
+
+  // pdfFilename alone isn't proof a file actually exists on Drive — a
+  // contract row created by a direct DB insert (skipping Upload Contract)
+  // can have that column set to arbitrary text with nothing backing it in
+  // drive_files. hasDrivePdf reflects reality so the frontend can offer the
+  // "attach PDF" action exactly when there's genuinely nothing to open.
+  // Looked up separately (not a SQL JOIN) — contracts.pdfFilename and
+  // drive_files.filename don't share a collation on every environment, and
+  // comparing across them in SQL 500s with "Illegal mix of collations".
+  const filenames = [...new Set(rows.map((r) => r.pdfFilename).filter(Boolean))];
+  let driveFilenames = new Set();
+  if (filenames.length > 0) {
+    const [driveRows] = await mysqlPool.query("SELECT filename FROM drive_files WHERE filename IN (?)", [filenames]);
+    driveFilenames = new Set(driveRows.map((r) => r.filename));
+  }
+
+  return NextResponse.json(rows.map((r) => ({ ...r, hasDrivePdf: driveFilenames.has(r.pdfFilename) })));
 });
 
 export const POST = withErrorHandling(async (request) => {

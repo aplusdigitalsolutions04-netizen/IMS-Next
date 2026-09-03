@@ -387,6 +387,8 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
   const [uploadingPdfFor, setUploadingPdfFor] = useState(null);
   const pdfUploadTargetRef = useRef(null);
   const pdfUploadInputRef = useRef(null);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const bulkPdfInputRef = useRef(null);
   const toggleCol = (key) =>
     setVisibleCols((prev) => {
       const next = new Set(prev);
@@ -401,16 +403,24 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
   // doesn't visibly blank out and "flicker" on its own; the spinner still
   // shows for the real initial load and company switches below, where
   // there's genuinely nothing on screen yet.
+  // `loading` already starts true (see useState above), so the mount call
+  // doesn't need to set it again — only a later company-switch call does,
+  // to blank the table while the new company's contracts load instead of
+  // leaving the old company's rows on screen.
+  const hasLoadedOnceRef = useRef(false);
   const loadContracts = async (silent = false) => {
-    if (!silent) setLoading(true);
-    const data = await contractsService.getContracts();
-    setContracts(Array.isArray(data) ? data : []);
-    if (!silent) setLoading(false);
+    if (!silent && hasLoadedOnceRef.current) setLoading(true);
+    hasLoadedOnceRef.current = true;
+    try {
+      const data = await contractsService.getContracts();
+      setContracts(Array.isArray(data) ? data : []);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadContracts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompany?.guid]);
 
   // Real-time sync — rides the single app-wide SSE connection already opened
@@ -505,6 +515,62 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
     } finally {
       setUploadingPdfFor(null);
     }
+  };
+
+  // Matches each selected PDF to a contract by filename == Contract Number
+  // (extension and surrounding whitespace stripped, case-insensitive) — the
+  // only piece of information a plain multi-file picker gives us to go on.
+  // Only contracts missing a real Drive file are eligible targets, same as
+  // the single-contract upload button.
+  const handleBulkPdfFilesChosen = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (files.length === 0) return;
+
+    setBulkUploading(true);
+    const uploaded = [];
+    const skipped = [];
+    const unmatched = [];
+    const failed = [];
+    try {
+      for (const file of files) {
+        const baseName = file.name.replace(/\.pdf$/i, "").trim().toLowerCase();
+        const match = visibleContracts.find((c) => (c.contractNumber || "").trim().toLowerCase() === baseName);
+        if (!match) {
+          unmatched.push(file.name);
+          continue;
+        }
+        if (match.hasDrivePdf) {
+          skipped.push(match.contractNumber);
+          continue;
+        }
+        try {
+          await contractsService.uploadContractPdf(match.guid, file);
+          uploaded.push(match.contractNumber);
+        } catch (err) {
+          failed.push(`${match.contractNumber}: ${err.response?.data?.message || err.message}`);
+        }
+      }
+      await loadContracts(true);
+    } finally {
+      setBulkUploading(false);
+    }
+
+    const section = (label, items, colorClass) =>
+      items.length > 0
+        ? `<p style="margin-top:8px"><b class="${colorClass}">${label} (${items.length}):</b><br/>${items.join("<br/>")}</p>`
+        : "";
+    Swal.fire({
+      title: "Bulk upload finished",
+      html: `<div style="text-align:left;font-size:13px">
+        ${section("Uploaded", uploaded, "text-emerald-600")}
+        ${section("Skipped — already has a PDF", skipped, "text-amber-600")}
+        ${section("No contract matched this filename", unmatched, "text-slate-500")}
+        ${section("Failed", failed, "text-rose-600")}
+      </div>`,
+      icon: failed.length > 0 || unmatched.length > 0 ? "warning" : "success",
+      customClass: { popup: "rounded-2xl" },
+    });
   };
 
   const createDraftOrderForContract = async (c) => {
@@ -618,9 +684,16 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
   const totalPages = Math.max(1, Math.ceil(visibleContracts.length / pageSize));
   const paginatedContracts = visibleContracts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  useEffect(() => {
+  // Resetting to page 1 when the filter/search/sort/page-size changes is
+  // "adjusting state when a prop changes" — React's own guidance is to do
+  // that during render rather than in an effect (avoids an extra render
+  // pass): https://react.dev/learn/you-might-not-need-an-effect
+  const pageResetKey = `${statusFilter}|${searchTerm}|${sortOrder}|${pageSize}`;
+  const [prevPageResetKey, setPrevPageResetKey] = useState(pageResetKey);
+  if (pageResetKey !== prevPageResetKey) {
+    setPrevPageResetKey(pageResetKey);
     setCurrentPage(1);
-  }, [statusFilter, searchTerm, sortOrder, pageSize]);
+  }
 
   const totalCols =
     4 +
@@ -635,6 +708,14 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
         accept="application/pdf"
         className="hidden"
         onChange={handlePdfFileChosen}
+      />
+      <input
+        ref={bulkPdfInputRef}
+        type="file"
+        accept="application/pdf"
+        multiple
+        className="hidden"
+        onChange={handleBulkPdfFilesChosen}
       />
       <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-6">
         <FileText className={showingCancelled ? "text-rose-600" : "text-indigo-600"} size={28} />
@@ -666,6 +747,17 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
           onSelectAll={selectAllCols}
           onClearAll={clearAllCols}
         />
+        {!showingCancelled && (
+          <button
+            onClick={() => bulkPdfInputRef.current?.click()}
+            disabled={bulkUploading}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-violet-600 hover:bg-violet-50 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-wait"
+            title="Select multiple PDFs, named exactly like each contract's Contract Number, to upload them to Drive in one go"
+          >
+            {bulkUploading ? <Loader2 size={15} className="animate-spin" /> : <UploadCloud size={15} />}
+            Bulk Upload PDFs
+          </button>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-slate-200">
@@ -709,7 +801,7 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
                         <button onClick={() => setEditingContract(c)} className="text-indigo-500 hover:text-indigo-700" title="Edit">
                           <Pencil size={16} />
                         </button>
-                        {!c.pdfFilename && (
+                        {!c.hasDrivePdf && (
                           <button
                             onClick={() => openPdfUpload(c)}
                             disabled={uploadingPdfFor === c.guid}
@@ -737,7 +829,7 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
                       </div>
                     </td>
                     <td className="p-3 whitespace-nowrap">
-                      {c.pdfFilename ? (
+                      {c.hasDrivePdf ? (
                         <a href={`/uploads/${c.pdfFilename}`} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 hover:underline font-semibold" title="Open contract PDF">
                           {c.bidNumber || "-"}
                         </a>
@@ -746,7 +838,7 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
                       )}
                     </td>
                     <td className="p-3 whitespace-nowrap">
-                      {c.pdfFilename ? (
+                      {c.hasDrivePdf ? (
                         <a href={`/uploads/${c.pdfFilename}`} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800 hover:underline font-semibold" title="Open contract PDF">
                           {c.contractNumber || "-"}
                         </a>
