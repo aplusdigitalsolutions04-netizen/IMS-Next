@@ -59,15 +59,19 @@ export const GET = withErrorHandling(async (request, { params }) => {
   // chosen template didn't specify any.
   let template = defaultTemplate;
   let chosenPurpose = null;
+  let chosenAccountGuid = null;
   if (templateGuid) {
     const [chosenRows] = await mysqlPool.query(
-      `SELECT emailSubject, emailBody, emailCc, emailBcc, purpose FROM email_templates
+      `SELECT emailSubject, emailBody, emailCc, emailBcc, purpose, emailAccountGuid FROM email_templates
        WHERE guid = ? AND isActive = 1 AND (companyGuid = ? OR companyGuid IS NULL)`,
       [templateGuid, user.companyId]
     );
     if (chosenRows.length > 0) {
       const chosen = chosenRows[0];
       chosenPurpose = chosen.purpose;
+      // An explicit account on the template wins outright — the purpose
+      // match alone can't tell two accounts sharing a purpose apart.
+      chosenAccountGuid = chosen.emailAccountGuid || null;
       template = {
         ...defaultTemplate,
         emailSubject: chosen.emailSubject,
@@ -180,5 +184,6 @@ export const GET = withErrorHandling(async (request, { params }) => {
     subject,
     body,
     unresolvedVariables,
+    accountGuid: chosenAccountGuid,
   });
 });

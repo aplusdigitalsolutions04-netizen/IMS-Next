@@ -3,7 +3,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeMasterWrite, authorizeMasterDelete, isSuperUser, ApiError } from "@/lib/auth";
 import { normalizeRole } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
-import { ensureEmailAccountsSignatureColumn } from "@/lib/emailAccountsMigration";
+import { ensureEmailAccountsSignatureColumn, ensureEmailAccountsSharedColumn } from "@/lib/emailAccountsMigration";
 
 async function validatePurpose(purpose) {
   const [[row]] = await mysqlPool.query("SELECT purposeKey FROM email_purposes WHERE purposeKey = ? AND isActive = 1", [purpose]);
@@ -23,13 +23,14 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   authorizeMasterWrite(user, "emailAccounts", { isCreate: false, denyMessage: "You do not have permission to edit email accounts." });
   await ensureEmailAccountsSignatureColumn();
+  await ensureEmailAccountsSharedColumn();
   const { id } = await params;
   await assertOwnerOrAdmin(user, id);
 
   const body = await parseJsonBody(request);
   const {
     companyGuid, purpose, accountName, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, fromName, fromEmail, isActive,
-    imapEnabled, imapHost, imapPort, imapSecure, signature,
+    imapEnabled, imapHost, imapPort, imapSecure, signature, sharedWith,
   } = body;
 
   await validatePurpose(purpose);
@@ -39,6 +40,18 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   if (!fromEmail?.trim()) throw new ApiError(400, "From email is required");
   if (imapEnabled && !imapHost?.trim()) throw new ApiError(400, "IMAP host is required to enable inbox reading");
 
+  // Only Admin can change who this is shared with — an owner submitting
+  // this form (they can reach it too, per assertOwnerOrAdmin above)
+  // doesn't get to unilaterally grant others access, so their submitted
+  // value is silently ignored and whatever Admin last set stays as-is.
+  const isAdmin = isSuperUser(normalizeRole(user.role));
+  let sharedWithClause = "";
+  const sharedWithParams = [];
+  if (isAdmin && Array.isArray(sharedWith)) {
+    sharedWithClause = ", sharedWith = ?";
+    sharedWithParams.push(JSON.stringify(sharedWith.map(String)));
+  }
+
   // Password is optional on update — blank means "keep the existing one".
   const setPassClause = smtpPass?.trim() ? ", smtpPass = ?" : "";
   const params2 = [
@@ -47,6 +60,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
     fromName?.trim() || null, fromEmail.trim(), isActive === false ? 0 : 1,
     imapEnabled ? 1 : 0, imapHost?.trim() || null, Number(imapPort) || 993, imapSecure === false ? 0 : 1,
     signature || null,
+    ...sharedWithParams,
   ];
   if (smtpPass?.trim()) params2.push(smtpPass.trim());
   params2.push(id);
@@ -56,6 +70,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
        companyGuid = ?, purpose = ?, accountName = ?, smtpHost = ?, smtpPort = ?,
        smtpSecure = ?, smtpUser = ?, fromName = ?, fromEmail = ?, isActive = ?,
        imapEnabled = ?, imapHost = ?, imapPort = ?, imapSecure = ?, signature = ?
+       ${sharedWithClause}
        ${setPassClause}
      WHERE guid = ?`,
     params2

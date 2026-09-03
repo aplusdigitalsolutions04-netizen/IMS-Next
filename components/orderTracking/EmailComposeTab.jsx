@@ -18,13 +18,15 @@ export default function EmailComposeTab({ orderGuid }) {
   const [emailPreview, setEmailPreview] = React.useState(false);
   const [emailAttachments, setEmailAttachments] = React.useState([]);
   const emailFileRef = React.useRef(null);
-  // "Choose Template" step — always shown before compose. Whichever template
-  // the user picks (from any purpose, not just warranty) decides both the
-  // content AND, via its purpose, which connected email account the send
-  // auto-resolves to — no separate account picker needed.
+  // "Choose Template" step — always shown before compose. A template now
+  // always names its own Email Account (Settings > Email Templates), so
+  // picking one already answers "which account" too; "Skip" doesn't have
+  // that, so the Email Account field below is what answers it then.
   const [templatePicker, setTemplatePicker] = React.useState(null); // { templates } | null
   const [pickedTemplateGuid, setPickedTemplateGuid] = React.useState(null);
   const [pickedTemplatePurpose, setPickedTemplatePurpose] = React.useState(null);
+  const [accounts, setAccounts] = React.useState([]);
+  const [pickedAccountGuid, setPickedAccountGuid] = React.useState(null);
   // Any {{VAR}} the template used that isn't one of the fixed order fields
   // (see app/api/warranty/email-preview/[orderGuid]/route.js) — the server
   // leaves those literally in the subject/body and tells us their names via
@@ -39,6 +41,14 @@ export default function EmailComposeTab({ orderGuid }) {
   // template), but subject/body come back empty instead of prefilled from
   // the default warranty_template, so it reads like a normal blank compose
   // window rather than forcing a template's wording on the sender.
+  // If only one email account is available there's no real choice to
+  // make — use it. Otherwise leave it unset so the Email Account field
+  // below forces an explicit pick before Send.
+  const soleAccountGuid = (list) => {
+    const active = list.filter((a) => a.isActive);
+    return active.length === 1 ? active[0].guid : null;
+  };
+
   const loadEmailDraft = async (templateGuid, { blank = false } = {}) => {
     setEmailDraft({ to: "", cc: "", bcc: "", subject: "", body: "", loading: true });
     setPendingVars([]);
@@ -57,6 +67,10 @@ export default function EmailComposeTab({ orderGuid }) {
         setEmailDraft({ ...res.data, loading: false });
         setPendingVars(res.data?.unresolvedVariables || []);
       }
+      // The template's own Email Account wins when it has one; otherwise
+      // (older template with none set, or "Skip") fall back to the sole
+      // account if there's only one — same rule Email Templates uses.
+      setPickedAccountGuid(res.data?.accountGuid || soleAccountGuid(accounts));
       setEmailError("");
     } catch (e) {
       setEmailDraft((d) => ({ ...d, loading: false }));
@@ -66,7 +80,11 @@ export default function EmailComposeTab({ orderGuid }) {
 
   const loadTemplateOptions = async () => {
     try {
-      const tplRes = await api.get("/warranty/templates");
+      const [tplRes, acctRes] = await Promise.all([
+        api.get("/warranty/templates"),
+        api.get("/email-accounts").catch(() => ({ data: { data: [] } })),
+      ]);
+      setAccounts(acctRes.data?.data || []);
       setTemplatePicker({ templates: tplRes.data?.data || [] });
     } catch (e) {
       console.error("Failed to load email templates:", e);
@@ -94,8 +112,8 @@ export default function EmailComposeTab({ orderGuid }) {
   };
 
   // "Skip" — template pick isn't mandatory, write a normal email instead.
-  // Falls back to purpose "general" for send-account resolution, same as
-  // any other non-template send.
+  // Falls back to purpose "general" for send-account resolution if the
+  // Email Account field below doesn't end up set.
   const skipTemplate = async () => {
     setPickedTemplateGuid(null);
     setPickedTemplatePurpose("general");
@@ -138,6 +156,7 @@ export default function EmailComposeTab({ orderGuid }) {
     if (!emailDraft?.subject?.trim()) { setEmailError('Subject is required'); return; }
     if (!emailDraft?.body?.trim()) { setEmailError('Email body is required'); return; }
     if (pendingVars.length > 0) { setEmailError(`Fill in the highlighted variable${pendingVars.length > 1 ? "s" : ""} below before sending.`); return; }
+    if (!pickedAccountGuid) { setEmailError("Pick which email account to send from."); return; }
     setEmailSending(true);
     setEmailError("");
     try {
@@ -148,6 +167,7 @@ export default function EmailComposeTab({ orderGuid }) {
         subject: emailDraft.subject,
         body: emailDraft.body,
         purpose: pickedTemplatePurpose,
+        accountGuid: pickedAccountGuid,
         attachments: emailAttachments.map((a) => ({
           filename: a.name,
           content: a.base64,
@@ -304,6 +324,21 @@ export default function EmailComposeTab({ orderGuid }) {
           ) : (
             <div className="p-4 space-y-3">
               <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Email Account</label>
+                <select
+                  value={pickedAccountGuid || ""}
+                  onChange={(e) => setPickedAccountGuid(e.target.value || null)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 outline-none bg-white"
+                >
+                  <option value="" disabled>
+                    {accounts.filter((a) => a.isActive).length === 0 ? "No email accounts available" : "Select an email account…"}
+                  </option>
+                  {accounts.filter((a) => a.isActive).map((a) => (
+                    <option key={a.guid} value={a.guid}>{a.accountName} ({a.fromEmail})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">To</label>
                 <input type="text" value={emailDraft.to} onChange={(e) => setEmailDraft((d) => ({ ...d, to: e.target.value }))} placeholder="recipient@example.com" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 outline-none" />
               </div>
@@ -360,8 +395,8 @@ export default function EmailComposeTab({ orderGuid }) {
             </div>
             <button
               onClick={handleSendEmail}
-              disabled={emailSending || emailSent || pendingVars.length > 0}
-              title={pendingVars.length > 0 ? "Fill in the variables above first" : undefined}
+              disabled={emailSending || emailSent || pendingVars.length > 0 || !pickedAccountGuid}
+              title={pendingVars.length > 0 ? "Fill in the variables above first" : !pickedAccountGuid ? "Pick an email account first" : undefined}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-bold px-5 py-2 rounded-xl transition"
             >
               {emailSending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}

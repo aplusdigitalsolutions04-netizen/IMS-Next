@@ -14,6 +14,7 @@ const EMPTY_FORM = {
   emailCc: "",
   emailBcc: "",
   isActive: true,
+  emailAccountGuid: "",
 };
 
 // Mirrors the fixed set app/api/warranty/email-preview/[orderGuid]/route.js
@@ -134,7 +135,12 @@ export default function EmailTemplates() {
 
   const openNew = () => {
     const defaultPurpose = purposes.find((p) => p.purposeKey === "general" && p.isActive) || purposes.find((p) => p.isActive);
-    setForm({ ...EMPTY_FORM, purpose: defaultPurpose?.purposeKey || "general" });
+    // /api/email-accounts already only returns accounts this user (or
+    // everyone, for Admin) can see — one account means there's no real
+    // choice to make, so just default to it instead of making them pick.
+    const activeAccounts = accounts.filter((a) => a.isActive);
+    const soleAccountGuid = activeAccounts.length === 1 ? activeAccounts[0].guid : "";
+    setForm({ ...EMPTY_FORM, purpose: defaultPurpose?.purposeKey || "general", emailAccountGuid: soleAccountGuid });
     setPreview(false);
     setShowForm(true);
   };
@@ -150,6 +156,7 @@ export default function EmailTemplates() {
       emailCc: tpl.emailCc || "",
       emailBcc: tpl.emailBcc || "",
       isActive: !!tpl.isActive,
+      emailAccountGuid: tpl.emailAccountGuid || "",
     });
     setPreview(false);
     setShowForm(true);
@@ -177,6 +184,10 @@ export default function EmailTemplates() {
   };
 
   const handleSave = async () => {
+    if (!form.emailAccountGuid) {
+      Swal.fire("Email Account required", "Pick which email account this template sends from.", "warning");
+      return;
+    }
     setSaving(true);
     try {
       const payload = { ...form, companyGuid: form.companyGuid || null };
@@ -213,25 +224,6 @@ export default function EmailTemplates() {
   };
 
   const purposeLabel = (key) => purposes.find((p) => p.purposeKey === key)?.label || key;
-
-  // Mirrors lib/mailer.js's resolveEmailAccount priority order — this
-  // template's own purpose/company don't pick a webmail directly, they
-  // just narrow down which Email Account gets used to actually send it.
-  // Surfacing that match here (instead of it only being visible once an
-  // email actually goes out) also catches the case where more than one
-  // account shares a purpose — the sender only ever sees one of them, and
-  // that ambiguity used to be invisible until now.
-  const resolveAccountsFor = (purpose, companyGuid) => {
-    const active = accounts.filter((a) => a.isActive);
-    const exact = active.filter((a) => (a.companyGuid || "") === (companyGuid || "") && a.purpose === purpose);
-    if (exact.length) return exact;
-    const companyGeneral = active.filter((a) => (a.companyGuid || "") === (companyGuid || "") && a.purpose === "general");
-    if (companyGeneral.length) return companyGeneral;
-    const globalMatch = active.filter((a) => !a.companyGuid && a.purpose === purpose);
-    if (globalMatch.length) return globalMatch;
-    const globalGeneral = active.filter((a) => !a.companyGuid && a.purpose === "general");
-    return globalGeneral;
-  };
 
   const SAMPLE_DATA = {
     CUSTOMER_NAME: "Ministry of Finance",
@@ -423,30 +415,26 @@ export default function EmailTemplates() {
                 </div>
               </div>
 
-              {(() => {
-                const matches = resolveAccountsFor(form.purpose, form.companyGuid);
-                if (matches.length === 0) {
-                  return (
-                    <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                      No connected webmail matches this Purpose/Company — this template can&apos;t actually send until one does. Add or adjust one under Email Accounts.
-                    </div>
-                  );
-                }
-                if (matches.length > 1) {
-                  return (
-                    <div className="flex items-start gap-2 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                      <span>
-                        Multiple webmails match — the send will pick just one of these unpredictably: {matches.map((a) => a.accountName).join(", ")}.
-                      </span>
-                    </div>
-                  );
-                }
-                return (
-                  <div className="text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-                    Sends from <span className="font-bold text-slate-700">{matches[0].accountName}</span> ({matches[0].fromEmail})
-                  </div>
-                );
-              })()}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Email Account</label>
+                <select
+                  value={form.emailAccountGuid}
+                  onChange={(e) => handleField("emailAccountGuid", e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="" disabled>
+                    {accounts.filter((a) => a.isActive).length === 0 ? "No email accounts available" : "Select an email account…"}
+                  </option>
+                  {accounts.filter((a) => a.isActive).map((a) => (
+                    <option key={a.guid} value={a.guid}>{a.accountName} ({a.fromEmail})</option>
+                  ))}
+                </select>
+                {accounts.filter((a) => a.isActive).length === 0 && (
+                  <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-1.5">
+                    No active email accounts yet — add one under Settings &gt; Email Accounts first.
+                  </p>
+                )}
+              </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Email Subject</label>
@@ -516,7 +504,8 @@ export default function EmailTemplates() {
             <div className="p-4 border-t border-slate-200 flex justify-end shrink-0">
               <button
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || !form.emailAccountGuid}
+                title={!form.emailAccountGuid ? "Pick an Email Account first" : undefined}
                 className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-md transition-all"
               >
                 {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}

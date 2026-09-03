@@ -4,7 +4,16 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requirePermission, authorizeMasterWrite, isSuperUser, ApiError } from "@/lib/auth";
 import { normalizeRole } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
-import { ensureEmailAccountsOwnerColumn, ensureEmailAccountsSignatureColumn } from "@/lib/emailAccountsMigration";
+import { ensureEmailAccountsOwnerColumn, ensureEmailAccountsSignatureColumn, ensureEmailAccountsSharedColumn } from "@/lib/emailAccountsMigration";
+
+function parseSharedWith(raw) {
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
 
 async function validatePurpose(purpose) {
   const [[row]] = await mysqlPool.query("SELECT purposeKey FROM email_purposes WHERE purposeKey = ? AND isActive = 1", [purpose]);
@@ -16,24 +25,26 @@ export const GET = withErrorHandling(async (request) => {
   requirePermission(user, "emailAccounts", "Only Admin can view email accounts.");
   await ensureEmailAccountsOwnerColumn();
   await ensureEmailAccountsSignatureColumn();
-
-  // Whoever added a webmail account is the only one (besides Admin) who
-  // even sees it exists — not just its mail (already enforced on
-  // /api/email-inbox), the account row itself is hidden from everyone
-  // else here too.
-  const isAdmin = isSuperUser(normalizeRole(user.role));
-  const ownerClause = isAdmin ? "" : "WHERE e.createdBy = ?";
-  const ownerParams = isAdmin ? [] : [user.id];
+  await ensureEmailAccountsSharedColumn();
 
   const [rows] = await mysqlPool.query(`
     SELECT e.*, c.name as companyName
     FROM email_accounts e
     LEFT JOIN companies c ON e.companyGuid = c.guid
-    ${ownerClause}
     ORDER BY e.purpose ASC, c.name ASC
-  `, ownerParams);
+  `);
+  // Whoever added a webmail account (or anyone Admin explicitly shared it
+  // with, via sharedWith) is who sees it exists — not just its mail
+  // (already enforced on /api/email-inbox), the account row itself is
+  // hidden from everyone else here too. Filtered in JS rather than SQL
+  // since the row count here is always small and sharedWith needs parsing
+  // anyway.
+  const isAdmin = isSuperUser(normalizeRole(user.role));
+  const visible = isAdmin
+    ? rows
+    : rows.filter((r) => r.createdBy === user.id || parseSharedWith(r.sharedWith).includes(String(user.id)));
   // Never send the SMTP password back to the client.
-  const sanitized = rows.map(({ smtpPass, ...rest }) => rest);
+  const sanitized = visible.map(({ smtpPass, sharedWith, ...rest }) => ({ ...rest, sharedWith: parseSharedWith(sharedWith) }));
   return NextResponse.json({ data: sanitized });
 });
 
@@ -42,11 +53,12 @@ export const POST = withErrorHandling(async (request) => {
   authorizeMasterWrite(user, "emailAccounts", { isCreate: true, denyMessage: "You do not have permission to add email accounts." });
   await ensureEmailAccountsOwnerColumn();
   await ensureEmailAccountsSignatureColumn();
+  await ensureEmailAccountsSharedColumn();
 
   const body = await parseJsonBody(request);
   const {
     companyGuid, purpose, accountName, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, fromName, fromEmail, isActive,
-    imapEnabled, imapHost, imapPort, imapSecure, signature,
+    imapEnabled, imapHost, imapPort, imapSecure, signature, sharedWith,
   } = body;
 
   await validatePurpose(purpose);
@@ -57,18 +69,23 @@ export const POST = withErrorHandling(async (request) => {
   if (!fromEmail?.trim()) throw new ApiError(400, "From email is required");
   if (imapEnabled && !imapHost?.trim()) throw new ApiError(400, "IMAP host is required to enable inbox reading");
 
+  // Only Admin can grant sharing — a non-admin creating their own account
+  // has no standing to hand other people access to it unilaterally.
+  const isAdmin = isSuperUser(normalizeRole(user.role));
+  const sharedWithJson = isAdmin && Array.isArray(sharedWith) ? JSON.stringify(sharedWith.map(String)) : null;
+
   const guid = randomUUID();
   await mysqlPool.query(
     `INSERT INTO email_accounts
        (guid, companyGuid, purpose, accountName, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, fromName, fromEmail, isActive,
-        imapEnabled, imapHost, imapPort, imapSecure, createdBy, signature)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        imapEnabled, imapHost, imapPort, imapSecure, createdBy, signature, sharedWith)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       guid, companyGuid || null, purpose, accountName.trim(), smtpHost.trim(),
       Number(smtpPort) || 587, smtpSecure ? 1 : 0, smtpUser.trim(), smtpPass.trim(),
       fromName?.trim() || null, fromEmail.trim(), isActive === false ? 0 : 1,
       imapEnabled ? 1 : 0, imapHost?.trim() || null, Number(imapPort) || 993, imapSecure === false ? 0 : 1,
-      user.id, signature || null,
+      user.id, signature || null, sharedWithJson,
     ]
   );
 

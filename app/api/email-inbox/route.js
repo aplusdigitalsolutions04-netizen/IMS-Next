@@ -3,24 +3,26 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requirePermission, isSuperUser } from "@/lib/auth";
 import { normalizeRole } from "@/lib/helpers";
 import { withErrorHandling } from "@/lib/apiResponse";
-import { ensureEmailAccountsOwnerColumn } from "@/lib/emailAccountsMigration";
+import { ensureEmailAccountsOwnerColumn, ensureEmailAccountsSharedColumn } from "@/lib/emailAccountsMigration";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requirePermission(user, "emailInbox", "Only Admin can view the email inbox.");
   await ensureEmailAccountsOwnerColumn();
+  await ensureEmailAccountsSharedColumn();
 
   const { searchParams } = new URL(request.url);
   const purpose = searchParams.get("purpose");
   let clause = purpose ? "AND m.purpose = ?" : "";
   const params = purpose ? [purpose] : [];
 
-  // Whoever added a webmail account is the only one (besides Admin) who can
-  // actually read its mail — everyone else just sees the account exists in
-  // the picker (see /api/email-accounts), not its contents.
+  // Whoever added a webmail account, or anyone Admin explicitly shared it
+  // with (sharedWith), is who can actually read its mail — everyone else
+  // just sees the account exists in the picker (see /api/email-accounts),
+  // not its contents.
   if (!isSuperUser(normalizeRole(user.role))) {
-    clause += " AND a.createdBy = ?";
-    params.push(user.id);
+    clause += " AND (a.createdBy = ? OR JSON_CONTAINS(a.sharedWith, JSON_QUOTE(?)))";
+    params.push(user.id, String(user.id));
   }
 
   const [rows] = await mysqlPool.query(

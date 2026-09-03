@@ -17,7 +17,7 @@ export const GET = withErrorHandling(async (request) => {
   authorizeWarranty(user, "GET");
 
   const [rows] = await mysqlPool.query(
-    `SELECT guid, templateName, emailSubject, emailBody, purpose
+    `SELECT guid, templateName, emailSubject, emailBody, purpose, emailAccountGuid
      FROM email_templates
      WHERE isActive = 1 AND (companyGuid = ? OR companyGuid IS NULL)
      ORDER BY (companyGuid = ?) DESC, purpose ASC, templateName ASC`,

@@ -15,7 +15,12 @@ import RichTextEditor, { insertHtmlAtEnd } from "./RichTextEditor";
 // any of them automatically.
 const VAR_REGEX = /\{\{([A-Z0-9_]+)\}\}/g;
 
+// Email Inbox is account-first navigation — you're already inside one
+// specific account's Inbox/Sent before Compose is even reachable, so there's
+// nothing to pick here; it just sends from that account.
 export default function ComposeEmailModal({ account, onClose, onSent }) {
+  const effectiveAccount = account;
+
   const [templatePicker, setTemplatePicker] = useState(true);
   const [templates, setTemplates] = useState([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
@@ -79,8 +84,8 @@ export default function ComposeEmailModal({ account, onClose, onSent }) {
   };
 
   const insertSignature = () => {
-    if (!account.signature) return;
-    setDraft((d) => ({ ...d, body: insertHtmlAtEnd(d.body, account.signature) }));
+    if (!effectiveAccount.signature) return;
+    setDraft((d) => ({ ...d, body: insertHtmlAtEnd(d.body, effectiveAccount.signature) }));
   };
 
   const discardDraft = async () => {
@@ -124,8 +129,8 @@ export default function ComposeEmailModal({ account, onClose, onSent }) {
         bcc: draft.bcc,
         subject: draft.subject,
         bodyHtml: draft.body,
-        accountGuid: account.guid,
-        purpose: account.purpose,
+        accountGuid: effectiveAccount.guid,
+        purpose: effectiveAccount.purpose,
         attachments: [
           ...attachments.map((a) => ({ filename: a.name, content: a.base64, encoding: "base64", contentType: a.type })),
           ...inlineImages.map((img) => ({ filename: img.filename, content: img.content, encoding: "base64", contentType: img.contentType, cid: img.cid })),
@@ -252,7 +257,7 @@ export default function ComposeEmailModal({ account, onClose, onSent }) {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Body</label>
-                  {account.signature && (
+                  {effectiveAccount.signature && (
                     <button
                       type="button"
                       onClick={insertSignature}

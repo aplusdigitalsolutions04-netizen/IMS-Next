@@ -1,9 +1,10 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { Mail, Plus, Pencil, Trash2, X, Loader2, Save, ShieldCheck } from "lucide-react";
+import { Mail, Plus, Pencil, Trash2, X, Loader2, Save, ShieldCheck, Users as UsersIcon } from "lucide-react";
 import Swal from "sweetalert2";
 import api from "@/lib/client/apiClient";
 import RichTextEditor from "./RichTextEditor";
+import { getStoredUser } from "@/lib/client/auth";
 
 const EMPTY_FORM = {
   guid: null,
@@ -23,12 +24,17 @@ const EMPTY_FORM = {
   imapPort: 993,
   imapSecure: true,
   signature: "",
+  sharedWith: [],
 };
 
 export default function EmailAccounts() {
+  const currentUser = getStoredUser();
+  const isAdmin = currentUser?.role === "Admin";
+
   const [accounts, setAccounts] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [purposes, setPurposes] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -46,17 +52,25 @@ export default function EmailAccounts() {
       // too, even though those two calls succeed fine on their own.
       // allSettled + a per-call fallback keeps the rest of the page
       // working; the company dropdown just stays empty for that role.
-      const [accRes, compRes, purpRes] = await Promise.allSettled([
+      // /users is only fetched for Admin — it's the "Shared With" picker,
+      // which only Admin can even use (see the sharedWith save gate on the
+      // API side), so a non-admin has no need for it and may well lack the
+      // "users" permission that route requires anyway.
+      const calls = [
         api.get("/email-accounts"),
         api.get("/companies"),
         api.get("/email-purposes"),
-      ]);
+      ];
+      if (isAdmin) calls.push(api.get("/users"));
+      const [accRes, compRes, purpRes, usersRes] = await Promise.allSettled(calls);
       if (accRes.status === "fulfilled") setAccounts(accRes.value.data?.data || []);
       else console.error("Failed to load email accounts:", accRes.reason);
       if (compRes.status === "fulfilled") setCompanies(compRes.value.data || []);
       else setCompanies([]);
       if (purpRes.status === "fulfilled") setPurposes(purpRes.value.data?.data || []);
       else console.error("Failed to load email purposes:", purpRes.reason);
+      if (isAdmin && usersRes?.status === "fulfilled") setUsers(usersRes.value.data?.data || []);
+      else if (isAdmin) console.error("Failed to load users:", usersRes?.reason);
     } finally {
       setLoading(false);
     }
@@ -92,6 +106,7 @@ export default function EmailAccounts() {
       imapPort: acc.imapPort || 993,
       imapSecure: acc.imapSecure === undefined ? true : !!acc.imapSecure,
       signature: acc.signature || "",
+      sharedWith: Array.isArray(acc.sharedWith) ? acc.sharedWith.map(String) : [],
     });
     setTestResult(null);
     setShowForm(true);
@@ -383,6 +398,38 @@ export default function EmailAccounts() {
                   minHeight={100}
                 />
               </div>
+
+              {isAdmin && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                    <UsersIcon size={13} /> Shared With <span className="normal-case font-medium text-slate-400">(besides you, who else can read this account&apos;s Inbox/Sent/Compose)</span>
+                  </label>
+                  {users.filter((u) => u.id !== currentUser?.id).length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">No other users to share with.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-2.5">
+                      {users.filter((u) => u.id !== currentUser?.id).map((u) => {
+                        const checked = form.sharedWith.includes(String(u.id));
+                        return (
+                          <label key={u.id} className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const next = e.target.checked
+                                  ? [...form.sharedWith, String(u.id)]
+                                  : form.sharedWith.filter((id) => id !== String(u.id));
+                                handleField("sharedWith", next);
+                              }}
+                            />
+                            {u.fullName || u.username}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 cursor-pointer">
                 <input type="checkbox" checked={form.isActive} onChange={(e) => handleField("isActive", e.target.checked)} />

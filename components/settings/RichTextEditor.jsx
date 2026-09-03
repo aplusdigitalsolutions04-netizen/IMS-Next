@@ -3,18 +3,25 @@ import React, { useEffect, useRef, useState } from "react";
 import { Bold, Italic, Underline, List, ListOrdered, Link2, Image as ImageIcon, Smile, PenLine } from "lucide-react";
 
 // A minimal rich-text body editor for email compose/signature — bold,
-// italic, underline, lists, links, inline images (via cid attachments so
-// they actually render in real email clients instead of being stripped
-// as data: URIs), and an emoji picker. Built on contentEditable +
-// document.execCommand rather than a library — deprecated APIs, but still
-// broadly supported for exactly this basic formatting set in every
-// browser this app targets, without adding a new dependency for it.
+// italic, underline, lists, links, inline images, and an emoji picker.
+// Built on contentEditable + document.execCommand rather than a library —
+// deprecated APIs, but still broadly supported for exactly this basic
+// formatting set in every browser this app targets, without adding a new
+// dependency for it.
 const EMOJI_SET = [
   "😀","😁","😂","🙂","😉","😊","😍","🤔","😐","😕","😢","😡","👍","👎","👏","🙏",
   "🎉","✅","❌","⚠️","📌","📎","📧","📞","🚀","💡","🔥","⭐","❤️","💯","🕐","📅",
 ];
 
 export default function RichTextEditor({ value, onChange, onInsertInlineImage, placeholder, minHeight = 200 }) {
+  // Body editors (Compose) pass onInsertInlineImage and get a proper cid
+  // attachment tracked alongside that one send. Callers with nothing to
+  // attach an image to across future sends — a saved Signature, reused on
+  // every send with no per-send attachment list to carry a cid's data in —
+  // embed the image as a data: URI directly instead. Less universally
+  // reliable than cid across every email client, but the only option that
+  // doesn't require re-uploading the logo on every single send.
+  const inlineAsDataUri = !onInsertInlineImage;
   const editorRef = useRef(null);
   const imageInputRef = useRef(null);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -60,13 +67,21 @@ export default function RichTextEditor({ value, onChange, onInsertInlineImage, p
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const base64 = ev.target.result.split(",")[1];
-      // A cid: reference is what actually survives in Gmail/Outlook/etc —
-      // a data: URI src gets stripped by most real-world email clients.
-      const cid = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      onInsertInlineImage?.({ cid, filename: file.name, content: base64, contentType: file.type });
+      const dataUri = ev.target.result;
       focusEditor();
-      document.execCommand("insertImage", false, `cid:${cid}`);
+      if (inlineAsDataUri) {
+        document.execCommand("insertImage", false, dataUri);
+      } else {
+        // A cid: reference is what actually survives being resent from a
+        // real webmail client (Gmail/Outlook/etc. don't reliably keep a
+        // data: URI src) — but only makes sense when something is tracking
+        // that cid's actual image data for *this* send, which is what
+        // onInsertInlineImage does.
+        const base64 = dataUri.split(",")[1];
+        const cid = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        onInsertInlineImage({ cid, filename: file.name, content: base64, contentType: file.type });
+        document.execCommand("insertImage", false, `cid:${cid}`);
+      }
       emitChange();
     };
     reader.readAsDataURL(file);
