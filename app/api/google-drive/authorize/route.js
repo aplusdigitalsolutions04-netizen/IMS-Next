@@ -23,7 +23,7 @@ export async function GET(request) {
     const user = await authenticateRequest(authRequest);
     requirePermission(user, "googleDrive", "You do not have permission to access Google Drive integration.");
 
-    return NextResponse.redirect(getAuthUrl());
+    return NextResponse.redirect(await getAuthUrl());
   } catch (err) {
     return NextResponse.json({ message: err.message }, { status: err.status || 500 });
   }

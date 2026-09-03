@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-import { exchangeCodeForTokens } from "@/lib/googleDrive";
+import { exchangeCodeForTokens, saveRefreshToken } from "@/lib/googleDrive";
 
-// One-time local setup step: visiting /api/google-drive/authorize sends the
-// admin through Google's consent screen, which redirects back here with a
-// code. We exchange it for a refresh token and persist it straight into
-// .env.local so every future upload/download runs unattended.
+// Visiting /api/google-drive/authorize sends the admin through Google's
+// consent screen, which redirects back here with a code. We exchange it for
+// a refresh token and store it in the DB (google_drive_auth) — takes effect
+// immediately, on any request, no process restart. This used to write the
+// token into .env.local on disk instead, which only ever worked for local
+// dev: on the real deployment (Passenger shared hosting) that file isn't
+// necessarily writable by the app process, and even when it was, there's no
+// way to trigger the restart that approach needed — so authorizing on the
+// live site silently never took effect.
 export async function GET(request) {
   try {
     const code = new URL(request.url).searchParams.get("code");
@@ -25,21 +28,14 @@ export async function GET(request) {
       );
     }
 
-    const envPath = path.join(process.cwd(), ".env.local");
-    let env = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
-    if (env.includes("GOOGLE_OAUTH_REFRESH_TOKEN=")) {
-      env = env.replace(/GOOGLE_OAUTH_REFRESH_TOKEN=.*/, `GOOGLE_OAUTH_REFRESH_TOKEN=${tokens.refresh_token}`);
-    } else {
-      env += `${env.endsWith("\n") || !env ? "" : "\n"}GOOGLE_OAUTH_REFRESH_TOKEN=${tokens.refresh_token}\n`;
-    }
-    fs.writeFileSync(envPath, env);
+    await saveRefreshToken(tokens.refresh_token);
 
-    console.log("[GOOGLE_DRIVE_AUTH] Refresh token saved to .env.local successfully.");
+    console.log("[GOOGLE_DRIVE_AUTH] Refresh token saved successfully.");
 
     return new NextResponse(
       "<html><body style='font-family:sans-serif;padding:2rem'>" +
         "<h2>Google Drive connected</h2>" +
-        "<p>Refresh token saved to .env.local. Restart the dev server for it to take effect.</p>" +
+        "<p>You're all set — uploads and downloads will use this account right away.</p>" +
         "</body></html>",
       { headers: { "Content-Type": "text/html" } }
     );
