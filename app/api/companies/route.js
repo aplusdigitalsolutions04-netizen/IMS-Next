@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeMasterWrite, hasAllCompaniesAccess, isSuperUser, ApiError } from "@/lib/auth";
-import { normalizeRole } from "@/lib/helpers";
+import { normalizeRole, parseAllowedPlatforms } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
@@ -22,7 +22,7 @@ export const GET = withErrorHandling(async (request) => {
          ORDER BY c.name ASC`,
         [user.id]
       );
-  return NextResponse.json(rows);
+  return NextResponse.json(rows.map((r) => ({ ...r, allowedPlatforms: parseAllowedPlatforms(r.allowedPlatforms) })));
 });
 
 export const POST = withErrorHandling(async (request) => {

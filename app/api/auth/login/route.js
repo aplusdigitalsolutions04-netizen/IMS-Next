@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { ApiError, hasAllCompaniesAccess } from "@/lib/auth";
-import { sanitizeUser, safeStr, verifyPassword, hashPassword, signToken, logUserActivity } from "@/lib/helpers";
+import { sanitizeUser, safeStr, verifyPassword, hashPassword, signToken, logUserActivity, parseAllowedPlatforms } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { recordLoginAttempt } from "@/lib/rateLimiter";
 
@@ -46,6 +46,8 @@ export const POST = withErrorHandling(async (request) => {
          WHERE uc.userGuid = ? AND c.isActive = 1`,
         [user.userid]
       );
+
+  for (const c of userCompanies) c.allowedPlatforms = parseAllowedPlatforms(c.allowedPlatforms);
 
   if (userCompanies.length === 0) {
     // A brand-new signup request (see /api/auth/signup) has no role and no

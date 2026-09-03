@@ -72,6 +72,10 @@ export default function CompanyMasterPage() {
   const [platforms, setPlatforms] = useState([]);
 
   useEffect(() => { platformsService.getPlatforms().then(setPlatforms); }, []);
+  // Refetch every time the modal opens too — a platform added via Settings >
+  // Selling Platforms after this page first loaded wouldn't otherwise show
+  // up in the picker until a full page reload.
+  useEffect(() => { if (modal) platformsService.getPlatforms().then(setPlatforms); }, [modal]);
 
   const platformOptions = useMemo(
     () => platforms.map((p) => ({ value: p.name, icon: PLATFORM_ICONS[p.name] || Globe, ...(THEME_CLASSES[p.colorTheme] || DEFAULT_THEME) })),
@@ -420,7 +424,7 @@ export default function CompanyMasterPage() {
       {/* ── Create / Edit modal ── */}
       {modal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-100">
 
             {/* Modal header */}
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 px-6 py-5 relative overflow-hidden">
