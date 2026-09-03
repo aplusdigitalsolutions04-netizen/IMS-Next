@@ -1,6 +1,6 @@
 "use client";
-import React, { useEffect, useState } from "react";
-import { FileText, Loader2, Trash2, X, ListOrdered, Pencil, Ban, Plus, Save, PackagePlus, Search, ArrowUpDown, Columns3, ChevronLeft, ChevronRight } from "lucide-react";
+import React, { useEffect, useState, useRef } from "react";
+import { FileText, Loader2, Trash2, X, ListOrdered, Pencil, Ban, Plus, Save, PackagePlus, Search, ArrowUpDown, Columns3, ChevronLeft, ChevronRight, UploadCloud } from "lucide-react";
 import Swal from "sweetalert2";
 import { contractsService } from "@/lib/services/contractsService";
 import { printerService } from "@/lib/services/api";
@@ -384,6 +384,9 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
   const [wizardProduct, setWizardProduct] = useState(null);
   const wizardResolveRef = React.useRef(null);
   const [creatingDraftFor, setCreatingDraftFor] = useState(null);
+  const [uploadingPdfFor, setUploadingPdfFor] = useState(null);
+  const pdfUploadTargetRef = useRef(null);
+  const pdfUploadInputRef = useRef(null);
   const toggleCol = (key) =>
     setVisibleCols((prev) => {
       const next = new Set(prev);
@@ -477,6 +480,30 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
       await createDraftOrderForContract(c);
     } finally {
       setCreatingDraftFor(null);
+    }
+  };
+
+  // Contracts entered directly into the DB (skipping Upload Contract) have
+  // no pdfFilename and nothing on Drive to open — this lets someone attach
+  // the actual PDF after the fact without needing to recreate the row.
+  const openPdfUpload = (c) => {
+    pdfUploadTargetRef.current = c;
+    pdfUploadInputRef.current?.click();
+  };
+
+  const handlePdfFileChosen = async (e) => {
+    const file = e.target.files?.[0];
+    const contract = pdfUploadTargetRef.current;
+    e.target.value = "";
+    if (!file || !contract) return;
+    setUploadingPdfFor(contract.guid);
+    try {
+      await contractsService.uploadContractPdf(contract.guid, file);
+      await loadContracts(true);
+    } catch (err) {
+      Swal.fire("Couldn't upload PDF", err.response?.data?.message || err.message, "error");
+    } finally {
+      setUploadingPdfFor(null);
     }
   };
 
@@ -602,6 +629,13 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
 
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6">
+      <input
+        ref={pdfUploadInputRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={handlePdfFileChosen}
+      />
       <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-6">
         <FileText className={showingCancelled ? "text-rose-600" : "text-indigo-600"} size={28} />
         {showingCancelled ? "Cancelled Contracts" : "Saved Contracts"} ({visibleContracts.length})
@@ -675,6 +709,16 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
                         <button onClick={() => setEditingContract(c)} className="text-indigo-500 hover:text-indigo-700" title="Edit">
                           <Pencil size={16} />
                         </button>
+                        {!c.pdfFilename && (
+                          <button
+                            onClick={() => openPdfUpload(c)}
+                            disabled={uploadingPdfFor === c.guid}
+                            className="text-violet-600 hover:text-violet-800 disabled:opacity-40 disabled:cursor-wait"
+                            title="Upload contract PDF to Drive"
+                          >
+                            {uploadingPdfFor === c.guid ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
+                          </button>
+                        )}
                         {!isCancelled && (
                           <>
                             <button onClick={() => handleCreateDraftOrder(c)} disabled={creatingDraftFor === c.guid} className="text-teal-600 hover:text-teal-800 disabled:opacity-40 disabled:cursor-wait" title="Create Order Draft">
