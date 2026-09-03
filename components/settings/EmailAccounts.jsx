@@ -43,7 +43,6 @@ export default function EmailAccounts() {
   const [testResult, setTestResult] = useState(null);
 
   const load = async () => {
-    setLoading(true);
     try {
       // /companies is Admin-only (the "companyMaster" permission, used for
       // the multi-company scope dropdown below) — a role with just
@@ -187,8 +186,6 @@ export default function EmailAccounts() {
     }
   };
 
-  const purposeLabel = (key) => purposes.find((p) => p.purposeKey === key)?.label || key;
-
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6">
       <div className="flex items-center justify-between mb-6">
@@ -224,7 +221,6 @@ export default function EmailAccounts() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Name</th>
-                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Purpose</th>
                 <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Company</th>
                 <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">From Email</th>
                 <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">SMTP Host</th>
@@ -236,9 +232,6 @@ export default function EmailAccounts() {
               {accounts.map((acc) => (
                 <tr key={acc.guid} className="hover:bg-slate-50">
                   <td className="p-3 font-bold text-slate-700 whitespace-nowrap">{acc.accountName}</td>
-                  <td className="p-3 whitespace-nowrap">
-                    <span className="px-2 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600">{purposeLabel(acc.purpose)}</span>
-                  </td>
                   <td className="p-3 whitespace-nowrap text-slate-600">{acc.companyName || <span className="text-slate-400">All companies</span>}</td>
                   <td className="p-3 whitespace-nowrap text-slate-600">{acc.fromEmail}</td>
                   <td className="p-3 whitespace-nowrap text-slate-500">{acc.smtpHost}:{acc.smtpPort}</td>

@@ -1,15 +1,27 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requirePermission, authorizeMasterWrite, isSuperUser, ApiError } from "@/lib/auth";
+import { authenticateRequest, authorizeMasterWrite, hasAllCompaniesAccess, isSuperUser, ApiError } from "@/lib/auth";
 import { normalizeRole } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const GET = withErrorHandling(async (request) => {
+  // Any authenticated user can list companies — this backs company pickers
+  // used well outside Company Master itself (Email Accounts, user forms,
+  // etc.). But the list itself is scoped to companies the user actually has
+  // access to (same membership check as switch-company), not every company
+  // in the system — only Admin/allCompaniesAccess users see all of them.
   const user = await authenticateRequest(request);
-  requirePermission(user, "companyMaster", "Only Admin can view all companies.");
 
-  const [rows] = await mysqlPool.query("SELECT * FROM companies ORDER BY name ASC");
+  const [rows] = hasAllCompaniesAccess(user)
+    ? await mysqlPool.query("SELECT * FROM companies ORDER BY name ASC")
+    : await mysqlPool.query(
+        `SELECT c.* FROM user_companies uc
+         JOIN companies c ON uc.companyGuid = c.guid
+         WHERE uc.userGuid = ?
+         ORDER BY c.name ASC`,
+        [user.id]
+      );
   return NextResponse.json(rows);
 });
 
