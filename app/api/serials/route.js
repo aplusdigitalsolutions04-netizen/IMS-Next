@@ -23,7 +23,7 @@ export const GET = withErrorHandling(async (request) => {
       COALESCE(c.categoryName, '') as modelCategory,
       g.godownName, g.godownAddress, g.godownName as warehouseName,
       g.godownAddress as warehouseAddress, s.godownGuid as warehouseGuid,
-      iv.vendorFirmName as vendorName,
+      vd.vendorFirmName as vendorName,
       lr.reason as latestReturnReason, lr.returnDate as latestReturnDate, lr.condition as latestReturnCondition,
       COALESCE(NULLIF(s.landingPrice, 0), itv.purchasePrice, 0) as landingPrice
     FROM inventorystockinserial s
@@ -33,7 +33,9 @@ export const GET = withErrorHandling(async (request) => {
     LEFT JOIN inventorybrandmaster b ON i.brandId=b.brandId AND b.isDeleted=0 ${c("b")}
     LEFT JOIN inventorycategorymaster c ON i.categoryId=c.categoryId AND c.isDeleted=0 ${c("c")}
     LEFT JOIN godowns g ON s.godownGuid=g.guid AND g.isDeleted=0 ${c("g")}
-    LEFT JOIN inventoryvendor iv ON s.vendorId=iv.vendorId AND iv.isDeleted=0 ${c("iv")}
+    LEFT JOIN inventorystockindetail sid ON s.stockInDetailId=sid.stockInDetailId
+    LEFT JOIN inventorystockin si ON sid.stockInId=si.stockInId
+    LEFT JOIN inventoryvendor vd ON COALESCE(s.vendorId, si.vendorId)=vd.vendorId AND vd.isDeleted=0 ${c("vd")}
     LEFT JOIN (
       SELECT r1.* FROM returns r1
       INNER JOIN (

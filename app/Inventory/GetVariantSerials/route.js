@@ -22,13 +22,21 @@ export const GET = withErrorHandling(async (request) => {
   // purchasePrice itself is also returned separately (it's a single
   // per-variant value from Item Master, not per-serial) so the UI can show
   // both instead of only the coalesced landingPrice.
+  // The vendor: SaveStockInSerials (the normal Stock In finalize flow) never
+  // sets s.vendorId — the vendor only lives on the invoice header
+  // (inventorystockin.vendorId), reached via s.stockInDetailId. s.vendorId
+  // itself is set by a different path (the quick "Add Serial No." in Item
+  // Variant Master), so both have to be checked — COALESCE prefers the
+  // direct column when it's actually set.
   const [rows] = await mysqlPool.query(
     `SELECT s.guid, s.serialNumber as value, s.serialStatus as status,
        COALESCE(NULLIF(s.landingPrice, 0), iv.purchasePrice, 0) as landingPrice,
        iv.purchasePrice as purchasePrice, s.createdAt, vd.vendorFirmName as vendorName
      FROM inventorystockinserial s
      LEFT JOIN inventoryitemvariant iv ON s.itemVariantId = iv.itemVariantId AND iv.isDeleted = 0
-     LEFT JOIN inventoryvendor vd ON s.vendorId = vd.vendorId AND vd.isDeleted = 0
+     LEFT JOIN inventorystockindetail sid ON s.stockInDetailId = sid.stockInDetailId
+     LEFT JOIN inventorystockin si ON sid.stockInId = si.stockInId
+     LEFT JOIN inventoryvendor vd ON COALESCE(s.vendorId, si.vendorId) = vd.vendorId AND vd.isDeleted = 0
      WHERE s.itemVariantId = ? AND s.isDeleted = 0 AND s.companyGuid = ?
      ORDER BY s.createdAt DESC`,
     [itemVariantId, user.companyId]
