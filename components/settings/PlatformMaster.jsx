@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { Globe, Plus, Loader2, Trash2, Lock, ToggleLeft, ToggleRight, Pencil, X, Check, Settings2 } from "lucide-react";
+import { Globe, Plus, Loader2, Trash2, Lock, ToggleLeft, ToggleRight, Pencil, X, Check, Settings2, ScanLine } from "lucide-react";
 import Swal from "sweetalert2";
 import { platformsService } from "@/lib/services/platformsService";
 import { getStoredUser } from "@/lib/client/auth";
@@ -42,6 +42,38 @@ const COLOR_DOT = {
   rose: "bg-rose-500", slate: "bg-slate-500",
 };
 
+const ITEM_TYPE_OPTIONS = [
+  { value: "serialized", label: "Serialized Only", hint: "Orders always use serial numbers — no picker shown during New Dispatch." },
+  { value: "nonSerialized", label: "Non-Serialized Only", hint: "Orders always use bulk quantity — no picker shown during New Dispatch." },
+  { value: "both", label: "Both", hint: "New Dispatch asks Serialized or Non-Serialized for every order on this platform." },
+];
+
+function ItemTypeSelector({ value, onChange }) {
+  return (
+    <div className="space-y-2">
+      {ITEM_TYPE_OPTIONS.map((opt) => (
+        <label
+          key={opt.value}
+          className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+            value === opt.value ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-white hover:border-slate-300"
+          }`}
+        >
+          <input
+            type="radio"
+            checked={value === opt.value}
+            onChange={() => onChange(opt.value)}
+            className="mt-0.5 w-4 h-4 text-indigo-600"
+          />
+          <div>
+            <div className="text-sm font-bold text-slate-700">{opt.label}</div>
+            <div className="text-xs text-slate-500 mt-0.5">{opt.hint}</div>
+          </div>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function ColorSwatchPicker({ value, onPick }) {
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -66,12 +98,14 @@ export default function PlatformMaster() {
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(COLOR_THEMES[0]);
+  const [newItemTypeMode, setNewItemTypeMode] = useState("serialized");
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [colorPickerId, setColorPickerId] = useState(null);
   const [managingFieldsFor, setManagingFieldsFor] = useState(null);
+  const [itemTypeModalFor, setItemTypeModalFor] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -91,9 +125,10 @@ export default function PlatformMaster() {
     if (!trimmed) return;
     setAdding(true);
     try {
-      await platformsService.addPlatform(trimmed, newColor);
+      await platformsService.addPlatform(trimmed, newColor, newItemTypeMode);
       setNewName("");
       setNewColor(COLOR_THEMES[0]);
+      setNewItemTypeMode("serialized");
       await load();
     } catch (err) {
       Swal.fire("Error", err?.response?.data?.message || "Failed to add platform", "error");
@@ -129,6 +164,19 @@ export default function PlatformMaster() {
       await load();
     } catch (err) {
       Swal.fire("Error", err?.response?.data?.message || "Failed to rename platform", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleSaveItemTypeMode = async (platform, mode) => {
+    setBusyId(platform.guid);
+    try {
+      await platformsService.setPlatformItemTypeMode(platform.guid, mode);
+      setItemTypeModalFor(null);
+      await load();
+    } catch (err) {
+      Swal.fire("Error", err?.response?.data?.message || "Failed to update platform", "error");
     } finally {
       setBusyId(null);
     }
@@ -205,6 +253,8 @@ export default function PlatformMaster() {
         </div>
         <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 block">Color</label>
         <ColorSwatchPicker value={newColor} onPick={setNewColor} />
+        <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 mt-4 block">Item Type</label>
+        <ItemTypeSelector value={newItemTypeMode} onChange={setNewItemTypeMode} />
       </div>
 
       {loading ? (
@@ -242,6 +292,9 @@ export default function PlatformMaster() {
                 <span className="flex-1 text-sm font-bold text-slate-700 flex items-center gap-2">
                   {p.name}
                   {p.isSystem === 1 && <Lock size={11} className="text-slate-300" title="Built-in — name can't be changed" />}
+                  <span className="text-[10px] font-bold text-violet-500 uppercase bg-violet-50 border border-violet-100 px-2 py-0.5 rounded-full">
+                    {ITEM_TYPE_OPTIONS.find((o) => o.value === (p.itemTypeMode || "serialized"))?.label}
+                  </span>
                 </span>
               )}
 
@@ -260,6 +313,14 @@ export default function PlatformMaster() {
                   title={p.isActive ? "Deactivate" : "Activate"}
                 >
                   {p.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                </button>
+                <button
+                  onClick={() => setItemTypeModalFor(p)}
+                  disabled={busyId === p.guid}
+                  className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                  title="Item Type Settings"
+                >
+                  <ScanLine size={14} />
                 </button>
                 {(currentUser?.role?.toLowerCase() === 'admin' || currentUser?.allow_manage_platform_fields) && (
                   <button
@@ -283,6 +344,15 @@ export default function PlatformMaster() {
 
       {managingFieldsFor && (
         <ManageFieldsModal platform={managingFieldsFor} onClose={() => setManagingFieldsFor(null)} />
+      )}
+
+      {itemTypeModalFor && (
+        <ItemTypeModal
+          platform={itemTypeModalFor}
+          busy={busyId === itemTypeModalFor.guid}
+          onSave={(mode) => handleSaveItemTypeMode(itemTypeModalFor, mode)}
+          onClose={() => setItemTypeModalFor(null)}
+        />
       )}
     </div>
   );
@@ -419,6 +489,41 @@ function ManageFieldsModal({ platform, onClose }) {
               ))}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ItemTypeModal({ platform, busy, onSave, onClose }) {
+  const [mode, setMode] = React.useState(platform.itemTypeMode || "serialized");
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">Item Type: {platform.name}</h2>
+            <p className="text-sm text-slate-500 mt-1">Controls the Serialized / Non-Serialized choice during New Dispatch.</p>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
+        </div>
+
+        <div className="p-6">
+          <ItemTypeSelector value={mode} onChange={setMode} />
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+          <button onClick={onClose} className="px-5 py-2.5 rounded-xl font-bold text-sm text-slate-600 hover:bg-slate-100 transition-all">
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(mode)}
+            disabled={busy}
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all"
+          >
+            {busy ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />} Save
+          </button>
         </div>
       </div>
     </div>

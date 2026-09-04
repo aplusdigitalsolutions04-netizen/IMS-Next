@@ -205,18 +205,6 @@ export default function NewDispatch({
     }
   };
 
-  // Reset manual flag when platform changes
-  useEffect(() => {
-    setLastDateManuallySet(false);
-    // Auto-set E-Commerce platform fields if missing
-    // so it always sends a valid default for platforms that don't show the picker
-    if (form.platform === "Amazon" || form.platform === "Flipkart") {
-      setForm(f => ({ ...f, status: "Order Confirmed", platformFields: {} }));
-    } else {
-      setForm(f => ({ ...f, platformFields: {} }));
-    }
-  }, [form.platform]);
-
   const { activeCompany } = useCompany();
   const allowed = activeCompany?.allowedPlatforms;
 
@@ -230,9 +218,30 @@ export default function NewDispatch({
       .then(setAllPlatformRows)
       .catch((err) => console.error("Failed to load platforms:", err));
   }, []);
-  const allPlatforms = allPlatformRows.map((p) => ({ value: p.name, icon: PLATFORM_ICONS[p.name] || "🛒", fields: p.fields || [] }));
+  const allPlatforms = allPlatformRows.map((p) => ({ value: p.name, icon: PLATFORM_ICONS[p.name] || "🛒", fields: p.fields || [], itemTypeMode: p.itemTypeMode || "serialized" }));
 
   const platforms = allowed ? allPlatforms.filter(p => allowed.includes(p.value)) : allPlatforms;
+
+  // Reset manual flag when platform changes
+  useEffect(() => {
+    setLastDateManuallySet(false);
+    // Auto-set E-Commerce platform fields if missing
+    // so it always sends a valid default for platforms that don't show the picker
+    if (form.platform === "Amazon" || form.platform === "Flipkart") {
+      setForm(f => ({ ...f, status: "Order Confirmed", platformFields: {} }));
+    } else {
+      setForm(f => ({ ...f, platformFields: {} }));
+    }
+    // A platform locked to one item type (Serialized Only / Non-Serialized
+    // Only) shouldn't silently keep whatever itemType was picked for the
+    // previous platform — the picker is hidden for it, but the submit logic
+    // still branches on itemType, so this has to be forced explicitly.
+    // "both" leaves the user's existing choice alone (or the default).
+    const config = platforms.find((p) => p.value === form.platform);
+    if (config?.itemTypeMode === "nonSerialized") setItemType("nonSerialized");
+    else if (config?.itemTypeMode !== "both") setItemType("serialized");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.platform]);
 
   const getCompanyName = (model) => {
     if (!model) return "Unknown";
@@ -1048,8 +1057,12 @@ export default function NewDispatch({
                     </div>
                   </div>
 
-                  {/* Item Type — Serialized vs Non-Serialized (GeM / Other) */}
-                  {(form.platform === "GeM" || form.platform === "Other") && (
+                  {/* Item Type — Serialized vs Non-Serialized. Only shown when
+                      the selected platform's Item Type mode (set per-platform
+                      in Settings > Selling Platforms) is "both" — a platform
+                      locked to one or the other never shows this picker at
+                      all, and isn't limited to GeM/Other by name anymore. */}
+                  {getSelectedPlatformConfig()?.itemTypeMode === "both" && (
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-slate-700">Item Type</label>
                       <div className="grid grid-cols-2 gap-2">
