@@ -537,10 +537,11 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
     if (files.length === 0) return;
 
     setBulkUploading(true);
-    const uploaded = [];
-    const skipped = [];
-    const unmatched = [];
-    const failed = [];
+    // Rows accumulate in file-processing order — {label, status, detail}
+    // where label is the contract number (or, for an unmatched file, its
+    // filename since there's no contract to name it by).
+    const rows = [];
+    let uploadedCount = 0;
     try {
       for (const file of files) {
         const baseName = file.name.replace(/\.pdf$/i, "").trim();
@@ -550,18 +551,19 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
           return cDigits.length >= 6 && fileDigits.includes(cDigits);
         });
         if (!match) {
-          unmatched.push(file.name);
+          rows.push({ label: file.name, status: "No match", detail: "", color: "#64748b", bg: "#f1f5f9" });
           continue;
         }
         if (match.hasDrivePdf) {
-          skipped.push(match.contractNumber);
+          rows.push({ label: match.contractNumber, status: "Skipped", detail: "already has a PDF", color: "#b45309", bg: "#fffbeb" });
           continue;
         }
         try {
           await contractsService.uploadContractPdf(match.guid, file);
-          uploaded.push(match.contractNumber);
+          rows.push({ label: match.contractNumber, status: "Uploaded", detail: "", color: "#047857", bg: "#ecfdf5" });
+          uploadedCount += 1;
         } catch (err) {
-          failed.push(`${match.contractNumber}: ${err.response?.data?.message || err.message}`);
+          rows.push({ label: match.contractNumber, status: "Failed", detail: err.response?.data?.message || err.message, color: "#be123c", bg: "#fff1f2" });
         }
       }
       await loadContracts(true);
@@ -569,20 +571,34 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
       setBulkUploading(false);
     }
 
-    const section = (label, items, colorClass) =>
-      items.length > 0
-        ? `<p style="margin-top:8px"><b class="${colorClass}">${label} (${items.length}):</b><br/>${items.join("<br/>")}</p>`
-        : "";
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+    const tableRows = rows
+      .map(
+        (r) => `<tr>
+          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;text-align:left;word-break:break-all">${esc(r.label)}</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;text-align:left">
+            <span style="background:${r.bg};color:${r.color};padding:2px 8px;border-radius:9999px;font-weight:700;font-size:11px;white-space:nowrap">${esc(r.status)}</span>
+          </td>
+          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;text-align:left;color:#64748b">${esc(r.detail)}</td>
+        </tr>`
+      )
+      .join("");
     Swal.fire({
       title: "Bulk upload finished",
-      html: `<div style="text-align:left;font-size:13px;max-height:60vh;overflow-y:auto">
-        ${section("Uploaded", uploaded, "text-emerald-600")}
-        ${section("Skipped — already has a PDF", skipped, "text-amber-600")}
-        ${section("No contract matched this filename", unmatched, "text-slate-500")}
-        ${section("Failed", failed, "text-rose-600")}
+      html: `<div style="text-align:left;font-size:13px;max-height:60vh;overflow-y:auto;border:1px solid #e2e8f0;border-radius:12px">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Contract / File</th>
+              <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Result</th>
+              <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Detail</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
       </div>`,
-      icon: failed.length > 0 || unmatched.length > 0 ? "warning" : "success",
-      width: 700,
+      icon: uploadedCount === rows.length ? "success" : "warning",
+      width: 750,
       customClass: { popup: "rounded-2xl" },
     });
   };
