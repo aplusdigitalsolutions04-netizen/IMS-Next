@@ -4,7 +4,16 @@ import { Inbox, Send, RefreshCw, Loader2, Mail, MailOpen, AlertCircle, ArrowLeft
 import api from "@/lib/client/apiClient";
 import ComposeEmailModal from "./ComposeEmailModal";
 
-const POLL_INTERVAL_MS = 60000;
+// Each tick opens a fresh IMAP connect+login+logout (see lib/imapReader.js —
+// there's no persistent/IDLE connection, just plain polling), so this
+// interval directly sets how many real logins per hour a shared mailbox
+// sees just from one tab being left open. 60s meant 60 logins/hour, which
+// is aggressive enough that a shared-hosting provider's anti-abuse
+// throttling (Hostinger included) can start dropping the connection —
+// looking like it "works once, then keeps disconnecting" even with a single
+// user. 5 minutes keeps that well below typical thresholds while still
+// checking mail often enough; the Refresh button covers "I need it now".
+const POLL_INTERVAL_MS = 300000;
 
 function formatDate(val) {
   if (!val) return "-";

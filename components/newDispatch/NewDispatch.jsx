@@ -528,11 +528,16 @@ export default function NewDispatch({
   // AI-extracted fields overlaid onto the manual form — modelName/companyName/
   // sellingPrice/quantity are intentionally excluded, they're driven by the
   // serial-scan lookup elsewhere in this form and shouldn't be overwritten.
+  // `platform` is excluded too — the AI only guesses it from the document
+  // text (see lib/aiParse.js), but by the time an invoice gets uploaded here
+  // the user has already explicitly picked Amazon/Flipkart/GeM/Other in the
+  // picker above; a wrong guess (e.g. "Other" when it can't tell) would
+  // silently flip their selection out from under them.
   const runAiExtraction = async (file) => {
     setExtractingAi(true);
     try {
       const data = await printerService.parseOrderFile(file);
-      const { modelName, companyName, sellingPrice, quantity, ...orderFields } = data || {};
+      const { modelName, companyName, sellingPrice, quantity, platform, ...orderFields } = data || {};
       const cleaned = Object.fromEntries(
         Object.entries(orderFields).filter(([, v]) => v !== null && v !== undefined && v !== "")
       );
