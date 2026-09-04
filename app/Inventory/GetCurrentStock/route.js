@@ -98,10 +98,11 @@ export const GET = withErrorHandling(async (request) => {
     LIMIT ? OFFSET ?
   `, [...params, limit, offset]);
 
-  const [[{ total, totalValue, lowStockCount }]] = await mysqlPool.query(`
+  const [[{ total, totalValue, totalQty, lowStockCount }]] = await mysqlPool.query(`
     SELECT
       COUNT(*) as total,
       SUM(IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * ${priceExpr}) as totalValue,
+      SUM(IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0))) as totalQty,
       COUNT(CASE WHEN IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) < 10 THEN 1 END) as lowStockCount
     FROM inventoryitemvariant v
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
@@ -122,6 +123,7 @@ export const GET = withErrorHandling(async (request) => {
     data: rows,
     total,
     totalValue: totalValue || 0,
+    totalQty: totalQty || 0,
     lowStockCount: lowStockCount || 0,
     message: "Success",
   });

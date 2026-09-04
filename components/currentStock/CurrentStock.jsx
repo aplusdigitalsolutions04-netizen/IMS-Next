@@ -20,6 +20,7 @@ const CurrentStock = () => {
   const [pageSize, setPageSize] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
   const [globalValue, setGlobalValue] = useState(0);
+  const [globalQty, setGlobalQty] = useState(0);
   const [globalLowStock, setGlobalLowStock] = useState(0);
   // Guards against a slower, older request overwriting a faster, newer one
   // when the user types/filters quickly — fetchCurrentStock only applies a
@@ -125,6 +126,7 @@ const CurrentStock = () => {
       setStockData(response.data?.data || []);
       setTotalRecords(response.data?.total || 0);
       setGlobalValue(response.data?.totalValue || 0);
+      setGlobalQty(response.data?.totalQty || 0);
       setGlobalLowStock(response.data?.lowStockCount || 0);
     } catch (error) {
       if (requestId !== latestRequestId.current) return;
@@ -208,7 +210,7 @@ const CurrentStock = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-100 p-5 rounded-2xl flex items-center gap-4">
           <div className="bg-white p-3 rounded-xl shadow-sm text-indigo-600">
             <Layers size={24} />
@@ -216,6 +218,15 @@ const CurrentStock = () => {
           <div>
             <p className="text-sm font-bold text-slate-500 uppercase tracking-wide">Total Variants</p>
             <p className="text-2xl font-black text-slate-800">{totalRecords}</p>
+          </div>
+        </div>
+        <div className="bg-gradient-to-br from-violet-50 to-purple-50 border border-violet-100 p-5 rounded-2xl flex items-center gap-4">
+          <div className="bg-white p-3 rounded-xl shadow-sm text-violet-600">
+            <Hash size={24} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-slate-500 uppercase tracking-wide">Total Available Qty</p>
+            <p className="text-2xl font-black text-slate-800">{globalQty.toLocaleString("en-IN")}</p>
           </div>
         </div>
         <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 p-5 rounded-2xl flex items-center gap-4">
