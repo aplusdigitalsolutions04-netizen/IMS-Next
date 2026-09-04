@@ -663,7 +663,7 @@ const ItemVariant = () => {
 
           {serialModalVariant && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closeVariantSerials}>
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                   <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                     <Hash size={18} className="text-indigo-600" /> Serial Numbers — {serialModalVariant.variantCode}
@@ -731,6 +731,7 @@ const ItemVariant = () => {
                         <tr className="bg-slate-50 border-b border-slate-200">
                           <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Serial No.</th>
                           <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Status</th>
+                          <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Vendor</th>
                           <th className="p-2.5 text-xs font-bold text-slate-500 uppercase text-right">Landing Price</th>
                           <th className="p-2.5 text-xs font-bold text-slate-500 uppercase text-center">Action</th>
                         </tr>
@@ -746,6 +747,7 @@ const ItemVariant = () => {
                                 {s.status}
                               </span>
                             </td>
+                            <td className="p-2.5 text-slate-600">{s.vendorName || "-"}</td>
                             <td className="p-2.5 text-right text-slate-600">{s.landingPrice ? `₹${s.landingPrice}` : "-"}</td>
                             <td className="p-2.5 text-center">
                               {s.status === "Available" ? (

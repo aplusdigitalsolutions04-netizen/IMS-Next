@@ -499,6 +499,7 @@ const CurrentStock = () => {
                       <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Sr. No.</th>
                       <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Serial No.</th>
                       <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Status</th>
+                      <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Vendor</th>
                       <th className="p-2.5 text-xs font-bold text-slate-500 uppercase text-right">Landing Price</th>
                       <th className="p-2.5 text-xs font-bold text-slate-500 uppercase text-center">Action</th>
                     </tr>
@@ -515,6 +516,7 @@ const CurrentStock = () => {
                             {s.status}
                           </span>
                         </td>
+                        <td className="p-2.5 text-slate-600">{s.vendorName || "-"}</td>
                         <td className="p-2.5 text-right text-slate-600">{s.landingPrice ? `₹${s.landingPrice}` : "-"}</td>
                         <td className="p-2.5 text-center">
                           <button

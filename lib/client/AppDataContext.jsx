@@ -270,6 +270,9 @@ export function AppDataProvider({ children, currentUser }) {
         model: model?.name || "Unknown",
         status: foundSerial.status,
         company: model?.company || "Unknown",
+        // Set at Stock In time (see app/api/serials/route.js's vendorName
+        // join) — the vendor this specific serial was purchased from.
+        vendor: foundSerial.vendorName || null,
         dispatch: dispatchInfo,
         cancelledDispatch: cancelledDispatchInfo,
         returnRecord: returnInfo,

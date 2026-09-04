@@ -25,9 +25,10 @@ export const GET = withErrorHandling(async (request) => {
   const [rows] = await mysqlPool.query(
     `SELECT s.guid, s.serialNumber as value, s.serialStatus as status,
        COALESCE(NULLIF(s.landingPrice, 0), iv.purchasePrice, 0) as landingPrice,
-       iv.purchasePrice as purchasePrice, s.createdAt
+       iv.purchasePrice as purchasePrice, s.createdAt, vd.vendorFirmName as vendorName
      FROM inventorystockinserial s
      LEFT JOIN inventoryitemvariant iv ON s.itemVariantId = iv.itemVariantId AND iv.isDeleted = 0
+     LEFT JOIN inventoryvendor vd ON s.vendorId = vd.vendorId AND vd.isDeleted = 0
      WHERE s.itemVariantId = ? AND s.isDeleted = 0 AND s.companyGuid = ?
      ORDER BY s.createdAt DESC`,
     [itemVariantId, user.companyId]

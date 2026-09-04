@@ -67,6 +67,15 @@ export default function GlobalSearchModal({ showFinancials }) {
             </div>
           </div>
 
+          {searchResult.vendor && (
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
+              <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Vendor (Stock In)</p>
+              <p className="text-sm font-bold text-slate-700 truncate" title={searchResult.vendor}>
+                {searchResult.vendor}
+              </p>
+            </div>
+          )}
+
           {showFinancials && (
             <div className="bg-gradient-to-br from-emerald-50 to-green-50 p-3 rounded-xl border border-emerald-200 text-center">
               <p className="text-[9px] text-emerald-500 uppercase font-bold tracking-wider mb-0.5">Landing Price</p>
