@@ -445,7 +445,7 @@ export default function CompanyMasterPage() {
       {/* ── Create / Edit modal ── */}
       {modal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden border border-slate-100">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl overflow-hidden border border-slate-100">
 
             {/* Modal header */}
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 px-6 py-5 relative overflow-hidden">
@@ -544,7 +544,7 @@ export default function CompanyMasterPage() {
               <div>
                 <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block">Selling Platforms</label>
                 <p className="text-xs text-slate-400 mb-2.5">Leave all unselected to allow every platform.</p>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {platformOptions.map((p) => {
                     const checked = form.allowedPlatforms.includes(p.value);
                     const Icon = p.icon;
@@ -553,15 +553,15 @@ export default function CompanyMasterPage() {
                         key={p.value}
                         type="button"
                         onClick={() => togglePlatform(p.value)}
-                        className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border-2 text-sm font-bold transition-all text-left ${
+                        className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-xs font-bold transition-all text-left ${
                           checked
                             ? `${p.bg} ${p.border} ${p.color} shadow-sm`
                             : "border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50 bg-white"
                         }`}
                       >
-                        <Icon size={15} className="shrink-0" />
-                        <span className="flex-1">{p.value}</span>
-                        {checked && <CheckCircle size={14} className="shrink-0" />}
+                        <Icon size={13} className="shrink-0" />
+                        <span className="flex-1 truncate">{p.value}</span>
+                        {checked && <CheckCircle size={13} className="shrink-0" />}
                       </button>
                     );
                   })}
@@ -577,17 +577,17 @@ export default function CompanyMasterPage() {
                     <p className="text-[11px] text-amber-600 font-semibold mb-1.5">
                       Not in Selling Platforms — click to remove:
                     </p>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       {form.allowedPlatforms.filter((p) => !platformOptions.some((opt) => opt.value === p)).map((p) => (
                         <button
                           key={p}
                           type="button"
                           onClick={() => togglePlatform(p)}
-                          className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-700 text-sm font-bold transition-all text-left hover:bg-amber-100"
+                          className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-700 text-xs font-bold transition-all text-left hover:bg-amber-100"
                         >
-                          <Globe size={15} className="shrink-0" />
-                          <span className="flex-1">{p}</span>
-                          <X size={14} className="shrink-0" />
+                          <Globe size={13} className="shrink-0" />
+                          <span className="flex-1 truncate">{p}</span>
+                          <X size={13} className="shrink-0" />
                         </button>
                       ))}
                     </div>
