@@ -6,6 +6,8 @@ import { saveUploadedFile, getCompanyName } from "@/lib/upload";
 import { withErrorHandling } from "@/lib/apiResponse";
 import { mysqlPool } from "@/lib/db";
 import { isSameCompany } from "@/lib/companyMatch";
+import { parseJsonArray } from "@/lib/helpers";
+import { ensureCompanyAdditionalGstColumn } from "@/lib/companiesMigration";
 
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
@@ -62,7 +64,9 @@ export const POST = withErrorHandling(async (request) => {
   const sellerGstin = extracted?.sellerGstin;
   const sellerCompany = extracted?.sellerCompany;
   if (sellerGstin || sellerCompany) {
-    const [allCompanies] = await mysqlPool.query("SELECT guid, name, gstNumber FROM companies WHERE isActive = 1");
+    await ensureCompanyAdditionalGstColumn();
+    const [allCompanies] = await mysqlPool.query("SELECT guid, name, gstNumber, additionalGstNumbers FROM companies WHERE isActive = 1");
+    for (const c of allCompanies) c.additionalGstNumbers = parseJsonArray(c.additionalGstNumbers);
     const matched = allCompanies.find((c) => isSameCompany(sellerCompany, sellerGstin, c));
     if (matched) {
       let userHasAccess = hasAllCompaniesAccess(user);

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { ApiError, hasAllCompaniesAccess } from "@/lib/auth";
-import { sanitizeUser, safeStr, verifyPassword, hashPassword, signToken, logUserActivity, parseAllowedPlatforms } from "@/lib/helpers";
+import { sanitizeUser, safeStr, verifyPassword, hashPassword, signToken, logUserActivity, parseAllowedPlatforms, parseJsonArray } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { recordLoginAttempt } from "@/lib/rateLimiter";
+import { ensureCompanyAdditionalGstColumn } from "@/lib/companiesMigration";
 
 export const POST = withErrorHandling(async (request) => {
   const { username, password } = await parseJsonBody(request);
@@ -37,17 +38,21 @@ export const POST = withErrorHandling(async (request) => {
 
   // Admin (and allCompaniesAccess-flagged users) see every active company,
   // present and future, without needing a row per company in user_companies.
+  await ensureCompanyAdditionalGstColumn();
   const [userCompanies] = hasAllCompaniesAccess(user)
-    ? await mysqlPool.query(`SELECT guid, name, gstNumber, allowedPlatforms, logoFilename FROM companies WHERE isActive = 1`)
+    ? await mysqlPool.query(`SELECT guid, name, gstNumber, additionalGstNumbers, allowedPlatforms, logoFilename FROM companies WHERE isActive = 1`)
     : await mysqlPool.query(
-        `SELECT c.guid, c.name, c.gstNumber, c.allowedPlatforms, c.logoFilename
+        `SELECT c.guid, c.name, c.gstNumber, c.additionalGstNumbers, c.allowedPlatforms, c.logoFilename
          FROM user_companies uc
          JOIN companies c ON uc.companyGuid = c.guid
          WHERE uc.userGuid = ? AND c.isActive = 1`,
         [user.userid]
       );
 
-  for (const c of userCompanies) c.allowedPlatforms = parseAllowedPlatforms(c.allowedPlatforms);
+  for (const c of userCompanies) {
+    c.allowedPlatforms = parseAllowedPlatforms(c.allowedPlatforms);
+    c.additionalGstNumbers = parseJsonArray(c.additionalGstNumbers);
+  }
 
   if (userCompanies.length === 0) {
     // A brand-new signup request (see /api/auth/signup) has no role and no

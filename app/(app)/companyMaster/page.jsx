@@ -63,7 +63,8 @@ export default function CompanyMasterPage() {
   const [search, setSearch] = useState("");
   // null = modal closed; { guid: null } = creating; { guid: "..." } = editing
   const [modal, setModal] = useState(null);
-  const [form, setForm] = useState({ name: "", gstNumber: "", allowedPlatforms: [], isActive: true });
+  const [form, setForm] = useState({ name: "", gstNumber: "", additionalGstNumbers: [], allowedPlatforms: [], isActive: true });
+  const [newExtraGst, setNewExtraGst] = useState("");
   const [uploadingLogoGuid, setUploadingLogoGuid] = useState(null);
   const nameInputRef = useRef(null);
   const logoInputRef = useRef(null);
@@ -87,12 +88,14 @@ export default function CompanyMasterPage() {
   // still render something sensible for it instead of crashing on a lookup miss.
   const platformStyle = (name) => platformStyleMap.get(name) || { icon: Globe, ...DEFAULT_THEME };
 
-  useEffect(() => { fetchCompanies(); }, []);
   useEffect(() => { if (modal && nameInputRef.current) nameInputRef.current.focus(); }, [modal]);
 
+  // `loading` already starts true (see useState above), so this doesn't need
+  // to set it again on the initial call — a later refetch (after save/
+  // delete) just silently swaps the list in instead of re-flashing the
+  // spinner, same "silent" background-refresh pattern used elsewhere.
   const fetchCompanies = async () => {
     try {
-      setLoading(true);
       const res = await api.get("/companies");
       if (Array.isArray(res.data)) {
         setCompanies(res.data);
@@ -102,17 +105,17 @@ export default function CompanyMasterPage() {
         // login returns: only active companies, {guid, name, allowedPlatforms}.
         const active = res.data
           .filter((c) => c.isActive === 1 || c.isActive === true)
-          .map((c) => ({ guid: c.guid, name: c.name, gstNumber: c.gstNumber, allowedPlatforms: c.allowedPlatforms, logoFilename: c.logoFilename }));
+          .map((c) => ({ guid: c.guid, name: c.name, gstNumber: c.gstNumber, additionalGstNumbers: c.additionalGstNumbers, allowedPlatforms: c.allowedPlatforms, logoFilename: c.logoFilename }));
         setAvailableCompanies(active);
         syncActiveCompany(active);
         window.sessionStorage.setItem("pt_companies", JSON.stringify(active));
       }
-    } catch (err) {
-      console.error(err);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => { fetchCompanies(); }, []);
 
   const stats = useMemo(() => ({
     total: companies.length,
@@ -127,7 +130,8 @@ export default function CompanyMasterPage() {
   }, [companies, search]);
 
   const openCreate = () => {
-    setForm({ name: "", gstNumber: "", allowedPlatforms: [], isActive: true });
+    setForm({ name: "", gstNumber: "", additionalGstNumbers: [], allowedPlatforms: [], isActive: true });
+    setNewExtraGst("");
     setModal({ guid: null });
   };
 
@@ -135,10 +139,27 @@ export default function CompanyMasterPage() {
     setForm({
       name: c.name,
       gstNumber: c.gstNumber || "",
+      additionalGstNumbers: Array.isArray(c.additionalGstNumbers) ? c.additionalGstNumbers : [],
       allowedPlatforms: Array.isArray(c.allowedPlatforms) ? c.allowedPlatforms : [],
       isActive: c.isActive === 1 || c.isActive === true,
     });
+    setNewExtraGst("");
     setModal({ guid: c.guid });
+  };
+
+  const addExtraGst = () => {
+    const trimmed = newExtraGst.trim().toUpperCase();
+    if (!trimmed) return;
+    setForm((prev) => (
+      prev.additionalGstNumbers.includes(trimmed) || trimmed === prev.gstNumber.trim().toUpperCase()
+        ? prev
+        : { ...prev, additionalGstNumbers: [...prev.additionalGstNumbers, trimmed] }
+    ));
+    setNewExtraGst("");
+  };
+
+  const removeExtraGst = (gst) => {
+    setForm((prev) => ({ ...prev, additionalGstNumbers: prev.additionalGstNumbers.filter((g) => g !== gst) }));
   };
 
   const togglePlatform = (p) => {
@@ -472,7 +493,7 @@ export default function CompanyMasterPage() {
 
               <div>
                 <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block">GST Number</label>
-                <p className="text-xs text-slate-400 mb-1.5">Used to auto-check that an uploaded contract's seller GST matches this company.</p>
+                <p className="text-xs text-slate-400 mb-1.5">Used to auto-check that an uploaded contract&apos;s seller GST matches this company.</p>
                 <input
                   type="text"
                   value={form.gstNumber}
@@ -481,6 +502,43 @@ export default function CompanyMasterPage() {
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
                   placeholder="e.g. 27ABCDE1234F1Z5"
                 />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block">Additional GST Numbers</label>
+                <p className="text-xs text-slate-400 mb-2">
+                  For companies registered under more than one GSTIN (e.g. separate state registrations) — an uploaded contract naming any of these also counts as a match.
+                </p>
+                {form.additionalGstNumbers.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {form.additionalGstNumbers.map((gst) => (
+                      <span key={gst} className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold">
+                        {gst}
+                        <button type="button" onClick={() => removeExtraGst(gst)} className="p-0.5 hover:bg-indigo-100 rounded">
+                          <X size={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newExtraGst}
+                    onChange={(e) => setNewExtraGst(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExtraGst(); } }}
+                    className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    placeholder="e.g. 07ABCDE1234F1Z5"
+                  />
+                  <button
+                    type="button"
+                    onClick={addExtraGst}
+                    disabled={!newExtraGst.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 text-sm font-bold transition-all shrink-0"
+                  >
+                    Add
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -540,7 +598,7 @@ export default function CompanyMasterPage() {
               <div className="flex items-center justify-between gap-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                 <div>
                   <p className="text-sm font-bold text-slate-800">Active</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Inactive companies can't be logged into.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Inactive companies can&apos;t be logged into.</p>
                 </div>
                 <button
                   type="button"

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, Loader2, Sparkles, Save, Plus, Trash2, UploadCloud, Hash, CheckCircle2 } from "lucide-react";
 import Swal from "sweetalert2";
@@ -7,7 +7,7 @@ import { contractsService } from "@/lib/services/contractsService";
 import { companyService } from "@/lib/services/companyService";
 import { useCompany } from "@/lib/client/CompanyContext";
 import { getStoredUser } from "@/lib/client/auth";
-import { normGstin, normText, isSameCompany } from "@/lib/companyMatch";
+import { normGstin, normText, isSameCompany, allGstNumbers } from "@/lib/companyMatch";
 import AddProductWizard from "./AddProductWizard";
 
 const SECTIONS = [
@@ -133,12 +133,17 @@ export default function ContractUpload() {
   // Resumes an extraction that was interrupted by a company switch/creation
   // (see checkSellerCompanyMatch below) — only once activeCompany matches the
   // company the upload was meant for, otherwise it waits for the next switch.
-  useEffect(() => {
-    if (!activeCompany) return;
+  // Done as a render-time state adjustment (React's "storing information
+  // from previous renders" pattern, using state rather than a ref since
+  // refs can't be read/written during render) rather than an effect, since
+  // it just needs to run once per activeCompany change, not synchronize
+  // with an external subscription.
+  const [pendingCheckedGuid, setPendingCheckedGuid] = useState(undefined);
+  if (activeCompany && pendingCheckedGuid !== activeCompany.guid && typeof window !== "undefined") {
+    setPendingCheckedGuid(activeCompany.guid);
     try {
       const raw = window.sessionStorage.getItem(PENDING_CONTRACT_KEY);
-      if (!raw) return;
-      const pending = JSON.parse(raw);
+      const pending = raw ? JSON.parse(raw) : null;
       if (pending?.targetCompanyGuid === activeCompany.guid) {
         setForm(pending.form || EMPTY_FORM);
         setProducts(pending.products || []);
@@ -149,7 +154,7 @@ export default function ContractUpload() {
         window.sessionStorage.removeItem(PENDING_CONTRACT_KEY);
       }
     } catch (err) {}
-  }, [activeCompany]);
+  }
 
   const persistPendingContract = (targetCompanyGuid) => {
     try {
@@ -158,8 +163,6 @@ export default function ContractUpload() {
       }));
     } catch (err) {}
   };
-
-  let rowIndex = 0;
 
   const handleFileChange = (e) => {
     setFile(e.target.files?.[0] || null);
@@ -224,12 +227,16 @@ export default function ContractUpload() {
       return true;
     }
 
-    const sameByGstin = sellerGstin && activeCompany.gstNumber && normGstin(sellerGstin) === normGstin(activeCompany.gstNumber);
+    // A company can hold more than one GSTIN (separate state registrations
+    // under the same PAN) — check the extracted seller GSTIN against every
+    // one of them, not just activeCompany's primary gstNumber.
+    const activeGstNumbers = allGstNumbers(activeCompany);
+    const sameByGstin = sellerGstin && activeGstNumbers.length > 0 && activeGstNumbers.includes(normGstin(sellerGstin));
     const sameByName = sellerCompany && activeCompany.name &&
       (normText(sellerCompany).includes(normText(activeCompany.name)) || normText(activeCompany.name).includes(normText(sellerCompany)));
 
-    const hasComparableData = (sellerGstin && activeCompany.gstNumber) || sellerCompany;
-    const matches = (sellerGstin && activeCompany.gstNumber) ? sameByGstin : sameByName;
+    const hasComparableData = (sellerGstin && activeGstNumbers.length > 0) || sellerCompany;
+    const matches = (sellerGstin && activeGstNumbers.length > 0) ? sameByGstin : sameByName;
     if (!hasComparableData || matches) return false;
 
     const suggested = (availableCompanies || []).find((c) => c.guid !== activeCompany.guid && isSameCompany(sellerCompany, sellerGstin, c));
@@ -676,14 +683,14 @@ export default function ContractUpload() {
                   <React.Fragment key={section.title}>
                     <SectionHeaderRow title={section.title} />
                     {section.fields.map((f) => {
-                      rowIndex += 1;
+                      const flatIndex = ALL_FIELDS.indexOf(f);
                       return (
                         <FieldRow
                           key={f.key}
                           label={f.label}
                           type={f.type}
                           readOnly={f.readOnly}
-                          zebra={rowIndex % 2 === 0}
+                          zebra={flatIndex % 2 === 1}
                           value={form[f.key]}
                           onChange={(v) => handleFieldChange(f.key, v)}
                         />

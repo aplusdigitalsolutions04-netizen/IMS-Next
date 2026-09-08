@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeMasterWrite, hasAllCompaniesAccess, isSuperUser, ApiError } from "@/lib/auth";
-import { normalizeRole, parseAllowedPlatforms } from "@/lib/helpers";
+import { normalizeRole, parseAllowedPlatforms, parseJsonArray } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { ensureCompanyAdditionalGstColumn } from "@/lib/companiesMigration";
+import { normGstin } from "@/lib/companyMatch";
 
 export const GET = withErrorHandling(async (request) => {
   // Any authenticated user can list companies — this backs company pickers
@@ -12,6 +14,7 @@ export const GET = withErrorHandling(async (request) => {
   // access to (same membership check as switch-company), not every company
   // in the system — only Admin/allCompaniesAccess users see all of them.
   const user = await authenticateRequest(request);
+  await ensureCompanyAdditionalGstColumn();
 
   const [rows] = hasAllCompaniesAccess(user)
     ? await mysqlPool.query("SELECT * FROM companies ORDER BY name ASC")
@@ -22,22 +25,34 @@ export const GET = withErrorHandling(async (request) => {
          ORDER BY c.name ASC`,
         [user.id]
       );
-  return NextResponse.json(rows.map((r) => ({ ...r, allowedPlatforms: parseAllowedPlatforms(r.allowedPlatforms) })));
+  return NextResponse.json(rows.map((r) => ({
+    ...r,
+    allowedPlatforms: parseAllowedPlatforms(r.allowedPlatforms),
+    additionalGstNumbers: parseJsonArray(r.additionalGstNumbers),
+  })));
 });
 
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   authorizeMasterWrite(user, "companyMaster", { isCreate: true, denyMessage: "You do not have permission to add companies." });
+  await ensureCompanyAdditionalGstColumn();
 
-  const { name, gstNumber, allowedPlatforms, isActive } = await parseJsonBody(request);
+  const { name, gstNumber, allowedPlatforms, additionalGstNumbers, isActive } = await parseJsonBody(request);
   if (!name) throw new ApiError(400, "Company name is required.");
 
   const platformsJson = allowedPlatforms && allowedPlatforms.length > 0 ? JSON.stringify(allowedPlatforms) : null;
+  // Deduped, normalized, and never includes the primary gstNumber itself —
+  // that one's already covered, listing it again here would just make
+  // allGstNumbers() do redundant work every time it reads this company back.
+  const extraGst = Array.isArray(additionalGstNumbers)
+    ? [...new Set(additionalGstNumbers.map(normGstin).filter((g) => g && g !== normGstin(gstNumber)))]
+    : [];
+  const extraGstJson = extraGst.length > 0 ? JSON.stringify(extraGst) : null;
 
   const guid = randomUUID();
   await mysqlPool.query(
-    "INSERT INTO companies (guid, name, gstNumber, allowedPlatforms, isActive) VALUES (?, ?, ?, ?, ?)",
-    [guid, name, gstNumber || null, platformsJson, isActive === false ? 0 : 1]
+    "INSERT INTO companies (guid, name, gstNumber, allowedPlatforms, additionalGstNumbers, isActive) VALUES (?, ?, ?, ?, ?, ?)",
+    [guid, name, gstNumber || null, platformsJson, extraGstJson, isActive === false ? 0 : 1]
   );
 
   // Non-Admin users (Admin/allCompaniesAccess already sees every company via
