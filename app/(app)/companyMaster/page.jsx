@@ -445,7 +445,7 @@ export default function CompanyMasterPage() {
       {/* ── Create / Edit modal ── */}
       {modal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-100">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden border border-slate-100">
 
             {/* Modal header */}
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 px-6 py-5 relative overflow-hidden">
