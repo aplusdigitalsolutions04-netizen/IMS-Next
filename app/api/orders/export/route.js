@@ -162,14 +162,19 @@ export const GET = withErrorHandling(async (request) => {
   // json_to_sheet only writes plain text — a filename column needs its cell
   // turned into an actual hyperlink after the fact (SheetJS has no option to
   // do this inline during the json_to_sheet call itself).
-  // Derived from the incoming request (works on whatever domain this is
-  // actually deployed to), not process.env.BACKEND_URI/localhost — see the
-  // matching comment in app/api/orders/[id]/upload/route.js. An exported
-  // .xlsx file's hyperlinks especially need this: unlike an <img> src
-  // resolved against the current page, this file can be opened later on a
-  // completely different machine, where a hardcoded localhost link is
-  // guaranteed to be dead.
-  const backendBase = new URL(request.url).origin;
+  // Derived from the request's Host header (falling back to x-forwarded-host
+  // behind a proxy), not new URL(request.url).origin — Next.js can
+  // reconstruct that origin from the server's bind address (e.g. 0.0.0.0)
+  // rather than the client-visible host, which produced a dead
+  // "https://0.0.0.0:3000/uploads/..." link. Not process.env.BACKEND_URI/
+  // localhost either — see the matching comment in
+  // app/api/orders/[id]/upload/route.js. An exported .xlsx file's hyperlinks
+  // especially need a real absolute URL: unlike an <img> src resolved
+  // against the current page, this file can be opened later on a completely
+  // different machine.
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+  const proto = request.headers.get("x-forwarded-proto") || new URL(request.url).protocol.replace(":", "");
+  const backendBase = `${proto}://${host}`;
   if (exportRows.length) {
     columns.forEach((col, colIndex) => {
       if (!LINKED_COLUMNS.has(col.key)) return;

@@ -46,12 +46,10 @@ export const POST = withErrorHandling(async (request, { params }) => {
     await mysqlPool.query("INSERT INTO orderdocuments (guid, companyGuid, dispatchGuid, docType, filename) VALUES (UUID(),?,?,?,?)", [user.companyId, id, docType, filename]);
   }
 
-  // Derived from the incoming request, not process.env.BACKEND_URI (a
-  // leftover from the old split Frontend4+Backend4 deployment, pointing at
-  // whatever localhost port that env var happened to be set to during local
-  // dev) — that produced a URL that only ever resolved on one specific
-  // machine, breaking this link everywhere else. Same class of bug as
-  // app/api/warranty/template/upload-*.
-  const origin = new URL(request.url).origin;
-  return NextResponse.json({ message: "File uploaded successfully", filename, url: `${origin}/uploads/${filename}` });
+  // Relative, like app/api/warranty/template/upload-* — the client resolves
+  // this against its own current origin. `new URL(request.url).origin` looked
+  // like the fix for the old hardcoded-BACKEND_URI bug, but Next.js can
+  // reconstruct request.url's origin from the server's bind address (e.g.
+  // 0.0.0.0) rather than the client-visible host, producing a dead link.
+  return NextResponse.json({ message: "File uploaded successfully", filename, url: `/uploads/${filename}` });
 });
