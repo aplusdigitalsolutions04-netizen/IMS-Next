@@ -52,7 +52,10 @@ export const POST = withErrorHandling(async (request) => {
     }
 
     for (const serialValue of serialValues) {
-      const [dupRows] = await conn.query("SELECT guid FROM inventorystockinserial WHERE serialNumber = ? AND isDeleted = 0", [serialValue]);
+      const [dupRows] = await conn.query(
+        "SELECT guid FROM inventorystockinserial WHERE serialNumber = ? AND isDeleted = 0 AND companyGuid = ?",
+        [serialValue, user.companyId]
+      );
       if (dupRows.length > 0) throw new ApiError(400, `Serial number "${serialValue}" already exists.`);
     }
 

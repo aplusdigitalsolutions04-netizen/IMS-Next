@@ -54,7 +54,7 @@ export const POST = withErrorHandling(async (request) => {
   const existingSerials = new Set();
   if (serialValues.length) {
     const [serialRows] = await mysqlPool.query(
-      "SELECT serialNumber FROM inventorystockinserial WHERE serialNumber IN (?) AND companyGuid=?",
+      "SELECT serialNumber FROM inventorystockinserial WHERE serialNumber IN (?) AND isDeleted=0 AND companyGuid=?",
       [serialValues, user.companyId]
     );
     serialRows.forEach((serialRow) => existingSerials.add(serialRow.serialNumber));
