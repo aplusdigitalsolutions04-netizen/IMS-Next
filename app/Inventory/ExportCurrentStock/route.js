@@ -3,6 +3,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, requireCompany } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
+import { ensureNonSerializedBatchTable } from "@/lib/nonSerializedBatchMigration";
 
 // Row-per-serial version of GetCurrentStock, for the "Export All Stock"
 // button — GetCurrentStock only returns one aggregated row per variant (and
@@ -15,6 +16,7 @@ export const GET = withErrorHandling(async (request) => {
   authorizeInventory(user, "GET");
   requireAuth(user);
   requireCompany(user);
+  await ensureNonSerializedBatchTable();
 
   const { searchParams } = new URL(request.url);
   const brandId = searchParams.get("brandId");
@@ -39,7 +41,8 @@ export const GET = withErrorHandling(async (request) => {
     `SELECT v.itemVariantId, v.variantName, i.itemName, i.itemCode as sku, u.unitName, i.isTrackable,
        s.serialNumber, s.landingPrice as serialLandingPrice,
        IFNULL(vs.avgPurchaseRate, 0) as variantAvgPurchaseRate, IFNULL(vs.availablePCS, 0) as variantAvailablePCS,
-       v.purchasePrice as itemPurchasePrice, lk.lastLandingPrice
+       v.purchasePrice as itemPurchasePrice, lk.lastLandingPrice,
+       nsb.avgRate as batchAvgRate, nsb.totalValue as batchTotalValue, nsb.qty as batchQty
      FROM inventoryitemvariant v
      JOIN inventoryitemmaster i ON v.itemId = i.itemId
      LEFT JOIN inventoryunitmaster u ON i.unitId = u.unitId
@@ -56,6 +59,13 @@ export const GET = withErrorHandling(async (request) => {
            LIMIT 1
          )
      ) lk ON v.itemVariantId = lk.itemVariantId
+     LEFT JOIN (
+       SELECT itemVariantId, SUM(qtyRemaining) as qty, SUM(qtyRemaining * purchaseRate) as totalValue,
+              SUM(qtyRemaining * purchaseRate) / NULLIF(SUM(qtyRemaining), 0) as avgRate
+       FROM inventorynonserializedbatch
+       WHERE qtyRemaining > 0
+       GROUP BY itemVariantId
+     ) nsb ON v.itemVariantId = nsb.itemVariantId
      ${whereClause}
      ORDER BY i.itemName, v.variantName, s.createdAt`,
     params
@@ -69,10 +79,20 @@ export const GET = withErrorHandling(async (request) => {
     // Item Master's own purchasePrice, so out-of-stock rows still show a
     // price instead of blank/0 (qty stays 0 either way, so this doesn't
     // affect totalValue for those rows).
+    const qty = r.isTrackable ? (r.serialNumber ? 1 : 0) : (Number(r.variantAvailablePCS) || 0);
+    // Non-serialized stock can hold several price batches at once — a single
+    // blended rate times the full quantity is wrong once two batches differ
+    // in price (10 @ ₹80 + 22 @ ₹8 must total ₹976, not qty * one rate).
+    // batchTotalValue sums exactly that from the still-remaining batches;
+    // fall back to the old single-rate logic only when a variant has no
+    // batch rows at all (stock added before this table existed).
+    const hasBatchData = !r.isTrackable && r.batchQty != null;
     const landingPrice = r.isTrackable
       ? (Number(r.serialLandingPrice) || Number(r.lastLandingPrice) || Number(r.variantAvgPurchaseRate) || Number(r.itemPurchasePrice) || 0)
-      : (Number(r.variantAvgPurchaseRate) || Number(r.itemPurchasePrice) || 0);
-    const qty = r.isTrackable ? (r.serialNumber ? 1 : 0) : (Number(r.variantAvailablePCS) || 0);
+      : hasBatchData
+        ? Number(r.batchAvgRate) || 0
+        : (Number(r.variantAvgPurchaseRate) || Number(r.itemPurchasePrice) || 0);
+    const totalValue = hasBatchData ? Number(r.batchTotalValue) || 0 : qty * landingPrice;
     return {
       itemName: r.itemName,
       variantName: r.variantName,
@@ -80,7 +100,7 @@ export const GET = withErrorHandling(async (request) => {
       serialNumber: r.serialNumber || "",
       availableQty: qty,
       landingPrice,
-      totalValue: qty * landingPrice,
+      totalValue,
     };
   });
 

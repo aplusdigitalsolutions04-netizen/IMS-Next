@@ -56,6 +56,42 @@ const CurrentStock = () => {
     setSerialModalRows([]);
   };
 
+  // Click a non-serialized variant to open a popup with its price batches —
+  // same idea as the serial popup above, but grouped by purchase rate instead
+  // of by individual unit, since non-serialized stock has no per-unit serial.
+  const [batchModalVariant, setBatchModalVariant] = useState(null); // { itemVariantId, variantName }
+  const [batchModalRows, setBatchModalRows] = useState([]);
+  const [loadingBatchModal, setLoadingBatchModal] = useState(false);
+
+  const openVariantBatches = async (item) => {
+    if (item.isTrackable) return;
+    setBatchModalVariant(item);
+    setBatchModalRows([]);
+    setLoadingBatchModal(true);
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || ""}/Inventory/GetVariantBatches`, {
+        params: { itemVariantId: item.itemVariantId },
+        headers: { Authorization: `Bearer ${sessionStorage.getItem("pt_auth_token")}` },
+      });
+      setBatchModalRows(response.data?.data || []);
+    } catch (error) {
+      console.error("Failed to load stock batches", error);
+      setBatchModalRows([]);
+    } finally {
+      setLoadingBatchModal(false);
+    }
+  };
+
+  const closeVariantBatches = () => {
+    setBatchModalVariant(null);
+    setBatchModalRows([]);
+  };
+
+  const handleStockClick = (item) => {
+    if (item.isTrackable) openVariantSerials(item);
+    else openVariantBatches(item);
+  };
+
   const [deletingSerialGuid, setDeletingSerialGuid] = useState("");
 
   const handleDeleteSerial = (serial) => {
@@ -330,9 +366,9 @@ const CurrentStock = () => {
             {stockData.map((item, index) => (
               <div
                 key={item.itemVariantId || index}
-                onClick={() => openVariantSerials(item)}
-                title={item.isTrackable ? "Click to view serial numbers" : ""}
-                className={`bg-white rounded-xl border border-slate-200 border-t-4 border-t-indigo-500 p-4 shadow-sm hover:shadow-md transition-all ${item.isTrackable ? "cursor-pointer" : ""}`}
+                onClick={() => handleStockClick(item)}
+                title={item.isTrackable ? "Click to view serial numbers" : "Click to view stock batches"}
+                className="bg-white rounded-xl border border-slate-200 border-t-4 border-t-indigo-500 p-4 shadow-sm hover:shadow-md transition-all cursor-pointer"
               >
                 <h3 className="font-bold text-slate-800 truncate" title={item.variantName}>{item.variantName}</h3>
                 <div className="flex flex-wrap items-center gap-1.5 mt-2 mb-4">
@@ -390,9 +426,9 @@ const CurrentStock = () => {
               stockData.map((item, index) => (
                 <tr
                   key={item.itemVariantId || index}
-                  className={`hover:bg-slate-50 transition-colors ${item.isTrackable ? "cursor-pointer" : ""}`}
-                  onClick={() => openVariantSerials(item)}
-                  title={item.isTrackable ? "Click to view serial numbers" : ""}
+                  className="hover:bg-slate-50 transition-colors cursor-pointer"
+                  onClick={() => handleStockClick(item)}
+                  title={item.isTrackable ? "Click to view serial numbers" : "Click to view stock batches"}
                 >
                   <td className="p-4 text-sm text-slate-600">{(currentPage - 1) * pageSize + index + 1}</td>
                   <td className="p-4">
@@ -548,6 +584,58 @@ const CurrentStock = () => {
 
             <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-400">
               <span>{serialModalRows.length} serial number{serialModalRows.length !== 1 ? "s" : ""}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {batchModalVariant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closeVariantBatches}>
+          <div className="bg-white rounded-2xl shadow-xl w-[90vw] max-w-3xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Layers size={18} className="text-indigo-600" /> Stock Batches — {batchModalVariant.variantName}
+              </h2>
+              <button onClick={closeVariantBatches} className="text-slate-400 hover:text-slate-700">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {loadingBatchModal ? (
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <Loader2 size={16} className="animate-spin" /> Loading stock batches...
+                </div>
+              ) : batchModalRows.length === 0 ? (
+                <p className="text-sm text-slate-400">No batch-wise stock-in history found for this item.</p>
+              ) : (
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Sr. No.</th>
+                      <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Stock-In Date</th>
+                      <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Godown</th>
+                      <th className="p-2.5 text-xs font-bold text-slate-500 uppercase text-right">Purchase Price</th>
+                      <th className="p-2.5 text-xs font-bold text-slate-500 uppercase text-right">Qty Available</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {batchModalRows.map((b, idx) => (
+                      <tr key={b.guid}>
+                        <td className="p-2.5 text-slate-500">{idx + 1}</td>
+                        <td className="p-2.5 text-slate-600">{b.createdAt ? new Date(b.createdAt).toLocaleDateString() : "-"}</td>
+                        <td className="p-2.5 text-slate-600">{b.godownName || "-"}</td>
+                        <td className="p-2.5 text-right font-bold text-slate-800">{formatCurrency(b.purchaseRate)}</td>
+                        <td className="p-2.5 text-right font-bold text-emerald-700">{b.qtyRemaining}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-400">
+              <span>{batchModalRows.length} batch{batchModalRows.length !== 1 ? "es" : ""}</span>
             </div>
           </div>
         </div>

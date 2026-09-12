@@ -4,6 +4,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, requireCompany } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { consumeNonSerializedBatch } from "@/lib/nonSerializedBatchHelpers";
 
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
@@ -76,6 +77,7 @@ export const POST = withErrorHandling(async (request) => {
               ? `Insufficient stock for combo component ${comp.childVariantId}: have ${stockRow.availablePCS}, need ${totalChildQty}`
               : `Stock record not found for component ${comp.childVariantId}`);
           }
+          await consumeNonSerializedBatch(connection, comp.childVariantId, totalChildQty);
         }
       } else {
         const issueQty = Number(item.issueQty);
@@ -89,6 +91,7 @@ export const POST = withErrorHandling(async (request) => {
             ? `Insufficient stock for item variant ${item.itemVariantId}: have ${stockRow.availablePCS}, need ${issueQty}`
             : `Stock record not found for item variant ${item.itemVariantId}`);
         }
+        await consumeNonSerializedBatch(connection, item.itemVariantId, issueQty);
       }
     }
     await connection.commit();

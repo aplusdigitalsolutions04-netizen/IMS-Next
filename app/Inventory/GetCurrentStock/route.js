@@ -3,12 +3,14 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, requireCompany } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
+import { ensureNonSerializedBatchTable } from "@/lib/nonSerializedBatchMigration";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   authorizeInventory(user, "GET");
   requireAuth(user);
   requireCompany(user);
+  await ensureNonSerializedBatchTable();
 
   const { searchParams } = new URL(request.url);
   const page = Number(searchParams.get("page")) || 1;
@@ -53,7 +55,26 @@ export const GET = withErrorHandling(async (request) => {
   // Multiplying by availablePCS=0 still keeps totalValue at 0 for
   // out-of-stock rows, so none of this affects inventory valuation — only
   // the price display.
-  const priceExpr = "IFNULL(NULLIF(lp.avgLandingPrice, 0), IFNULL(NULLIF(lk.lastLandingPrice, 0), IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(NULLIF(s.avgPurchaseRate, 0), IFNULL(v.purchasePrice, 0)))))";
+  const serializedPriceExpr = "IFNULL(NULLIF(lp.avgLandingPrice, 0), IFNULL(NULLIF(lk.lastLandingPrice, 0), IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(NULLIF(s.avgPurchaseRate, 0), IFNULL(v.purchasePrice, 0)))))";
+  // Non-serialized items can hold several price batches at once (see
+  // lib/nonSerializedBatchHelpers.js) — a single blended rate multiplied by
+  // the full quantity is wrong the moment two batches have different prices
+  // (e.g. 10 @ ₹80 + 22 @ ₹8 must value at 10*80 + 22*8 = ₹976, not
+  // 32 * whichever rate happened to be the most recent stock-in). `nsb`
+  // below sums exactly that, batch by batch, from the still-remaining
+  // quantity in each. Falls back to the old single-rate logic only when a
+  // variant has no batch rows at all (stock added before this table existed).
+  const nonSerializedPriceExpr = "IFNULL(nsb.avgRate, IFNULL(NULLIF(s.lastPurchaseRate, 0), IFNULL(NULLIF(s.avgPurchaseRate, 0), IFNULL(v.purchasePrice, 0))))";
+  const priceExpr = `IF(i.isTrackable, ${serializedPriceExpr}, ${nonSerializedPriceExpr})`;
+  const totalValueExpr = `IF(i.isTrackable, IFNULL(sc.availableCount, 0) * (${serializedPriceExpr}), IFNULL(nsb.totalValue, IFNULL(s.availablePCS, 0) * (${nonSerializedPriceExpr})))`;
+  const nonSerializedBatchJoin = `
+    LEFT JOIN (
+      SELECT itemVariantId, SUM(qtyRemaining) as qty, SUM(qtyRemaining * purchaseRate) as totalValue,
+             SUM(qtyRemaining * purchaseRate) / NULLIF(SUM(qtyRemaining), 0) as avgRate
+      FROM inventorynonserializedbatch
+      WHERE qtyRemaining > 0
+      GROUP BY itemVariantId
+    ) nsb ON v.itemVariantId = nsb.itemVariantId`;
   // Picks exactly one serial per itemVariantId — a plain "join to the max
   // createdAt" (what this used to do) can match MORE than one row when
   // several serials share the exact same createdAt (e.g. a batch/bulk
@@ -78,7 +99,7 @@ export const GET = withErrorHandling(async (request) => {
            cat.categoryName, br.brandName,
            IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) as availablePCS,
            ${priceExpr} as avgPurchaseRate,
-           (IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * ${priceExpr}) as totalValue
+           (${totalValueExpr}) as totalValue
     FROM inventoryitemvariant v
     JOIN inventoryitemmaster i ON v.itemId = i.itemId
     LEFT JOIN inventoryunitmaster u ON i.unitId = u.unitId
@@ -94,14 +115,16 @@ export const GET = withErrorHandling(async (request) => {
       WHERE serialStatus = 'Available' AND isDeleted = 0 GROUP BY itemVariantId
     ) lp ON v.itemVariantId = lp.itemVariantId
     ${lastKnownJoin}
+    ${nonSerializedBatchJoin}
     ${whereClause}
+    ORDER BY i.itemName ASC, v.variantName ASC
     LIMIT ? OFFSET ?
   `, [...params, limit, offset]);
 
   const [[{ total, totalValue, totalQty, lowStockCount }]] = await mysqlPool.query(`
     SELECT
       COUNT(*) as total,
-      SUM(IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) * ${priceExpr}) as totalValue,
+      SUM(${totalValueExpr}) as totalValue,
       SUM(IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0))) as totalQty,
       COUNT(CASE WHEN IF(i.isTrackable, IFNULL(sc.availableCount, 0), IFNULL(s.availablePCS, 0)) < 10 THEN 1 END) as lowStockCount
     FROM inventoryitemvariant v
@@ -116,6 +139,7 @@ export const GET = withErrorHandling(async (request) => {
       WHERE serialStatus = 'Available' AND isDeleted = 0 GROUP BY itemVariantId
     ) lp ON v.itemVariantId = lp.itemVariantId
     ${lastKnownJoin}
+    ${nonSerializedBatchJoin}
     ${whereClause}
   `, params);
 

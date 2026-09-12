@@ -3,11 +3,13 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany, resolveScopedCompanyGuid } from "@/lib/auth";
 import { authorizeReports } from "@/lib/reportsAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
+import { ensureNonSerializedBatchTable } from "@/lib/nonSerializedBatchMigration";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   authorizeReports(user, "GET");
   requireCompany(user);
+  await ensureNonSerializedBatchTable();
 
   // Every query below previously had no companyGuid filter at all — it
   // scanned every tenant's rows and merged them together, so switching the
@@ -120,11 +122,24 @@ export const GET = withErrorHandling(async (request) => {
   // filter, a company with only serialized printers and zero real
   // stationery still showed a non-zero "stationery" total, entirely from
   // that stale counter.
+  // Non-serialized stock can hold several price batches at once (see
+  // lib/nonSerializedBatchHelpers.js) — availablePCS * one blended rate is
+  // wrong the moment two batches have different prices (10 @ ₹80 + 22 @ ₹8
+  // must total ₹976, not 32 * whichever rate was the most recent stock-in).
+  // nsb sums exactly that from each variant's still-remaining batches;
+  // falls back to the old single-rate math only for a variant with no batch
+  // rows at all (stock added before this table existed).
   const [statStock] = await mysqlPool.query(
-    `SELECT SUM(availablePCS*IFNULL(NULLIF(lastPurchaseRate,0),IFNULL(avgPurchaseRate,0))) as total
+    `SELECT SUM(COALESCE(nsb.totalValue, ivs.availablePCS*IFNULL(NULLIF(ivs.lastPurchaseRate,0),IFNULL(ivs.avgPurchaseRate,0)))) as total
      FROM inventoryvariantstock ivs
      JOIN inventoryitemvariant iv ON ivs.itemVariantId=iv.itemVariantId
      JOIN inventoryitemmaster im ON iv.itemId=im.itemId
+     LEFT JOIN (
+       SELECT itemVariantId, SUM(qtyRemaining * purchaseRate) as totalValue
+       FROM inventorynonserializedbatch
+       WHERE qtyRemaining > 0
+       GROUP BY itemVariantId
+     ) nsb ON ivs.itemVariantId = nsb.itemVariantId
      WHERE iv.isDeleted=0 AND im.isTrackable=0${companyClause("iv")}`,
     companyParam
   );

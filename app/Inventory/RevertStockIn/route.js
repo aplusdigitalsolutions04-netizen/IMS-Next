@@ -3,6 +3,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, ApiError } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { revertNonSerializedBatch } from "@/lib/nonSerializedBatchHelpers";
 
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
@@ -65,6 +66,8 @@ export const POST = withErrorHandling(async (request) => {
               [qty, item.itemVariantId, item.godownGuid, qty]
             );
           }
+
+          await revertNonSerializedBatch(connection, item.stockInDetailId);
         }
       }
     }

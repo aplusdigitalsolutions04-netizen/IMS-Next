@@ -3,6 +3,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { addNonSerializedBatch } from "@/lib/nonSerializedBatchHelpers";
 
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
@@ -97,6 +98,18 @@ export const POST = withErrorHandling(async (request) => {
               [item.itemVariantId, item.godownGuid, qty]
             );
           }
+
+          // Recorded as its own batch (never blended into an existing one) so
+          // Current Stock can show "10 @ ₹100, 5 @ ₹120" instead of the older
+          // batch's price silently changing to whatever this stock-in's rate is.
+          await addNonSerializedBatch(connection, {
+            companyGuid: user.companyId,
+            itemVariantId: item.itemVariantId,
+            godownGuid: item.godownGuid || null,
+            stockInDetailId: item.stockInDetailId,
+            purchaseRate: item.purchaseRate || 0,
+            qty,
+          });
         }
       }
     }

@@ -4,6 +4,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeOrdersRequest, requireCompany, ApiError } from "@/lib/auth";
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { consumeNonSerializedBatch } from "@/lib/nonSerializedBatchHelpers";
 
 // Converts a Draft order into a real active order. Each draft order_item
 // (which has no serialNumberGuid/modelGuid yet, just a quantity) is
@@ -78,6 +79,7 @@ export const POST = withErrorHandling(async (request, { params }) => {
           const [[stockRow]] = await conn.query("SELECT availablePCS FROM inventoryvariantstock WHERE itemVariantId = ?", [modelGuid]);
           throw new ApiError(400, stockRow ? `Not enough stock — only ${stockRow.availablePCS} available for this item.` : "Stock record not found for this item.");
         }
+        await consumeNonSerializedBatch(conn, modelGuid, quantity);
 
         const newItemGuid = randomUUID();
         await conn.query(

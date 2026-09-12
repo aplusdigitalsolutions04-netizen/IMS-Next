@@ -40,6 +40,7 @@ export const GET = withErrorHandling(async (request) => {
        WHERE serialStatus = 'Available' AND isDeleted = 0 GROUP BY itemVariantId
      ) sc ON v.itemVariantId = sc.itemVariantId` : ""}
      WHERE v.itemId = ? AND v.isDeleted = 0 AND v.companyGuid = ? ${searchClause}
+     ORDER BY v.variantName ASC
      LIMIT ? OFFSET ?`,
     [itemId, user.companyId, ...searchParam, limit, offset]
   );
