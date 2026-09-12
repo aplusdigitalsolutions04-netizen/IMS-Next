@@ -3,11 +3,25 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requirePermission, authorizeMasterWrite, resolveRole, ApiError } from "@/lib/auth";
 import { sanitizeUser, safeStr, hashPassword } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { ensureUsersRoleColumnIsVarchar } from "@/lib/usersMigration";
 
 // Mounted behind `requirePermission("users", ...)` in Backend4/index.js.
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requirePermission(user, "users", "User management access required.");
+  await ensureUsersRoleColumnIsVarchar();
+
+  // Self-heals rows corrupted by the ENUM this column used to be (see
+  // lib/usersMigration.js): a user assigned to a custom role whose name
+  // wasn't one of the six legacy enum values got silently stored as
+  // role='' under a non-strict SQL mode instead of the actual role name.
+  // Recompute it from roleId here so it repairs on the next load rather
+  // than needing a one-off manual fix.
+  await mysqlPool.query(
+    `UPDATE users u JOIN roles r ON u.roleId = r.guid AND r.isDeleted = 0
+     SET u.role = r.name
+     WHERE u.role = '' AND u.roleId IS NOT NULL`
+  );
 
   // Same page/limit convention as GetVendorList and friends. Explicit column
   // list (no `password` hash pulled into memory for a response that never
@@ -53,6 +67,7 @@ export const GET = withErrorHandling(async (request) => {
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   authorizeMasterWrite(user, "users", { isCreate: true, denyMessage: "You do not have permission to add users." });
+  await ensureUsersRoleColumnIsVarchar();
 
   const {
     username, password, roleId, fullName, email, phone,

@@ -3,10 +3,12 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeMasterWrite, authorizeMasterDelete, isSuperUser, invalidateUserCache, resolveRole, ApiError } from "@/lib/auth";
 import { sanitizeUser, safeStr, hashPassword } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { ensureUsersRoleColumnIsVarchar } from "@/lib/usersMigration";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   authorizeMasterWrite(user, "users", { isCreate: false, denyMessage: "You do not have permission to edit users." });
+  await ensureUsersRoleColumnIsVarchar();
   const { id } = await params;
 
   const {
