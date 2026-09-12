@@ -30,6 +30,8 @@ const FULL_CRUD_ENTRIES = [
   { key: "companyMaster",   label: "Company",         group: "Master Data" },
   { key: "platformMaster",  label: "Selling Platform", group: "Master Data" },
   { key: "deliveryPartnerMaster", label: "Delivery Partner", group: "Master Data" },
+  { key: "clientMaster",    label: "Client",          group: "Master Data" },
+  { key: "carePackMaster",  label: "Care Pack",       group: "Master Data" },
   { key: "users",           label: "User",            group: "Admin & Analytics" },
   { key: "emailAccounts",   label: "Email Account",   group: "Email" },
   { key: "emailTemplates",  label: "Email Template",  group: "Email" },
@@ -74,6 +76,8 @@ export const PERMISSIONS_LIST = [
   { id: "companyMaster",      label: "Company Master",         icon: Building2 },
   { id: "platformMaster",     label: "Selling Platforms",      icon: Globe },
   { id: "deliveryPartnerMaster", label: "Delivery Partners",   icon: Truck },
+  { id: "clientMaster",       label: "Client Master",          icon: Users },
+  { id: "carePackMaster",     label: "Care Pack Master",       icon: ShieldCheck },
   { id: "contracts",          label: "Contracts",              icon: UploadCloud },
   { id: "emailAccounts",      label: "Email Accounts",         icon: Mail },
   { id: "emailTemplates",     label: "Email Templates",        icon: FileText },
@@ -88,7 +92,7 @@ export const PERMISSIONS_LIST = [
 
 export const PERMISSION_GROUPS = [
   { name: "Sales & Orders",   icon: ShoppingCart, color: "indigo",  permissions: ["orders", "billing", "dispatch", "installation", "stat_stock_out", "returns", "damage"] },
-  { name: "Master Data",      icon: Database,     color: "violet",  permissions: ["stat_category", "stat_brand", "stat_vendor", "stat_item", "stat_combo", "stat_mapping", "stat_unit", "godownMaster", "fbfFbaMaster", "companyMaster", "platformMaster", "deliveryPartnerMaster"] },
+  { name: "Master Data",      icon: Database,     color: "violet",  permissions: ["stat_category", "stat_brand", "stat_vendor", "stat_item", "stat_combo", "stat_mapping", "stat_unit", "godownMaster", "fbfFbaMaster", "companyMaster", "platformMaster", "deliveryPartnerMaster", "clientMaster", "carePackMaster"] },
   { name: "Inventory",        icon: History,      color: "sky",     permissions: ["print_models", "print_serials", "warranty", "stat_stock_in", "stat_current_stock", "fbfFbaManagement", "godownTransfer"] },
   { name: "Admin & Analytics",icon: BarChart3,    color: "emerald", permissions: ["dashboard", "notifications", "users", "roles", "userActivity", "reports", "contracts"] },
   { name: "Email",            icon: Mail,         color: "amber",   permissions: ["emailAccounts", "emailTemplates", "emailInbox", "sentEmails"] },
