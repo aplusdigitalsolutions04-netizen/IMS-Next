@@ -148,13 +148,24 @@ export default function CompanyMasterPage() {
   };
 
   const addExtraGst = () => {
-    const trimmed = newExtraGst.trim().toUpperCase();
-    if (!trimmed) return;
-    setForm((prev) => (
-      prev.additionalGstNumbers.includes(trimmed) || trimmed === prev.gstNumber.trim().toUpperCase()
-        ? prev
-        : { ...prev, additionalGstNumbers: [...prev.additionalGstNumbers, trimmed] }
-    ));
+    // Accepts a single GSTIN or several pasted at once (comma/semicolon/
+    // newline-separated) — splitting here means one paste of a whole list
+    // becomes several clean entries instead of one glued-together string
+    // that could never match anything. A trailing "(B)"/"(R)"/"(G)"-style
+    // branch annotation is stripped too — it's just a note on which office
+    // that GSTIN belongs to, never part of the GSTIN itself, and keeping it
+    // in the stored value is exactly what breaks the contract-match check
+    // (see lib/companyMatch.js's normGstin for the matching side of this).
+    const pieces = newExtraGst
+      .split(/[,;\n]+/)
+      .map((piece) => piece.replace(/\([^)]*\)/g, "").trim().toUpperCase())
+      .filter(Boolean);
+    if (!pieces.length) return;
+    setForm((prev) => {
+      const existing = new Set([...prev.additionalGstNumbers, prev.gstNumber.trim().toUpperCase()]);
+      const toAdd = [...new Set(pieces)].filter((p) => !existing.has(p));
+      return toAdd.length ? { ...prev, additionalGstNumbers: [...prev.additionalGstNumbers, ...toAdd] } : prev;
+    });
     setNewExtraGst("");
   };
 
@@ -528,7 +539,7 @@ export default function CompanyMasterPage() {
                     onChange={(e) => setNewExtraGst(e.target.value.toUpperCase())}
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExtraGst(); } }}
                     className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                    placeholder="e.g. 07ABCDE1234F1Z5"
+                    placeholder="e.g. 07ABCDE1234F1Z5 — paste several separated by commas"
                   />
                   <button
                     type="button"
