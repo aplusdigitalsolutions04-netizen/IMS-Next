@@ -2,11 +2,21 @@ import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
+import { ensureCarePackDropdownSeeded } from "@/lib/carePackMigration";
 
 export const GET = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   requireAuth(user);
   const { code } = await params;
+
+  // CARE_PACK is seeded lazily (default 1-5 Year options) the first time
+  // ANYONE reads it — not only when an Admin happens to open Care Pack
+  // Master first. Without this, a fresh install where no Admin had visited
+  // that settings page yet showed the Care Pack picker in New Dispatch/
+  // Stock-In/Item Variant Master as silently empty instead of pre-seeded.
+  if (code === "CARE_PACK") {
+    await ensureCarePackDropdownSeeded();
+  }
 
   const query = `
     SELECT o.option_label AS label, o.option_value AS value

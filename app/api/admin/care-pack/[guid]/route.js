@@ -5,15 +5,16 @@ import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 const CODE = "CARE_PACK";
 
-// Every row is looked up through this company-scoped join rather than a bare
-// dropdown_option.guid match, so one company can never toggle/rename/delete
-// another company's Care Pack option just by guessing its guid.
-async function findOwnedOption(guid, companyGuid) {
+// Care Pack is a single global list (dropdown_code is UNIQUE — see
+// app/api/admin/care-pack/route.js), so every company's Admin manages the
+// same shared rows; this join just confirms the guid actually belongs to
+// the CARE_PACK dropdown rather than some other dropdown_code entirely.
+async function findOwnedOption(guid) {
   const [[row]] = await mysqlPool.query(
     `SELECT o.id, o.option_label, o.option_value FROM dropdown_option o
      JOIN dropdown_master m ON o.dropdown_id = m.id
-     WHERE o.guid = ? AND m.dropdown_code = ? AND m.companyGuid = ?`,
-    [guid, CODE, companyGuid]
+     WHERE o.guid = ? AND m.dropdown_code = ?`,
+    [guid, CODE]
   );
   return row || null;
 }
@@ -25,7 +26,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   const { guid } = await params;
 
   const { name, isActive } = await parseJsonBody(request);
-  const option = await findOwnedOption(guid, user.companyId);
+  const option = await findOwnedOption(guid);
   if (!option) throw new ApiError(404, "Care Pack option not found.");
 
   if (name !== undefined) {
@@ -50,7 +51,7 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
   authorizeMasterDelete(user, "carePackMaster", "You do not have permission to delete Care Pack options.");
   const { guid } = await params;
 
-  const option = await findOwnedOption(guid, user.companyId);
+  const option = await findOwnedOption(guid);
   if (!option) throw new ApiError(404, "Care Pack option not found.");
 
   const [[{ usageCount }]] = await mysqlPool.query(
