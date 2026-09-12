@@ -6,11 +6,14 @@ import { createDispatchInline, createNonSerializedDispatchInline, updateDispatch
 import { createNotification } from "@/lib/notifications";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
+import { ensureCarePackColumn, ensureOrderItemsCarePackColumns } from "@/lib/carePackMigration";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
   authorizeDispatchRequest(user, "GET", null);
+  await ensureCarePackColumn();
+  await ensureOrderItemsCarePackColumns();
 
   notifyPendingGemUploads(mysqlPool);
 
@@ -27,6 +30,7 @@ export const GET = withErrorHandling(async (request) => {
   const [rows] = await mysqlPool.query(`
     SELECT
         oi.guid as id, oi.serialNumberGuid as serialGuid, oi.modelGuid, oi.sellingPrice, oi.warranty, oi.quantity, oi.contractFilename, oi.warrantyStartDate as itemWarrantyStartDate,
+        oi.carePackUpgrade, oi.carePackUpgradePrice,
         o.guid as _orderId, o.orderid, o.platform, o.orderDate, o.createdAt, o.dispatchDate, o.dispatchedBy, o.status,
         o.gemOrderType, o.bidNumber, o.customerName as customer, o.consigneeName, o.buyerEmail, o.consigneeEmail,
         o.paymentAuthorityEmail,
@@ -37,7 +41,7 @@ export const GET = withErrorHandling(async (request) => {
         ol.courierPartner, ol.trackingId, ol.logisticsStatus, ol.logisticsDispatchDate, ol.podFilename, ol.lastDeliveryDate,
         ins.installationRequired, ins.installationStatus, ins.technicianName, ins.technicianContact,
         ins.installationCharges, ins.installationRemarks, ins.scheduledDate, ins.installationDate,
-        s.serialNumber as serialValue, s.landingPrice,
+        s.serialNumber as serialValue, s.landingPrice, s.carePack as originalCarePack,
         fbiv.variantName as modelName, fbbm.brandName as companyName,
         p.paymentDate as paymentReceivedDate, p.amount as paymentReceivedAmount, p.utrId
     FROM order_items oi
@@ -132,6 +136,7 @@ export const POST = withErrorHandling(async (request) => {
       freightCharges, logisticsStatus: finalLogisticsStatus, podFilename, ewayBillFilename,
       remarks, warranty, buyerAddress,
       platformFields: body.platformFields ? JSON.stringify(body.platformFields) : null,
+      carePackUpgrade: body.carePackUpgrade || null, carePackUpgradePrice: body.carePackUpgradePrice || null,
     });
 
     if (!result.success) {
@@ -179,7 +184,7 @@ export const POST = withErrorHandling(async (request) => {
   }
 
   broadcastRealtimeEvent(user.companyId, "dispatches");
-  return NextResponse.json({ message: "Dispatched successfully", dispatchGuid }, { status: 201 });
+  return NextResponse.json({ message: "Dispatched successfully", dispatchGuid, orderGuid: orderGuidForUpdate }, { status: 201 });
 });
 
 export const PUT = withErrorHandling(async (request) => {

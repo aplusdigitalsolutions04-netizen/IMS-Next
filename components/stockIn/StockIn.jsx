@@ -77,6 +77,10 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
   const [showSerialModal, setShowSerialModal] = useState(false);
   const [serialPopupIndex, setSerialPopupIndex] = useState(-1);
   const [serialNumbersToSave, setSerialNumbersToSave] = useState([]);
+  // One Care Pack applies to the whole batch being entered in the popup,
+  // not per-serial — set alongside Target Godown, sent with every new
+  // serial this save writes.
+  const [batchCarePack, setBatchCarePack] = useState("");
 
   const [showVariantModal, setShowVariantModal] = useState(false);
   const [barcodeVariants, setBarcodeVariants] = useState([]);
@@ -721,6 +725,10 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
           });
        }
        setSerialNumbersToSave(inputs);
+       // Care Pack is one value for the whole batch — reflect whatever the
+       // already-saved serials (if any) were given, so reopening the popup
+       // doesn't silently reset it.
+       setBatchCarePack(serials[0]?.carePack || '');
        setShowSerialModal(true);
     });
   };
@@ -789,7 +797,9 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
     }
 
     const validSerials = serialNumbersToSave.map(x => x.serialValue.trim()).filter(x => x);
-    const newSerialsToSave = serialNumbersToSave.filter(x => !x.serialId && x.serialValue.trim()).map(x => x.serialValue.trim());
+    const newSerialsToSave = serialNumbersToSave
+      .filter(x => !x.serialId && x.serialValue.trim())
+      .map(x => ({ serialNumber: x.serialValue.trim(), carePack: batchCarePack || null }));
 
     // Always read current item from live state (avoids stale closure)
     const currentItem = stockItems[serialPopupIndex];
@@ -1606,10 +1616,10 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
 
       <StockInModals
         {...{
-          autoSaveDraft, barcodeVariants, currentScannedBarcode, godowns,
+          autoSaveDraft, barcodeVariants, batchCarePack, currentScannedBarcode, godowns,
           handleDeleteSerial, handleSerialInputChange, handleSerialInputKeyDown,
           isFinalized, previewFileUrl, processUnitSelection, processVariantSelection,
-          saveSerialNumbersClick, serialNumbersToSave, serialPopupIndex,
+          saveSerialNumbersClick, serialNumbersToSave, serialPopupIndex, setBatchCarePack,
           setPendingVariantData, setShowInvoicePreview, setShowSerialModal,
           setShowUnitModal, setShowVariantModal, setStockItems, showInvoicePreview,
           showSerialModal, showUnitModal, showVariantModal, stockItems, units,

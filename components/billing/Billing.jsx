@@ -6,7 +6,8 @@ import {
     Receipt, Search, X, Edit2, ChevronLeft, ChevronRight, ChevronDown, Activity,
     IndianRupee, FileText, UploadCloud, Link, Building, MapPin,
     Phone, Mail, Calendar, Box, User, Info, Download, Hash, Clock,
-    ShoppingCart, CreditCard, CheckCircle, AlertTriangle, ExternalLink, Package, Loader2
+    ShoppingCart, CreditCard, CheckCircle, AlertTriangle, ExternalLink, Package, Loader2,
+    Ban, CheckSquare, RotateCcw, Check, RefreshCw
 } from "lucide-react";
 import { printerService } from "@/lib/services/api";
 import { platformsService } from "@/lib/services/platformsService";
@@ -16,6 +17,14 @@ import DayFilterSelect from "@/components/common/DayFilterSelect";
 import { getDayFilterRange, isWithinDayFilter } from "@/lib/client/dayFilter";
 import { toLocalDateStr } from "@/lib/dateUtils";
 import { useToast } from "@/lib/client/ToastContext";
+import { useAppData } from "@/lib/client/AppDataContext";
+import { calculateBatchFinancials, isItemReturned, isItemReplaced, getItemSerial, getOldSerial, safeFormatDate, getAuthHeaders } from "@/components/orderTracking/helpers";
+
+// Same bridge OrderDetailModal.jsx uses — opens HP's public warranty lookup
+// for a serial in a new tab, no API call of our own needed.
+function openHpWarrantyBridge(serial) {
+    window.open(`https://support.hp.com/in-en/checkwarranty?serialnumber=${encodeURIComponent(serial)}`, "_blank", "noopener,noreferrer");
+}
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -32,6 +41,10 @@ export default function Billing({
     initialCustomEnd = "",
 }) {
     const toast = useToast();
+    // Needed for the Order Details modal's return/replacement info below —
+    // same shared AppDataContext the Order Processing screen reads, safe to
+    // call again here (context state, not a second fetch).
+    const { returns = [] } = useAppData();
     const [activeTab, setActiveTab] = useState("billing");
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
@@ -61,6 +74,22 @@ export default function Billing({
 
     // State for Viewing Order Details
     const [viewingOrder, setViewingOrder] = useState(null);
+    // Ordered items per the linked GeM contract (if any) — reference only,
+    // shown alongside what was actually dispatched so a deliberate
+    // substitution (buyer wanted a different model) stays visible.
+    const [viewingOrderContractProducts, setViewingOrderContractProducts] = useState(null);
+
+    useEffect(() => {
+        // Nothing to reset on close — the panel below only renders while
+        // viewingOrder is truthy, so a stale value just sits unused until
+        // overwritten by the next open.
+        if (!viewingOrder) return;
+        const orderId = viewingOrder[0].customerName || viewingOrder[0].customer;
+        if (!orderId) return;
+        axios.get(`${API_BASE_URL}/api/dispatches/check/${encodeURIComponent(orderId)}`, getAuthHeaders())
+            .then((res) => setViewingOrderContractProducts(res.data?.contractProducts?.length > 0 ? res.data.contractProducts : null))
+            .catch(() => setViewingOrderContractProducts(null));
+    }, [viewingOrder]);
 
     const [editForm, setEditForm] = useState({
         // ✅ UPDATED: Default status changed
@@ -221,12 +250,12 @@ export default function Billing({
         return groupedBilling.slice(start, start + pageSize);
     }, [groupedBilling, currentPage, pageSize]);
 
-    const totalBillingRevenue = billingDispatches.reduce((sum, d) => sum + (Number(d.sellingPrice) || 0) * (Number(d.quantity) || 1), 0);
+    const totalBillingRevenue = billingDispatches.reduce((sum, d) => sum + (Number(d.sellingPrice) || 0) * (Number(d.quantity) || 1) + Number(d.carePackUpgradePrice || 0), 0);
 
     // ✅ NEW: Calculate batch order value for E-Way Bill validation
     const editingBatchOrderValue = useMemo(() => {
         if (!editingBatch || !Array.isArray(editingBatch)) return 0;
-        return editingBatch.reduce((sum, item) => sum + (Number(item.sellingPrice) || 0) * (Number(item.quantity) || 1), 0);
+        return editingBatch.reduce((sum, item) => sum + (Number(item.sellingPrice) || 0) * (Number(item.quantity) || 1) + Number(item.carePackUpgradePrice || 0), 0);
     }, [editingBatch]);
 
     // ✅ NEW: E-Way Bill required if order value > 50,000 and NOT an Amazon/Flipkart batch
@@ -283,12 +312,16 @@ export default function Billing({
     // Handle Payment Click
     const handlePaymentClick = (group) => {
         setPaymentBatch(group);
-        const totalAmount = group.reduce((sum, item) => sum + (Number(item.sellingPrice) || 0) * (Number(item.quantity) || 1), 0);
 
+        // amount is left blank rather than pre-filled with the billing total
+        // (sellingPrice*quantity, shown read-only below as "Billing Amount")
+        // — the two are often different (partial payments, deductions,
+        // platform commission) and pre-filling silently invited saving the
+        // billing total as if it were the amount actually received.
         setPaymentForm({
             paymentDate: toLocalDateStr(new Date()),
             paymentType: "Full",
-            amount: totalAmount,
+            amount: "",
             settlementDeduction: "",
             utrId: "",
             gemUploaded: group[0]?.gemBillUploaded || "No"
@@ -685,7 +718,7 @@ export default function Billing({
                                     const item = group[0];
                                     const isMultiple = group.length > 1;
                                     const { model } = getDetails(item);
-                                    const totalAmount = group.reduce((sum, i) => sum + (Number(i.sellingPrice) || 0) * (Number(i.quantity) || 1), 0);
+                                    const totalAmount = group.reduce((sum, i) => sum + (Number(i.sellingPrice) || 0) * (Number(i.quantity) || 1) + Number(i.carePackUpgradePrice || 0), 0);
 
                                     // ✅ NEW: Show E-Way Bill indicator for high-value orders
                                     const needsEway = totalAmount > 50000;
@@ -908,7 +941,7 @@ export default function Billing({
             {/* PAYMENT MODAL */}
             {paymentBatch && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 my-auto">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl p-6 animate-in zoom-in-95 my-auto">
                         <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
                             <h3 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
                                 <IndianRupee size={22} className="text-emerald-600" /> Payment Details
@@ -917,32 +950,40 @@ export default function Billing({
                         </div>
 
                         <form onSubmit={handleSavePayment} className="space-y-5">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">Payment Received Date <span className="text-red-500">*</span></label>
-                                <input type="date" required className="w-full border p-2.5 rounded-lg mt-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" value={paymentForm.paymentDate} onChange={(e) => setPaymentForm({ ...paymentForm, paymentDate: e.target.value })} />
+                            <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 flex items-center justify-between">
+                                <span className="text-xs font-bold text-slate-500 uppercase">Billing Amount</span>
+                                <span className="text-sm font-extrabold text-slate-700">
+                                    ₹{paymentBatch.reduce((sum, item) => sum + (Number(item.sellingPrice) || 0) * (Number(item.quantity) || 1) + Number(item.carePackUpgradePrice || 0), 0).toLocaleString("en-IN")}
+                                </span>
                             </div>
-                            <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">Payment Type <span className="text-red-500">*</span></label>
-                            <select required className="w-full border p-2.5 rounded-lg mt-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" value={paymentForm.paymentType} onChange={(e) => setPaymentForm({ ...paymentForm, paymentType: e.target.value })}>
-                                <option value="Full">Full Payment</option>
-                                <option value="Settlement">Settlement (Partial/Fee)</option>
-                            </select>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">Received Amount (₹) <span className="text-red-500">*</span></label>
-                                <input type="number" required className="w-full border p-2.5 rounded-lg mt-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-800" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} />
-                            </div>
-                            {paymentForm.paymentType === "Settlement" && (
+                            <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">Deduction / Fee (₹) <span className="text-red-500">*</span></label>
-                                    <input type="number" required className="w-full border p-2.5 rounded-lg mt-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-rose-600" value={paymentForm.settlementDeduction} onChange={(e) => setPaymentForm({ ...paymentForm, settlementDeduction: e.target.value })} />
+                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">Payment Received Date <span className="text-red-500">*</span></label>
+                                    <input type="date" required className="w-full border p-2.5 rounded-lg mt-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" value={paymentForm.paymentDate} onChange={(e) => setPaymentForm({ ...paymentForm, paymentDate: e.target.value })} />
                                 </div>
-                            )}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">Payment Type <span className="text-red-500">*</span></label>
+                                    <select required className="w-full border p-2.5 rounded-lg mt-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" value={paymentForm.paymentType} onChange={(e) => setPaymentForm({ ...paymentForm, paymentType: e.target.value })}>
+                                        <option value="Full">Full Payment</option>
+                                        <option value="Settlement">Settlement (Partial/Fee)</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">UTR / Transaction ID <span className="text-red-500">*</span></label>
-                                <input type="text" required placeholder="Enter UTR / Ref No." className="w-full border p-2.5 rounded-lg mt-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none uppercase font-mono" value={paymentForm.utrId} onChange={(e) => setPaymentForm({ ...paymentForm, utrId: e.target.value })} />
+                            <div className={`grid gap-4 ${paymentForm.paymentType === "Settlement" ? "grid-cols-3" : "grid-cols-2"}`}>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">Received Amount (₹) <span className="text-red-500">*</span></label>
+                                    <input type="number" required placeholder="Enter amount received" className="w-full border p-2.5 rounded-lg mt-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-slate-800" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} />
+                                </div>
+                                {paymentForm.paymentType === "Settlement" && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">Deduction / Fee (₹) <span className="text-red-500">*</span></label>
+                                        <input type="number" required className="w-full border p-2.5 rounded-lg mt-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-rose-600" value={paymentForm.settlementDeduction} onChange={(e) => setPaymentForm({ ...paymentForm, settlementDeduction: e.target.value })} />
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">UTR / Transaction ID <span className="text-red-500">*</span></label>
+                                    <input type="text" required placeholder="Enter UTR / Ref No." className="w-full border p-2.5 rounded-lg mt-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none uppercase font-mono" value={paymentForm.utrId} onChange={(e) => setPaymentForm({ ...paymentForm, utrId: e.target.value })} />
+                                </div>
                             </div>
                             {/* Conditional GeM Upload Check */}
                             {paymentBatch[0]?.firmName === "GeM" && paymentBatch.some(item => item.gemBillUploaded !== "Yes") && (
@@ -982,7 +1023,7 @@ export default function Billing({
             {/* VIEW ORDER DETAILS MODAL */}
             {viewingOrder && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in zoom-in-95 my-auto">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden animate-in zoom-in-95 my-auto">
 
                         <div className="flex justify-between items-center p-5 bg-gradient-to-r from-slate-50 to-indigo-50/50 border-b border-slate-200">
                             <div className="flex items-center gap-3">
@@ -1006,8 +1047,47 @@ export default function Billing({
                                 const details = viewingOrder[0];
                                 const isGeM = details.firmName === "GeM";
                                 const isBidOrPBP = isGeM && (details.gemOrderType === "Bid" || details.gemOrderType === "PBP");
+                                const isCancelledOrder = details.status === "Cancelled" || !!details.cancelledBy;
+                                const isOnHoldOrder = details.status === "Order On Hold" || details.status === "Order Not Confirmed" || !!details.isHold;
+                                const financials = calculateBatchFinancials(viewingOrder, returns);
+                                const totalPaidAmount = viewingOrder.reduce((sum, item) => sum + Number(item.paymentReceivedAmount || 0), 0);
+                                const paidDisplayAmount = totalPaidAmount > 0 ? totalPaidAmount : financials.totalValue;
 
                                 return (
+                                    <>
+                                    {isCancelledOrder && (
+                                        <div className="mb-4 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 text-xs font-bold text-red-700">
+                                            <Ban size={14} className="flex-shrink-0" />
+                                            Order Cancelled{details.cancelReason ? ` — ${details.cancelReason}` : ""}
+                                        </div>
+                                    )}
+                                    {!isCancelledOrder && isOnHoldOrder && (
+                                        <div className="mb-4 flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2.5 text-xs font-bold text-yellow-700">
+                                            <AlertTriangle size={14} className="flex-shrink-0" />
+                                            Order On Hold{details.holdReason ? ` — ${details.holdReason}` : ""}
+                                        </div>
+                                    )}
+                                    {details.status === "Completed" && (
+                                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-4">
+                                            <h4 className="text-xs font-bold text-emerald-700 flex items-center gap-1.5 mb-2">
+                                                <CheckSquare size={13} /> Payment Information
+                                            </h4>
+                                            <div className="grid grid-cols-3 gap-3">
+                                                <div>
+                                                    <p className="text-[10px] text-emerald-600 font-medium">Date Received</p>
+                                                    <p className="text-xs font-bold text-emerald-800">{safeFormatDate(details.paymentReceivedDate) || "-"}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] text-emerald-600 font-medium">Total Amount</p>
+                                                    <p className="text-xs font-bold text-emerald-800">₹{paidDisplayAmount.toLocaleString("en-IN")}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] text-emerald-600 font-medium">UTR ID</p>
+                                                    <p className="text-xs font-bold text-emerald-800 font-mono uppercase">{details.utrId || "N/A"}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-8">
                                         <div className="space-y-4">
                                             <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2 flex items-center gap-1">
@@ -1040,7 +1120,31 @@ export default function Billing({
                                                     <p className="text-[10px] text-slate-400 font-bold uppercase">Warranty</p>
                                                     <p className="text-sm font-semibold text-slate-700">{details.warranty || "N/A"}</p>
                                                 </div>
+                                                {details.warrantyStartDate && (
+                                                    <div>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase">Warranty Start Date</p>
+                                                        <p className="text-sm font-medium text-slate-700">{safeFormatDate(details.warrantyStartDate)}</p>
+                                                    </div>
+                                                )}
+                                                {currentUser?.role === "Admin" && (
+                                                    <div>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase">Dispatched By</p>
+                                                        <p className="text-sm font-medium text-slate-700">{details.dispatchedBy || "Unknown"}</p>
+                                                    </div>
+                                                )}
+                                                {currentUser?.role === "Admin" && isCancelledOrder && (
+                                                    <div>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase">Cancelled By</p>
+                                                        <p className="text-sm font-medium text-red-600">{details.cancelledBy || "Unknown"}</p>
+                                                    </div>
+                                                )}
                                             </div>
+                                            {details.warrantyStartDate && details.invoiceDate && new Date(details.invoiceDate) > new Date(details.warrantyStartDate) && (
+                                                <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 text-xs font-bold text-amber-800">
+                                                    <AlertTriangle size={13} className="flex-shrink-0" />
+                                                    Invoice date ({safeFormatDate(details.invoiceDate)}) is after Warranty Start Date ({safeFormatDate(details.warrantyStartDate)})
+                                                </div>
+                                            )}
 
                                             {isGeM && (
                                                 <div className="bg-orange-50 border border-orange-100 p-3 rounded-lg mt-3">
@@ -1082,6 +1186,15 @@ export default function Billing({
                                                     <MapPin size={16} className="text-slate-400 flex-shrink-0 mt-0.5" />
                                                     <p className="text-sm text-slate-600 leading-relaxed">
                                                         {details.shippingAddress || "No address provided"}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Buy To Address</p>
+                                                <div className="flex gap-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                                                    <MapPin size={16} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                                                    <p className="text-sm text-slate-600 leading-relaxed">
+                                                        {details.buyerAddress || "No address provided"}
                                                     </p>
                                                 </div>
                                             </div>
@@ -1144,38 +1257,148 @@ export default function Billing({
                                                                     <Mail size={10} /> {details.consigneeEmail || "-"}
                                                                 </p>
                                                             </div>
+                                                            <div>
+                                                                <p className="text-[10px] text-slate-400 font-bold uppercase">Payment Authority Email</p>
+                                                                <p className="text-xs font-medium text-indigo-600 break-all flex items-center gap-1">
+                                                                    <Mail size={10} /> {details.paymentAuthorityEmail || "-"}
+                                                                </p>
+                                                            </div>
                                                         </div>
                                                     </>
                                                 )}
                                             </div>
                                         </div>
                                     </div>
+                                    </>
                                 );
                             })()}
 
+                            {viewingOrderContractProducts && viewingOrderContractProducts.length > 0 && (
+                                <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 mb-6">
+                                    <p className="text-[10px] font-extrabold text-sky-700 uppercase tracking-widest flex items-center gap-1 mb-2">
+                                        <FileText size={11} /> Ordered Items (per Contract)
+                                    </p>
+                                    <div className="space-y-1">
+                                        {viewingOrderContractProducts.map((p, i) => (
+                                            <div key={i} className="flex items-center justify-between text-xs bg-white rounded-lg px-2.5 py-1.5 border border-sky-100">
+                                                <span className="font-semibold text-slate-700">{p.productName || p.model || "Unnamed item"}</span>
+                                                <span className="text-slate-400">Qty: {p.quantity || 1}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-[10px] text-sky-600 mt-2">What the contract specified — compare against the items actually dispatched below.</p>
+                                </div>
+                            )}
+
                             <div>
-                                <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-3 flex items-center gap-1">
-                                    <Box size={12} /> Items in this Order ({viewingOrder.length})
-                                </h4>
+                                <div className="flex items-center justify-between mb-3">
+                                    <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1">
+                                        <Box size={12} /> Items in this Order ({viewingOrder.length})
+                                    </h4>
+                                    <div className="flex items-center gap-2">
+                                        {(() => {
+                                            const details = viewingOrder[0];
+                                            const financials = calculateBatchFinancials(viewingOrder, returns);
+                                            const hpSerials = viewingOrder.map((item) => getItemSerial(item)).filter((s) => s && s !== "N/A");
+                                            return (
+                                                <>
+                                                    {financials.activeCount > 0 && financials.returnedCount > 0 && (
+                                                        <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-100">{financials.activeCount} Active</span>
+                                                    )}
+                                                    {financials.returnedCount > 0 && (
+                                                        <span className="text-[10px] font-bold bg-red-50 text-red-600 px-1.5 py-0.5 rounded border border-red-100 flex items-center gap-0.5">
+                                                            <RotateCcw size={8} />{financials.returnedCount} Returned
+                                                        </span>
+                                                    )}
+                                                    {financials.replacedCount > 0 && (
+                                                        <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100 flex items-center gap-0.5">
+                                                            <RefreshCw size={8} />{financials.replacedCount} Replaced
+                                                        </span>
+                                                    )}
+                                                    {hpSerials.length >= 2 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => hpSerials.forEach((serial, i) => setTimeout(() => openHpWarrantyBridge(serial), i * 500))}
+                                                            className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded transition-colors"
+                                                            title={`Check HP Warranty for all ${hpSerials.length} serial numbers`}
+                                                        >
+                                                            <ExternalLink size={9} /> Check All HP ({hpSerials.length})
+                                                        </button>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
                                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                                     <table className="w-full text-sm text-left">
                                         <thead className="bg-slate-50 text-[10px] uppercase font-bold text-slate-500">
                                             <tr>
                                                 <th className="px-4 py-3 w-10">#</th>
                                                 <th className="px-4 py-3">Model</th>
+                                                <th className="px-4 py-3 text-center">Qty</th>
                                                 <th className="px-4 py-3">Serial Number</th>
+                                                <th className="px-4 py-3">Care Pack</th>
+                                                <th className="px-4 py-3 text-center">Status</th>
                                                 <th className="px-4 py-3 text-right">Selling Price</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {viewingOrder.map((item, idx) => {
                                                 const { model, serial } = getDetails(item);
+                                                const isCancelledOrder = viewingOrder[0].status === "Cancelled" || !!viewingOrder[0].cancelledBy;
+                                                const returned = isItemReturned(item, returns);
+                                                const replaced = isItemReplaced(item);
+                                                const oldSerial = getOldSerial(item);
+                                                const itemSerial = getItemSerial(item);
                                                 return (
-                                                    <tr key={idx} className="hover:bg-slate-50/50">
+                                                    <tr key={idx} className={returned ? "bg-red-50" : replaced ? "bg-indigo-50/30" : "hover:bg-slate-50/50"}>
                                                         <td className="px-4 py-3 text-slate-400 text-xs">{idx + 1}</td>
                                                         <td className="px-4 py-3 font-medium text-slate-700">{model}</td>
-                                                        <td className="px-4 py-3 font-mono text-slate-600">{serial}</td>
-                                                        <td className="px-4 py-3 text-right font-bold text-emerald-600">
+                                                        <td className="px-4 py-3 text-center font-bold text-slate-600">{item.quantity || 1}</td>
+                                                        <td className="px-4 py-3 font-mono text-slate-600">
+                                                            {serial}
+                                                            {itemSerial && itemSerial !== "N/A" && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => openHpWarrantyBridge(itemSerial)}
+                                                                    className="mt-0.5 flex items-center gap-0.5 w-fit text-[9px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded transition-colors"
+                                                                    title={`Check HP Warranty for ${itemSerial}`}
+                                                                >
+                                                                    <ExternalLink size={8} /> HP Warranty
+                                                                </button>
+                                                            )}
+                                                            {replaced && (
+                                                                <div className="text-[9px] text-indigo-500 font-bold mt-0.5 bg-indigo-50 px-1 py-0.5 rounded w-fit border border-indigo-100">
+                                                                    Replaced old: {oldSerial}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            {item.carePackUpgrade ? (
+                                                                <div className="text-xs">
+                                                                    <span className="font-semibold text-sky-700 bg-sky-50 border border-sky-100 px-2 py-0.5 rounded-full">{item.carePackUpgrade}</span>
+                                                                    <span className="block text-[9px] text-sky-600 mt-0.5">+₹{Number(item.carePackUpgradePrice || 0).toLocaleString('en-IN')} upgrade</span>
+                                                                    {item.originalCarePack && <span className="block text-[9px] text-slate-400">was: {item.originalCarePack}</span>}
+                                                                </div>
+                                                            ) : item.originalCarePack ? (
+                                                                <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">{item.originalCarePack}</span>
+                                                            ) : (
+                                                                <span className="text-xs text-slate-400">-</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-center">
+                                                            {returned ? (
+                                                                <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-[10px] font-bold border border-red-200"><RotateCcw size={9} />RETURNED</span>
+                                                            ) : replaced ? (
+                                                                <span className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[10px] font-bold border border-indigo-200"><RefreshCw size={9} />REPLACED</span>
+                                                            ) : isCancelledOrder ? (
+                                                                <span className="inline-flex items-center gap-1 bg-red-50 text-red-600 px-2 py-0.5 rounded-full text-[10px] font-bold border border-red-100"><Ban size={9} />CANCELLED</span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full text-[10px] font-bold border border-emerald-100"><Check size={9} />ACTIVE</span>
+                                                            )}
+                                                        </td>
+                                                        <td className={`px-4 py-3 text-right font-bold ${returned || isCancelledOrder ? "text-red-400 line-through" : "text-emerald-600"}`}>
                                                             ₹{(Number(item.sellingPrice || 0) * (Number(item.quantity) || 1)).toLocaleString('en-IN')}
                                                         </td>
                                                     </tr>
@@ -1183,12 +1406,36 @@ export default function Billing({
                                             })}
                                         </tbody>
                                         <tfoot className="bg-slate-50 border-t border-slate-200">
-                                            <tr>
-                                                <td colSpan="3" className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase">Total Amount</td>
-                                                <td className="px-4 py-3 text-right font-bold text-indigo-700 text-base">
-                                                    ₹{viewingOrder.reduce((sum, i) => sum + Number(i.sellingPrice || 0) * (Number(i.quantity) || 1), 0).toLocaleString('en-IN')}
-                                                </td>
-                                            </tr>
+                                            {(() => {
+                                                const financials = calculateBatchFinancials(viewingOrder, returns);
+                                                const isCancelledOrder = viewingOrder[0].status === "Cancelled" || !!viewingOrder[0].cancelledBy;
+                                                return (
+                                                    <>
+                                                        <tr>
+                                                            <td colSpan="5" className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase">Total Amount</td>
+                                                            <td className="px-4 py-3 text-right font-bold text-indigo-700 text-base">
+                                                                ₹{financials.totalValue.toLocaleString('en-IN')}
+                                                            </td>
+                                                        </tr>
+                                                        {financials.returnedValue > 0 && !isCancelledOrder && (
+                                                            <tr className="bg-red-50 border-t border-red-100">
+                                                                <td colSpan="5" className="px-4 py-3 text-right text-red-600 font-medium text-[10px] uppercase">
+                                                                    <span className="inline-flex items-center gap-1"><RotateCcw size={9} /> Less: Returns ({financials.returnedCount} item{financials.returnedCount > 1 ? "s" : ""})</span>
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right font-bold text-red-600 text-xs">
+                                                                    -₹{financials.returnedValue.toLocaleString('en-IN')}
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                        {financials.returnedValue > 0 && !isCancelledOrder && (
+                                                            <tr className="border-t-2 bg-amber-50 border-amber-200">
+                                                                <td colSpan="5" className="px-4 py-3 text-right font-bold uppercase text-[10px] text-amber-700">Net Billing Value (After Returns)</td>
+                                                                <td className="px-4 py-3 text-right font-bold text-sm text-amber-700">₹{financials.netValue.toLocaleString('en-IN')}</td>
+                                                            </tr>
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
                                         </tfoot>
                                     </table>
                                 </div>

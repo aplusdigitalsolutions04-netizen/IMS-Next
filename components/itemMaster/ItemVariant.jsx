@@ -5,6 +5,7 @@ import Swal from "sweetalert2";
 import axios from "axios";
 import { Plus, Loader2, ListTree, ArrowLeft, Trash2, Barcode, Hash, X, Edit2, Search, Settings2 } from "lucide-react";
 import CategorySpecificationModal from "../categoryMaster/CategorySpecificationModal";
+import MasterDropdown from "@/components/common/MasterDropdown";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -100,6 +101,7 @@ const ItemVariant = () => {
   const [newSerialValue, setNewSerialValue] = useState("");
   const [newLandingPrice, setNewLandingPrice] = useState("");
   const [newGodownGuid, setNewGodownGuid] = useState("");
+  const [newCarePack, setNewCarePack] = useState("");
   const [godowns, setGodowns] = useState([]);
   const [addingSerial, setAddingSerial] = useState(false);
   const [deletingSerialGuid, setDeletingSerialGuid] = useState("");
@@ -159,6 +161,7 @@ const ItemVariant = () => {
           values,
           landingPrice: newLandingPrice !== "" ? Number(newLandingPrice) : 0,
           godownGuid: newGodownGuid || null,
+          carePack: newCarePack || null,
         },
         { headers: getHeaders() }
       );
@@ -715,7 +718,16 @@ const ItemVariant = () => {
                       Add
                     </button>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1">Landing Price is pre-filled with the last used price for this variant — change it if this batch is different.</p>
+                  <div className="mt-2 w-48">
+                    <MasterDropdown
+                      code="CARE_PACK"
+                      placeholder="Care Pack (optional)"
+                      value={newCarePack}
+                      onChange={(e) => setNewCarePack(e.target.value)}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none bg-white text-slate-700"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">Landing Price is pre-filled with the last used price for this variant — change it if this batch is different. Care Pack (if any) applies to every serial added in this batch.</p>
                 </div>
 
                 <div className="flex-1 overflow-y-auto px-6 py-4">

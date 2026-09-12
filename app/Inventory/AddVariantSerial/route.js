@@ -4,6 +4,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { ensureCarePackColumn } from "@/lib/carePackMigration";
 
 // Adds one or more serial numbers directly against an Item Master variant —
 // a quick manual add (outside the full Stock In workflow) for when you just
@@ -15,8 +16,9 @@ export const POST = withErrorHandling(async (request) => {
   authorizeInventory(user, "POST");
   requireAuth(user);
   requireCompany(user);
+  await ensureCarePackColumn();
 
-  const { itemVariantId, value, values, landingPrice, godownGuid } = await parseJsonBody(request);
+  const { itemVariantId, value, values, landingPrice, godownGuid, carePack } = await parseJsonBody(request);
 
   const rawValues = Array.isArray(values) && values.length > 0 ? values : [value];
   const serialValues = rawValues
@@ -65,9 +67,9 @@ export const POST = withErrorHandling(async (request) => {
       const guid = randomUUID();
       guids.push(guid);
       await conn.query(
-        `INSERT INTO inventorystockinserial (serialId, guid, companyGuid, itemVariantId, godownGuid, serialNumber, serialStatus, landingPrice, isUsed, isDeleted, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, 'Available', ?, 0, 0, NOW())`,
-        [guid, guid, user.companyId, itemVariantId, godownGuid || null, serialValue, rate]
+        `INSERT INTO inventorystockinserial (serialId, guid, companyGuid, itemVariantId, godownGuid, serialNumber, serialStatus, landingPrice, isUsed, isDeleted, createdAt, carePack)
+         VALUES (?, ?, ?, ?, ?, ?, 'Available', ?, 0, 0, NOW(), ?)`,
+        [guid, guid, user.companyId, itemVariantId, godownGuid || null, serialValue, rate, carePack || null]
       );
     }
 

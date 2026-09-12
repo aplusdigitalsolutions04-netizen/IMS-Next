@@ -174,6 +174,19 @@ export default function OrderDetailModal({
   const [savingContract, setSavingContract] = React.useState(false);
   const [confirmReplaceContractGuid, setConfirmReplaceContractGuid] = React.useState(null);
 
+  // Ordered items per the linked GeM contract (if any) — reference only,
+  // shown alongside what was actually dispatched so a deliberate
+  // substitution (buyer wanted a different model) stays visible instead of
+  // silently untracked. Never blocks or warns on mismatch.
+  const [contractProducts, setContractProducts] = React.useState(null);
+  const orderIdForContractLookup = selectedBatch?.customerName || selectedBatch?.customer;
+  React.useEffect(() => {
+    if (!orderIdForContractLookup) return;
+    api.get(`/dispatches/check/${encodeURIComponent(orderIdForContractLookup)}`)
+      .then((res) => setContractProducts(res.data?.contractProducts?.length > 0 ? res.data.contractProducts : null))
+      .catch(() => setContractProducts(null));
+  }, [orderIdForContractLookup]);
+
   // A "batch" (one row in Order Processing) can bundle items from more than
   // one real order — OrderTracking.jsx groups rows by firmName+bidNumber (or
   // customerName) via getBatchKey(), which several distinct `orders.guid`
@@ -1171,6 +1184,28 @@ export default function OrderDetailModal({
                           </div>
                         )}
 
+                        {/* Ordered Items (per Contract) — reference only, never
+                            blocks/warns if what's actually dispatched below
+                            differs. Lets a deliberate substitution (buyer
+                            wanted another model) stay visible instead of
+                            silently untracked. */}
+                        {contractProducts && contractProducts.length > 0 && (
+                          <div className="bg-sky-50 border border-sky-200 rounded-lg p-3">
+                            <h3 className="text-xs font-bold text-sky-700 mb-2 flex items-center gap-1.5">
+                              <FileText size={13} /> Ordered Items (per Contract)
+                            </h3>
+                            <div className="space-y-1.5">
+                              {contractProducts.map((p, i) => (
+                                <div key={i} className="flex items-center justify-between text-xs bg-white rounded-md px-2.5 py-1.5 border border-sky-100">
+                                  <span className="font-semibold text-slate-700">{p.productName || p.model || "Unnamed item"}</span>
+                                  <span className="text-slate-400">Qty: {p.quantity || 1}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-sky-600 mt-2">What the contract specified — compare against the items actually dispatched below.</p>
+                          </div>
+                        )}
+
                         {/* Order Items */}
                         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
                           <div className="bg-slate-50 px-3 py-2 border-b border-slate-200 flex items-center justify-between">
@@ -1223,6 +1258,7 @@ export default function OrderDetailModal({
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Model</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase text-center">Qty</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Serial No.</th>
+                                  <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Care Pack</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase text-center">Status</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase text-right">Value</th>
                                 </tr>
@@ -1272,6 +1308,18 @@ export default function OrderDetailModal({
                                           </div>
                                         )}
                                       </td>
+                                      <td className="px-3 py-2.5">
+                                        {item.carePackUpgrade ? (
+                                          <div className="text-[10px]">
+                                            <span className="font-bold text-sky-700 bg-sky-50 border border-sky-100 px-1.5 py-0.5 rounded-full">{item.carePackUpgrade}</span>
+                                            <span className="block text-sky-600 mt-0.5">+₹{Number(item.carePackUpgradePrice || 0).toLocaleString()} upgrade</span>
+                                          </div>
+                                        ) : item.originalCarePack ? (
+                                          <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full">{item.originalCarePack}</span>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400">-</span>
+                                        )}
+                                      </td>
                                       <td className="px-3 py-2.5 text-center">
                                         {isReplacing ? (
                                           <div className="flex items-center justify-center gap-1.5">
@@ -1318,7 +1366,7 @@ export default function OrderDetailModal({
                               </tbody>
                               <tfoot>
                                 <tr className="bg-slate-50 border-t border-slate-200">
-                                  <td colSpan="4" className="px-3 py-2 text-right text-slate-500 font-medium text-[10px] uppercase">
+                                  <td colSpan="5" className="px-3 py-2 text-right text-slate-500 font-medium text-[10px] uppercase">
                                     Total Batch Value ({f.totalCount} items)
                                   </td>
                                   <td className={`px-3 py-2 text-right font-bold text-xs ${isCancelledOrder ? "text-red-400 line-through" : "text-slate-800"}`}>
@@ -1327,7 +1375,7 @@ export default function OrderDetailModal({
                                 </tr>
                                 {f.returnedValue > 0 && !isCancelledOrder && activeTab === "active" && (
                                   <tr className="bg-red-50 border-t border-red-100">
-                                    <td colSpan="4" className="px-3 py-2 text-right text-red-600 font-medium text-[10px] uppercase flex items-center justify-end gap-1">
+                                    <td colSpan="5" className="px-3 py-2 text-right text-red-600 font-medium text-[10px] uppercase flex items-center justify-end gap-1">
                                       <RotateCcw size={9} /> Less: Returns ({f.returnedCount} item{f.returnedCount > 1 ? "s" : ""})
                                     </td>
                                     <td className="px-3 py-2 text-right font-bold text-red-600 text-xs">
@@ -1337,7 +1385,7 @@ export default function OrderDetailModal({
                                 )}
                                 {!isCancelledOrder && (
                                   <tr className={`border-t-2 ${(f.returnedCount > 0 && activeTab === "active") ? "bg-amber-50 border-amber-200" : isOnHoldOrder ? "bg-yellow-50 border-yellow-200" : "bg-indigo-50 border-indigo-200"}`}>
-                                    <td colSpan="4" className={`px-3 py-2.5 text-right font-bold uppercase text-[10px] ${(f.returnedCount > 0 && activeTab === "active") ? "text-amber-700" : isOnHoldOrder ? "text-yellow-700" : "text-indigo-700"}`}>
+                                    <td colSpan="5" className={`px-3 py-2.5 text-right font-bold uppercase text-[10px] ${(f.returnedCount > 0 && activeTab === "active") ? "text-amber-700" : isOnHoldOrder ? "text-yellow-700" : "text-indigo-700"}`}>
                                       {(f.returnedCount > 0 && activeTab === "active") ? "Net Billing Value (After Returns)" : isOnHoldOrder ? "Pending Value (On Hold)" : "Final Billing Value"}
                                     </td>
                                     <td className={`px-3 py-2.5 text-right font-bold text-sm ${(f.returnedCount > 0 && activeTab === "active") ? "text-amber-700" : isOnHoldOrder ? "text-yellow-700" : "text-indigo-700"}`}>
@@ -1347,7 +1395,7 @@ export default function OrderDetailModal({
                                 )}
                                 {isCancelledOrder && (
                                   <tr className="border-t-2 bg-red-50 border-red-200">
-                                    <td colSpan="4" className="px-3 py-2.5 text-right font-bold uppercase text-[10px] text-red-700">
+                                    <td colSpan="5" className="px-3 py-2.5 text-right font-bold uppercase text-[10px] text-red-700">
                                       Order Cancelled — No Billing
                                     </td>
                                     <td className="px-3 py-2.5 text-right font-bold text-sm text-red-700">₹0</td>
@@ -2468,6 +2516,7 @@ export default function OrderDetailModal({
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Model</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase text-center">Qty</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Serial No.</th>
+                                  <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Care Pack</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase text-center">Status</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase text-right">Value</th>
                                 </tr>
@@ -2518,6 +2567,18 @@ export default function OrderDetailModal({
                                           </div>
                                         )}
                                       </td>
+                                      <td className="px-3 py-2.5">
+                                        {item.carePackUpgrade ? (
+                                          <div className="text-[10px]">
+                                            <span className="font-bold text-sky-700 bg-sky-50 border border-sky-100 px-1.5 py-0.5 rounded-full">{item.carePackUpgrade}</span>
+                                            <span className="block text-sky-600 mt-0.5">+₹{Number(item.carePackUpgradePrice || 0).toLocaleString()} upgrade</span>
+                                          </div>
+                                        ) : item.originalCarePack ? (
+                                          <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full">{item.originalCarePack}</span>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400">-</span>
+                                        )}
+                                      </td>
                                       <td className="px-3 py-2.5 text-center">
                                         {isReplacing ? (
                                           <div className="flex items-center justify-center gap-1.5">
@@ -2564,7 +2625,7 @@ export default function OrderDetailModal({
                               </tbody>
                               <tfoot>
                                 <tr className="bg-slate-50 border-t border-slate-200">
-                                  <td colSpan="4" className="px-3 py-2 text-right text-slate-500 font-medium text-[10px] uppercase">
+                                  <td colSpan="5" className="px-3 py-2 text-right text-slate-500 font-medium text-[10px] uppercase">
                                     Total Batch Value ({f.totalCount} items)
                                   </td>
                                   <td className={`px-3 py-2 text-right font-bold text-xs ${isCancelledOrder ? "text-red-400 line-through" : "text-slate-800"}`}>
@@ -2574,7 +2635,7 @@ export default function OrderDetailModal({
 
                                 {f.returnedValue > 0 && !isCancelledOrder && activeTab === "active" && (
                                   <tr className="bg-red-50 border-t border-red-100">
-                                    <td colSpan="4" className="px-3 py-2 text-right text-red-600 font-medium text-[10px] uppercase flex items-center justify-end gap-1">
+                                    <td colSpan="5" className="px-3 py-2 text-right text-red-600 font-medium text-[10px] uppercase flex items-center justify-end gap-1">
                                       <RotateCcw size={9} /> Less: Returns ({f.returnedCount} item{f.returnedCount > 1 ? "s" : ""})
                                     </td>
                                     <td className="px-3 py-2 text-right font-bold text-red-600 text-xs">
@@ -2588,7 +2649,7 @@ export default function OrderDetailModal({
                                       isOnHoldOrder ? "bg-yellow-50 border-yellow-200" :
                                         "bg-indigo-50 border-indigo-200"
                                     }`}>
-                                    <td colSpan="4" className={`px-3 py-2.5 text-right font-bold uppercase text-[10px] ${(f.returnedCount > 0 && activeTab === "active") ? "text-amber-700" :
+                                    <td colSpan="5" className={`px-3 py-2.5 text-right font-bold uppercase text-[10px] ${(f.returnedCount > 0 && activeTab === "active") ? "text-amber-700" :
                                         isOnHoldOrder ? "text-yellow-700" :
                                           "text-indigo-700"
                                       }`}>
@@ -2607,7 +2668,7 @@ export default function OrderDetailModal({
 
                                 {isCancelledOrder && (
                                   <tr className="border-t-2 bg-red-50 border-red-200">
-                                    <td colSpan="4" className="px-3 py-2.5 text-right font-bold uppercase text-[10px] text-red-700">
+                                    <td colSpan="5" className="px-3 py-2.5 text-right font-bold uppercase text-[10px] text-red-700">
                                       Order Cancelled — No Billing
                                     </td>
                                     <td className="px-3 py-2.5 text-right font-bold text-sm text-red-700">

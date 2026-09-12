@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeDispatchRequest, requireCompany, ApiError } from "@/lib/auth";
 import { safeStr, safeDate, normalizeBusinessStatus, normalizeLogisticsStatus, toBit } from "@/lib/helpers";
-import { createDispatchInline } from "@/lib/dispatchHelpers";
+import { createDispatchInline, createNonSerializedDispatchInline } from "@/lib/dispatchHelpers";
 import { createNotification } from "@/lib/notifications";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
@@ -29,31 +29,42 @@ export const POST = withErrorHandling(async (request) => {
     await connection.beginTransaction();
 
     for (const item of items) {
-      const [serialCheck] = await connection.query(
-        "SELECT s.serialStatus AS status, s.serialNumber AS serialValue, itv.packagingCost AS modelDefaultCost" +
-        " FROM inventorystockinserial s JOIN inventoryitemvariant itv ON s.itemVariantId = itv.itemVariantId" +
-        " WHERE s.guid = ? AND s.companyGuid = ?",
-        [item.serialId, user.companyId]
-      );
-
-      if (serialCheck.length === 0) {
-        await connection.rollback();
-        return NextResponse.json({ message: `Serial ID ${item.serialId} not found` }, { status: 404 });
-      }
-
-      const serialData = serialCheck[0];
-      const finalPackagingCost = (item.packagingCost !== undefined && item.packagingCost !== "" && item.packagingCost !== null)
-        ? Number(item.packagingCost)
-        : Number(serialData.modelDefaultCost || 0);
-
+      // A "Mixed" dispatch batch can carry both serialized items (need the
+      // scanned serial's current status/packaging-cost looked up) and
+      // non-serialized items (need itemVariantId/quantity + stock checked
+      // instead) — same createFn-by-flag branch app/api/dispatches/route.js
+      // already uses for its single-item POST, applied per item here.
       const finalStatus = normalizeBusinessStatus(item.status || "Pending");
       const finalLogisticsStatus = normalizeLogisticsStatus(item.logisticsStatus);
       const installReqBit = toBit(item.installationRequired) ? "Yes" : "No";
       const installStatusBit = toBit(item.installationRequired) ? (item.installationStatus || "Pending") : null;
 
-      const result = await createDispatchInline(connection, {
+      let finalPackagingCost = Number(item.packagingCost || 0);
+      if (!item.nonSerialized) {
+        const [serialCheck] = await connection.query(
+          "SELECT s.serialStatus AS status, s.serialNumber AS serialValue, itv.packagingCost AS modelDefaultCost" +
+          " FROM inventorystockinserial s JOIN inventoryitemvariant itv ON s.itemVariantId = itv.itemVariantId" +
+          " WHERE s.guid = ? AND s.companyGuid = ?",
+          [item.serialId, user.companyId]
+        );
+
+        if (serialCheck.length === 0) {
+          await connection.rollback();
+          return NextResponse.json({ message: `Serial ID ${item.serialId} not found` }, { status: 404 });
+        }
+
+        const serialData = serialCheck[0];
+        finalPackagingCost = (item.packagingCost !== undefined && item.packagingCost !== "" && item.packagingCost !== null)
+          ? Number(item.packagingCost)
+          : Number(serialData.modelDefaultCost || 0);
+      }
+
+      const createFn = item.nonSerialized ? createNonSerializedDispatchInline : createDispatchInline;
+      const result = await createFn(connection, {
         companyGuid: user.companyId,
         serialId: item.serialId,
+        itemVariantId: item.itemVariantId,
+        quantity: item.quantity,
         firmName: item.firmName,
         customerName: safeStr(item.customerName || item.customer, ""),
         address: safeStr(item.address || item.shippingAddress, null),
@@ -80,6 +91,7 @@ export const POST = withErrorHandling(async (request) => {
         ewayBillFilename: item.ewayBillFilename || null, remarks: item.remarks || null,
         warranty: item.warranty || null, buyerAddress: safeStr(item.buyerAddress, null),
         platformFields: item.platformFields ? JSON.stringify(item.platformFields) : null,
+        carePackUpgrade: item.carePackUpgrade || null, carePackUpgradePrice: item.carePackUpgradePrice || null,
       });
 
       if (!result.success) {

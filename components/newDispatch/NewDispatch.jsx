@@ -4,6 +4,8 @@ import axios from "axios";
 import Swal from "sweetalert2";
 import { printerService } from "@/lib/services/api";
 import { inventoryService } from "@/lib/services/inventoryService";
+import { clientsService } from "@/lib/services/clientsService";
+import { contractsService } from "@/lib/services/contractsService";
 import {
   ArrowLeft, Package, Truck, ScanLine, Hash,
   Trash2, CheckCircle, AlertCircle, Sparkles,
@@ -12,7 +14,7 @@ import {
   Wrench, Activity, CheckSquare, X, Eye, EyeOff,
   TrendingUp, TrendingDown, Clock, CreditCard,
   Plus, Minus, Database, Building2, ListChecks,
-  Zap, Shield, Box, CircleDot, Loader2
+  Zap, Shield, Box, CircleDot, Loader2, Users
 } from "lucide-react";
 import MasterDropdown from "@/components/common/MasterDropdown";
 import SearchableSelect from "../common/SearchableSelect";
@@ -44,8 +46,26 @@ export default function NewDispatch({
   const [itemType, setItemType] = useState("serialized"); // "serialized" | "nonSerialized"
   const [nonSerializedItemVariantId, setNonSerializedItemVariantId] = useState("");
   const [nonSerializedQty, setNonSerializedQty] = useState(1);
+  // Ordered (by display_order, ascending duration) Care Pack options — the
+  // array's own order IS the rank, so "only allow upgrading to something
+  // longer than the serial's current Care Pack" is just "index > current
+  // index" against this same array, no separate sort-order field needed.
+  const [carePackOptions, setCarePackOptions] = useState([]);
+  useEffect(() => {
+    axios.get(`${API_BASE_URL}/api/dropdown/CARE_PACK`, getAuthHeaders())
+      .then((res) => setCarePackOptions(res.data?.data || []))
+      .catch((err) => console.error("Failed to load Care Pack options:", err));
+  }, []);
+
   const [itemMasterVariants, setItemMasterVariants] = useState([]);
   const [loadingItemMaster, setLoadingItemMaster] = useState(false);
+  // "Mixed Items" tab — its own add-one-line-at-a-time picker for
+  // non-serialized items, separate from nonSerializedItemVariantId/Qty above
+  // (that pair is the single-line-only Non-Serialized tab's own state; this
+  // tab needs to add several non-serialized lines into the shared batchList
+  // instead of holding just one pending line).
+  const [mixedNsItemVariantId, setMixedNsItemVariantId] = useState("");
+  const [mixedNsQty, setMixedNsQty] = useState(1);
   const [batchList, setBatchList] = useState([]);
   const [extractingAi, setExtractingAi] = useState(false);
   const inputRef = useRef(null);
@@ -73,6 +93,11 @@ export default function NewDispatch({
   // before the user even notices the warning) could previously slip through
   // with no check having actually blocked it. 'idle' | 'checking' | 'ok' | 'duplicate'.
   const [orderIdCheckStatus, setOrderIdCheckStatus] = useState("idle");
+  // Purely informational reference — the GeM contract (if this Order ID
+  // matches one) lists what was actually ordered, shown alongside whatever
+  // gets scanned/added below so a deliberate substitution stays visible
+  // instead of silently untracked. Never blocks or warns on mismatch.
+  const [contractProducts, setContractProducts] = useState(null);
 
   const [selectedCompany, setSelectedCompany] = useState("");
   const [selectedItemName, setSelectedItemName] = useState("");
@@ -103,6 +128,9 @@ export default function NewDispatch({
     landingPrice: 0,
     mrp: 0,
     modelGuid: null,
+    carePack: null,
+    carePackUpgrade: null,
+    carePackUpgradePrice: "",
     quantity: 1,
     status: "Order Confirmed",
     installationRequired: "No",
@@ -170,6 +198,7 @@ export default function NewDispatch({
   const handleOrderIdBlur = async () => {
     if (!form.orderId || String(form.orderId).trim() === "" || String(form.orderId).toLowerCase() === "n/a") {
       setOrderIdCheckStatus("idle");
+      setContractProducts(null);
       return;
     }
     const checkedValue = String(form.orderId).trim();
@@ -181,6 +210,7 @@ export default function NewDispatch({
       // result is for a stale value — don't let it set the status for
       // whatever's in the field now.
       if (String(form.orderId).trim() !== checkedValue) return;
+      setContractProducts(res.data.contractProducts?.length > 0 ? res.data.contractProducts : null);
       if (res.data.exists) {
         setOrderIdCheckStatus("duplicate");
         Swal.fire({
@@ -200,6 +230,7 @@ export default function NewDispatch({
       // re-runs the check itself before proceeding, so this doesn't block
       // submission, it just doesn't pre-clear the warning either.
       setOrderIdCheckStatus("idle");
+      setContractProducts(null);
     } finally {
       setIsProcessing(false);
     }
@@ -221,6 +252,33 @@ export default function NewDispatch({
   const allPlatforms = allPlatformRows.map((p) => ({ value: p.name, icon: PLATFORM_ICONS[p.name] || "🛒", fields: p.fields || [], itemTypeMode: p.itemTypeMode || "serialized" }));
 
   const platforms = allowed ? allPlatforms.filter(p => allowed.includes(p.value)) : allPlatforms;
+
+  // Client Master — lets the shipping/buyer address, GST, contact and
+  // consignee fields below be filled in one click instead of retyping the
+  // same buyer's details on every dispatch. Only clients tagged for the
+  // currently selected platform (or tagged for no platform at all, meaning
+  // "every platform") are offered.
+  const [clients, setClients] = useState([]);
+  useEffect(() => {
+    clientsService.getClients().then(setClients).catch((err) => console.error("Failed to load clients:", err));
+  }, []);
+  const platformClients = useMemo(
+    () => clients.filter((c) => !c.allowedPlatforms?.length || c.allowedPlatforms.includes(form.platform)),
+    [clients, form.platform]
+  );
+  const applyClient = (clientGuid) => {
+    const client = clients.find((c) => c.guid === clientGuid);
+    if (!client) return;
+    setForm((f) => ({
+      ...f,
+      gemAddress: client.shippingAddress || f.gemAddress,
+      gemBuyerAddress: client.buyerAddress || f.gemBuyerAddress,
+      sameAsShippingAddress: !client.buyerAddress,
+      gemGst: client.gstNumber || f.gemGst,
+      gemContact: client.contactNumber || f.gemContact,
+      consigneeName: client.consigneeName || f.consigneeName,
+    }));
+  };
 
   // Reset manual flag when platform changes
   useEffect(() => {
@@ -246,6 +304,16 @@ export default function NewDispatch({
   const getCompanyName = (model) => {
     if (!model) return "Unknown";
     return model.company || model.companyName || model.firm || "Unknown";
+  };
+
+  // Options a serial's Care Pack can be upgraded TO — strictly longer than
+  // whatever it already has (set at Stock-In), never shorter/sideways, and
+  // never a plain "change". If the serial has no Care Pack at all, every
+  // option counts as an upgrade (there's nothing to be strictly longer than).
+  const getCarePackUpgradeOptions = (currentCarePack) => {
+    if (!currentCarePack) return carePackOptions;
+    const idx = carePackOptions.findIndex((o) => o.value === currentCarePack);
+    return idx === -1 ? carePackOptions : carePackOptions.slice(idx + 1);
   };
 
   const getSerialValue = (serial) => {
@@ -293,7 +361,7 @@ export default function NewDispatch({
   // Non-serialized order flow — items picked from Item Master (inventoryitemvariant),
   // the same catalog Stationery stock-out uses, not the printer Models catalog.
   useEffect(() => {
-    if (itemType !== "nonSerialized" || itemMasterVariants.length > 0) return;
+    if ((itemType !== "nonSerialized" && activeTab !== "mixed") || itemMasterVariants.length > 0) return;
     setLoadingItemMaster(true);
     inventoryService.getCurrentStock({ limit: 1000 })
       .then((res) => {
@@ -305,7 +373,7 @@ export default function NewDispatch({
       })
       .catch((err) => console.error("Failed to load Item Master:", err.message))
       .finally(() => setLoadingItemMaster(false));
-  }, [itemType, itemMasterVariants.length]);
+  }, [itemType, activeTab, itemMasterVariants.length]);
 
   const selectedItemMasterVariant = useMemo(
     () => itemMasterVariants.find((v) => String(v.itemVariantId) === String(nonSerializedItemVariantId)),
@@ -373,9 +441,9 @@ export default function NewDispatch({
     setIsProcessing(true);
     setSerialReturnWarning("");
 
-    if (activeTab === "multiple") {
+    if (activeTab === "multiple" || activeTab === "mixed") {
       const targetQty = parseInt(form.quantity, 10) || 1;
-      if (batchList.length >= targetQty) {
+      if (activeTab === "multiple" && batchList.length >= targetQty) {
         setError(`Target limit reached! You have already scanned ${targetQty} items.`);
         setIsProcessing(false);
         return;
@@ -404,7 +472,7 @@ export default function NewDispatch({
     const serialDisplayValue = getSerialValue(foundSerial);
 
     if (
-      activeTab === "multiple" &&
+      (activeTab === "multiple" || activeTab === "mixed") &&
       batchList.find((b) => String(b.serialId) === String(serialId))
     ) {
       setError("This serial is already added.");
@@ -417,7 +485,10 @@ export default function NewDispatch({
     // undefined here — same gap already worked around a few lines up (see
     // the availableSerials filter above) by also matching itemVariantId.
     // Without this fallback every single serial scanned here failed with
-    // "Model not found", regardless of which one it was.
+    // "Model not found", regardless of which one it was. Everything below
+    // must key off this resolved `model.id`, never `foundSerial.modelGuid`
+    // directly — that was always undefined and silently merged every
+    // scanned model into one `modelPrices`/batchSummary bucket.
     const model = models.find((m) => String(m.id) === String(foundSerial.modelGuid) || String(m.id) === String(foundSerial.itemVariantId));
 
     if (!model) {
@@ -432,11 +503,11 @@ export default function NewDispatch({
       : "";
     setSerialReturnWarning(warningMessage);
 
-    if (activeTab === "multiple") {
-      if (modelPrices[foundSerial.modelGuid] === undefined) {
+    if (activeTab === "multiple" || activeTab === "mixed") {
+      if (modelPrices[model.id] === undefined) {
         setModelPrices((prev) => ({
           ...prev,
-          [foundSerial.modelGuid]: model?.mrp || ""
+          [model.id]: model?.mrp || ""
         }));
       }
 
@@ -445,14 +516,18 @@ export default function NewDispatch({
         {
           serialId,
           serialValue: serialDisplayValue,
-          modelGuid: foundSerial.modelGuid,
+          quantity: 1,
+          modelGuid: model.id,
           modelName: model.name,
           companyName,
           landingPrice: foundSerial.landingPrice || 0,
           mrp: model?.mrp || 0,
           individualPrice: null,
           returnCount: Number(foundSerial.returnCount || 0),
-          latestReturnReason: foundSerial.latestReturnReason || ""
+          latestReturnReason: foundSerial.latestReturnReason || "",
+          carePack: foundSerial.carePack || null,
+          carePackUpgrade: null,
+          carePackUpgradePrice: ""
         }
       ]);
 
@@ -465,14 +540,17 @@ export default function NewDispatch({
       setForm((prev) => ({
         ...prev,
         serialId,
-        modelGuid: foundSerial.modelGuid,
+        modelGuid: model.id,
         modelName: model.name,
         companyName,
         landingPrice: foundSerial.landingPrice || 0,
         mrp: model?.mrp || 0,
         serialInput: serialDisplayValue,
         sellingPrice: prev.sellingPrice || (model?.mrp ? String(model.mrp) : ""),
-        quantity: 1
+        quantity: 1,
+        carePack: foundSerial.carePack || null,
+        carePackUpgrade: null,
+        carePackUpgradePrice: ""
       }));
 
       setSuccessMsg(`✓ Serial found: ${serialDisplayValue}`);
@@ -503,6 +581,9 @@ export default function NewDispatch({
           landingPrice: 0,
           mrp: 0,
           modelGuid: null,
+          carePack: null,
+          carePackUpgrade: null,
+          carePackUpgradePrice: "",
           quantity: 1
         }));
         setSerialReturnWarning("");
@@ -525,12 +606,66 @@ export default function NewDispatch({
     }
   };
 
-  const removeFromBatch = (serialId) => {
-    setBatchList((prev) => prev.filter((item) => item.serialId !== serialId));
+  const removeFromBatch = (index) => {
+    setBatchList((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateBatchItemCarePack = (index, field, value) => {
+    setBatchList((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
   };
 
   const updateModelPrice = (modelGuid, price) => {
     setModelPrices((prev) => ({ ...prev, [modelGuid]: price }));
+  };
+
+  // Mixed tab's non-serialized picker — adds one line (with its own
+  // quantity) into the same shared batchList a serialized scan pushes into,
+  // tagged `nonSerialized: true` so the submit handler and pricing summary
+  // both know to treat it as a quantity line rather than one physical serial.
+  const addMixedNonSerializedItem = () => {
+    const variant = itemMasterVariants.find((v) => String(v.itemVariantId) === String(mixedNsItemVariantId));
+    const qty = Number(mixedNsQty);
+    if (!variant || !qty || qty <= 0) return;
+
+    // Stock check has to add up every batchList line already added for this
+    // same item — a fresh per-click check against availablePCS alone would
+    // let two separate 6-unit adds through against 10 in stock.
+    const alreadyQueued = batchList
+      .filter((item) => item.nonSerialized && String(item.itemVariantId) === String(variant.itemVariantId))
+      .reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+    if (variant.availablePCS !== undefined && alreadyQueued + qty > variant.availablePCS) {
+      setError(`Only ${variant.availablePCS - alreadyQueued} more available for ${variant.itemName} — ${variant.variantName}.`);
+      return;
+    }
+
+    if (modelPrices[variant.itemVariantId] === undefined) {
+      setModelPrices((prev) => ({ ...prev, [variant.itemVariantId]: variant.sellingPrice || "" }));
+    }
+
+    setBatchList((prev) => [
+      ...prev,
+      {
+        serialId: null,
+        serialValue: null,
+        nonSerialized: true,
+        itemVariantId: variant.itemVariantId,
+        quantity: qty,
+        modelGuid: variant.itemVariantId,
+        modelName: `${variant.itemName} — ${variant.variantName}`,
+        companyName: variant.brandName || variant.company || "-",
+        landingPrice: 0,
+        mrp: variant.sellingPrice || 0,
+        individualPrice: null,
+        returnCount: 0,
+        latestReturnReason: "",
+      },
+    ]);
+    setMixedNsItemVariantId("");
+    setMixedNsQty(1);
   };
 
 
@@ -612,9 +747,24 @@ export default function NewDispatch({
           companyName: item.companyName,
           mrp: item.mrp,
           count: 0,
+          totalLanding: 0,
+          totalCarePackUpgrade: 0,
         };
       }
-      summary[item.modelGuid].count++;
+      // A serialized entry is always exactly 1 unit; a non-serialized entry
+      // (Mixed tab) carries its own quantity on the one batchList row, so
+      // this has to sum quantity rather than just counting rows — otherwise
+      // a non-serialized line added with qty 5 would show as count 1.
+      summary[item.modelGuid].count += Number(item.quantity) || 1;
+      // Each scanned serial carries its own landingPrice (different stock-in
+      // batches of the same model can land at different costs) — summed here
+      // and divided back by count below so the table can show a per-unit
+      // average alongside the profit it implies at the entered selling price.
+      summary[item.modelGuid].totalLanding += Number(item.landingPrice || 0);
+      // Same idea for Care Pack upgrades — different serials of the same
+      // model in one batch can each get a different (or no) upgrade, so this
+      // is a sum across the group, added on top of the group's price total.
+      summary[item.modelGuid].totalCarePackUpgrade += Number(item.carePackUpgradePrice || 0);
     });
     return Object.values(summary);
   }, [batchList]);
@@ -628,7 +778,7 @@ export default function NewDispatch({
           : item.individualPrice !== null
           ? Number(item.individualPrice)
           : Number(form.sellingPrice);
-      return sum + (price || 0);
+      return sum + (price || 0) * (Number(item.quantity) || 1) + Number(item.carePackUpgradePrice || 0);
     }, 0);
   }, [batchList, modelPrices, form.sellingPrice]);
 
@@ -786,7 +936,54 @@ export default function NewDispatch({
 
       let createdDispatch = null;
 
-      if (itemType === "nonSerialized") {
+      if (activeTab === "mixed") {
+        if (batchList.length === 0) {
+          setError("Please add at least one item to the order.");
+          return;
+        }
+
+        const invalidMixedItems = batchList.filter((item) => {
+          const modelPrice = modelPrices[item.modelGuid];
+          const finalPrice =
+            modelPrice !== undefined && modelPrice !== ""
+              ? Number(modelPrice)
+              : item.individualPrice !== null
+              ? Number(item.individualPrice)
+              : Number(form.sellingPrice);
+          return !finalPrice || finalPrice <= 0;
+        });
+
+        if (invalidMixedItems.length > 0) {
+          setError("Please set a valid unit price for all items.");
+          return;
+        }
+
+        if (batchList.some((item) => item.carePackUpgrade && (!item.carePackUpgradePrice || Number(item.carePackUpgradePrice) <= 0))) {
+          setError("Please enter a valid Care Pack upgrade price for every item you upgraded.");
+          return;
+        }
+
+        setIsSubmitting(true);
+
+        // Same bulk endpoint the Bulk Shipment tab uses — now accepts a
+        // mixed array (see app/api/dispatches/bulk/route.js), branching per
+        // item on the `nonSerialized` flag instead of assuming every line is
+        // a serial.
+        const mixedItemsPayload = batchList.map((item) => {
+          const modelPrice = modelPrices[item.modelGuid];
+          const finalPrice =
+            modelPrice !== undefined && modelPrice !== ""
+              ? Number(modelPrice)
+              : item.individualPrice !== null
+              ? Number(item.individualPrice)
+              : Number(form.sellingPrice);
+          return item.nonSerialized
+            ? { ...buildPayload(null, finalPrice), itemVariantId: item.itemVariantId, quantity: item.quantity, nonSerialized: true }
+            : { ...buildPayload(item.serialId, finalPrice), carePackUpgrade: item.carePackUpgrade || null, carePackUpgradePrice: item.carePackUpgradePrice || null };
+        });
+
+        await printerService.addBulkDispatch(mixedItemsPayload);
+      } else if (itemType === "nonSerialized") {
         if (!nonSerializedItemVariantId) {
           setError("Please select an item from Item Master.");
           return;
@@ -818,10 +1015,17 @@ export default function NewDispatch({
           return;
         }
 
+        if (form.carePackUpgrade && (!form.carePackUpgradePrice || Number(form.carePackUpgradePrice) <= 0)) {
+          setError("Please enter a valid Care Pack upgrade price.");
+          return;
+        }
+
         setIsSubmitting(true);
-        createdDispatch = await printerService.addDispatch(
-          buildPayload(form.serialId, Number(form.sellingPrice))
-        );
+        createdDispatch = await printerService.addDispatch({
+          ...buildPayload(form.serialId, Number(form.sellingPrice)),
+          carePackUpgrade: form.carePackUpgrade || null,
+          carePackUpgradePrice: form.carePackUpgradePrice || null,
+        });
       } else {
         if (batchList.length === 0) {
           setError("Please add at least one item to the batch.");
@@ -851,6 +1055,11 @@ export default function NewDispatch({
           return;
         }
 
+        if (batchList.some((item) => item.carePackUpgrade && (!item.carePackUpgradePrice || Number(item.carePackUpgradePrice) <= 0))) {
+          setError("Please enter a valid Care Pack upgrade price for every item you upgraded.");
+          return;
+        }
+
         setIsSubmitting(true);
 
         const itemsPayload = batchList.map((item) => {
@@ -861,7 +1070,7 @@ export default function NewDispatch({
               : item.individualPrice !== null
               ? Number(item.individualPrice)
               : Number(form.sellingPrice);
-          return buildPayload(item.serialId, finalPrice);
+          return { ...buildPayload(item.serialId, finalPrice), carePackUpgrade: item.carePackUpgrade || null, carePackUpgradePrice: item.carePackUpgradePrice || null };
         });
 
         await printerService.addBulkDispatch(itemsPayload);
@@ -870,9 +1079,11 @@ export default function NewDispatch({
       if (contractFileToUpload || invoiceFileToUpload) {
         try {
           let uploadTargetId = null;
+          let orderGuidForContract = null;
 
           if (activeTab === "single") {
             uploadTargetId = createdDispatch?.dispatchGuid || createdDispatch?.id || createdDispatch?.guid;
+            orderGuidForContract = createdDispatch?.orderGuid || null;
           } else {
             const dispatches = await printerService.getDispatches();
             const orderKey = String(form.orderId || "").trim().toLowerCase();
@@ -883,6 +1094,7 @@ export default function NewDispatch({
               return orderIdValue === orderKey && platformValue === platformKey;
             });
             uploadTargetId = found?.guid || found?.id;
+            orderGuidForContract = found?._orderId || null;
           }
 
           if (!uploadTargetId) {
@@ -904,6 +1116,17 @@ export default function NewDispatch({
                 "invoice"
               );
               invoiceFilename = invoiceResponse.filename;
+            }
+
+            // Best-effort: also save this order into the Contracts list so
+            // "Ordered Items (per Contract)" picks it up. Non-blocking — a
+            // failure here (e.g. non-GeM platform) must not fail the dispatch.
+            if (contractFileToUpload && form.platform === "GeM" && orderGuidForContract) {
+              try {
+                await contractsService.saveOrderAsContract(orderGuidForContract);
+              } catch (contractSaveError) {
+                console.warn("Failed to save order as contract:", contractSaveError);
+              }
             }
           }
         } catch (uploadError) {
@@ -967,7 +1190,7 @@ export default function NewDispatch({
                 </div>
               </div>
               <div className="hidden sm:flex items-center gap-2">
-                {activeTab === "multiple" && batchList.length > 0 && (
+                {(activeTab === "multiple" || activeTab === "mixed") && batchList.length > 0 && (
                   <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-full">
                     {batchList.length} items
                   </span>
@@ -987,7 +1210,8 @@ export default function NewDispatch({
                 <div className="flex gap-2">
                   {[
                     { id: "single", label: "Single Item", icon: Package },
-                    { id: "multiple", label: "Bulk Shipment", icon: Layers }
+                    { id: "multiple", label: "Bulk Shipment", icon: Layers },
+                    { id: "mixed", label: "Mixed Items", icon: Box }
                   ].map((tab) => (
                     <button
                       key={tab.id}
@@ -1006,6 +1230,9 @@ export default function NewDispatch({
                           landingPrice: 0,
                           mrp: 0,
                           modelGuid: null,
+                          carePack: null,
+                          carePackUpgrade: null,
+                          carePackUpgradePrice: "",
                           quantity: tab.id === "single" ? 1 : "",
                           sellingPrice: ""
                         }));
@@ -1062,7 +1289,7 @@ export default function NewDispatch({
                       in Settings > Selling Platforms) is "both" — a platform
                       locked to one or the other never shows this picker at
                       all, and isn't limited to GeM/Other by name anymore. */}
-                  {getSelectedPlatformConfig()?.itemTypeMode === "both" && (
+                  {activeTab !== "mixed" && getSelectedPlatformConfig()?.itemTypeMode === "both" && (
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-slate-700">Item Type</label>
                       <div className="grid grid-cols-2 gap-2">
@@ -1131,6 +1358,27 @@ export default function NewDispatch({
                       )}
                     </div>
                   </div>
+
+                  {/* Ordered Items (per Contract) — reference only, never blocks
+                      or warns if what gets scanned/added below is different.
+                      Lets a deliberate substitution (buyer wants another
+                      model) stay visible instead of silently untracked. */}
+                  {contractProducts && contractProducts.length > 0 && (
+                    <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 space-y-2">
+                      <p className="text-[10px] font-extrabold text-sky-700 uppercase tracking-widest flex items-center gap-1">
+                        <FileText size={11} /> Ordered Items (per Contract)
+                      </p>
+                      <div className="space-y-1">
+                        {contractProducts.map((p, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs bg-white rounded-lg px-2.5 py-1.5 border border-sky-100">
+                            <span className="font-semibold text-slate-700">{p.productName || p.model || "Unnamed item"}</span>
+                            <span className="text-slate-400">Qty: {p.quantity || 1}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-sky-600">For reference — you can still scan/add a different item below if the buyer wants a substitute.</p>
+                    </div>
+                  )}
 
                   {/* Contract Upload — auto-extracts order fields with AI on upload */}
                   {showOrderStatus && (
@@ -1351,6 +1599,24 @@ export default function NewDispatch({
                           )}
                         </div>
                       </div>
+
+                      {platformClients.length > 0 && (
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                            <Users size={10} className="text-slate-400" /> Select Client (auto-fill)
+                          </label>
+                          <select
+                            className="w-full border border-slate-300/80 p-2.5 rounded-xl text-sm bg-white focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 outline-none transition-all"
+                            defaultValue=""
+                            onChange={(e) => { applyClient(e.target.value); e.target.value = ""; }}
+                          >
+                            <option value="" disabled>Choose a saved client...</option>
+                            {platformClients.map((c) => (
+                              <option key={c.guid} value={c.guid}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
 
                       {/* Addresses */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1610,6 +1876,24 @@ export default function NewDispatch({
                           )}
                         </div>
                       </div>
+
+                      {platformClients.length > 0 && (
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                            <Users size={10} className="text-slate-400" /> Select Client (auto-fill)
+                          </label>
+                          <select
+                            className="w-full border border-slate-300/80 p-2.5 rounded-xl text-sm bg-white focus:ring-2 focus:ring-violet-400/20 focus:border-violet-400 outline-none transition-all"
+                            defaultValue=""
+                            onChange={(e) => { applyClient(e.target.value); e.target.value = ""; }}
+                          >
+                            <option value="" disabled>Choose a saved client...</option>
+                            {platformClients.map((c) => (
+                              <option key={c.guid} value={c.guid}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
@@ -2050,6 +2334,58 @@ export default function NewDispatch({
                   </div>
                 )}
 
+                {/* ═══ Mixed tab: add a Non-Serialized line into the shared batchList ═══ */}
+                {activeTab === "mixed" && getSelectedPlatformConfig()?.itemTypeMode !== "serialized" && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                      <div className="p-1.5 bg-amber-100 rounded-lg">
+                        <Box size={13} className="text-amber-600" />
+                      </div>
+                      <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wide">Add Non-Serialized Item</h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_auto] gap-3 items-end">
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-slate-700">Item (Item Master)</label>
+                        <select
+                          className="w-full border border-slate-200 p-3 rounded-xl text-sm bg-white focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 outline-none"
+                          value={mixedNsItemVariantId}
+                          onChange={(e) => setMixedNsItemVariantId(e.target.value)}
+                          disabled={loadingItemMaster}
+                        >
+                          <option value="">{loadingItemMaster ? "Loading items..." : "Select item"}</option>
+                          {itemMasterVariants.map((v) => (
+                            <option key={v.itemVariantId} value={v.itemVariantId}>
+                              {v.itemName} — {v.variantName} (Stock: {v.availablePCS ?? 0})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-slate-700">Qty</label>
+                        <input
+                          type="number"
+                          min="1"
+                          className="w-full border border-slate-200 p-3 rounded-xl text-sm focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 outline-none"
+                          value={mixedNsQty}
+                          onChange={(e) => setMixedNsQty(e.target.value)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addMixedNonSerializedItem}
+                        disabled={!mixedNsItemVariantId || !mixedNsQty || Number(mixedNsQty) <= 0}
+                        className="flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold py-3 px-4 rounded-xl transition-colors"
+                      >
+                        <Plus size={16} /> Add
+                      </button>
+                    </div>
+                    {!loadingItemMaster && itemMasterVariants.length === 0 && (
+                      <p className="text-xs text-amber-600">No non-serialized items found in Item Master.</p>
+                    )}
+                  </div>
+                )}
+
                 {/* ═══ Section 2: Scan Inventory ═══ */}
                 <div className={`relative space-y-3 ${itemType === "nonSerialized" ? "opacity-50 pointer-events-none select-none" : ""}`}>
                   {itemType === "nonSerialized" && (
@@ -2203,7 +2539,10 @@ export default function NewDispatch({
                               companyName: "",
                               landingPrice: 0,
                               mrp: 0,
-                              modelGuid: null
+                              modelGuid: null,
+                              carePack: null,
+                              carePackUpgrade: null,
+                              carePackUpgradePrice: ""
                             }));
                             setSerialReturnWarning("");
                           }}
@@ -2212,11 +2551,42 @@ export default function NewDispatch({
                           <X size={20} />
                         </button>
                       </div>
+                      <div className="flex items-center gap-2 mt-3 pl-16 flex-wrap">
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${form.carePack ? "text-sky-600 bg-sky-50 border border-sky-100" : "text-slate-400 bg-slate-100"}`}>
+                          {form.carePack ? `Care Pack: ${form.carePack}` : "No Care Pack"}
+                        </span>
+                        {getCarePackUpgradeOptions(form.carePack).length > 0 && (
+                          <>
+                            <select
+                              value={form.carePackUpgrade || ""}
+                              onChange={(e) => setForm((prev) => ({ ...prev, carePackUpgrade: e.target.value || null }))}
+                              className="text-[10px] font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400"
+                            >
+                              <option value="">{form.carePack ? "Upgrade Care Pack..." : "Add Care Pack..."}</option>
+                              {getCarePackUpgradeOptions(form.carePack).map((o) => (
+                                <option key={o.value} value={o.value}>{o.label}</option>
+                              ))}
+                            </select>
+                            {form.carePackUpgrade && (
+                              <div className="relative">
+                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">₹</span>
+                                <input
+                                  type="number"
+                                  placeholder="Upgrade price"
+                                  value={form.carePackUpgradePrice}
+                                  onChange={(e) => setForm((prev) => ({ ...prev, carePackUpgradePrice: e.target.value }))}
+                                  className="text-[10px] font-semibold border border-slate-200 rounded-lg pl-5 pr-2 py-1.5 w-28 outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400"
+                                />
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   )}
 
-                  {/* Batch Items List (Multiple) */}
-                  {activeTab === "multiple" && batchList.length > 0 && (
+                  {/* Batch Items List (Multiple / Mixed) */}
+                  {(activeTab === "multiple" || activeTab === "mixed") && batchList.length > 0 && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">
@@ -2233,30 +2603,68 @@ export default function NewDispatch({
                       <div className="border border-slate-200/80 rounded-2xl bg-slate-50/50 max-h-60 overflow-y-auto shadow-inner">
                         <div className="divide-y divide-slate-200/60">
                           {batchList.map((item, index) => (
-                            <div key={item.serialId} className="flex items-center justify-between p-3 hover:bg-white transition-colors">
-                              <div className="flex items-center gap-3">
-                                <span className="w-7 h-7 flex items-center justify-center bg-indigo-100 text-indigo-700 text-[10px] font-extrabold rounded-lg">
-                                  {index + 1}
-                                </span>
-                                <div>
-                                  <p className="font-mono text-xs font-bold text-slate-800">{item.serialValue}</p>
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                                      {item.companyName}
-                                    </span>
-                                    <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
-                                      {item.modelName}
-                                    </span>
+                            <div key={item.nonSerialized ? `ns-${index}` : item.serialId} className="p-3 hover:bg-white transition-colors">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <span className="w-7 h-7 flex items-center justify-center bg-indigo-100 text-indigo-700 text-[10px] font-extrabold rounded-lg">
+                                    {index + 1}
+                                  </span>
+                                  <div>
+                                    <p className="font-mono text-xs font-bold text-slate-800">
+                                      {item.nonSerialized ? `Qty: ${item.quantity}` : item.serialValue}
+                                    </p>
+                                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                      <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                        {item.companyName}
+                                      </span>
+                                      <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                                        {item.modelName}
+                                      </span>
+                                      {item.nonSerialized && (
+                                        <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Non-Serialized</span>
+                                      )}
+                                      {!item.nonSerialized && (
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${item.carePack ? "text-sky-600 bg-sky-50" : "text-slate-400 bg-slate-100"}`}>
+                                          {item.carePack ? `Care Pack: ${item.carePack}` : "No Care Pack"}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeFromBatch(index)}
+                                  className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                >
+                                  <X size={14} />
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => removeFromBatch(item.serialId)}
-                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                              >
-                                <X size={14} />
-                              </button>
+                              {!item.nonSerialized && getCarePackUpgradeOptions(item.carePack).length > 0 && (
+                                <div className="flex items-center gap-2 mt-2 pl-10">
+                                  <select
+                                    value={item.carePackUpgrade || ""}
+                                    onChange={(e) => updateBatchItemCarePack(index, "carePackUpgrade", e.target.value || null)}
+                                    className="text-[10px] font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400"
+                                  >
+                                    <option value="">{item.carePack ? "Upgrade Care Pack..." : "Add Care Pack..."}</option>
+                                    {getCarePackUpgradeOptions(item.carePack).map((o) => (
+                                      <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                  </select>
+                                  {item.carePackUpgrade && (
+                                    <div className="relative">
+                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">₹</span>
+                                      <input
+                                        type="number"
+                                        placeholder="Upgrade price"
+                                        value={item.carePackUpgradePrice}
+                                        onChange={(e) => updateBatchItemCarePack(index, "carePackUpgradePrice", e.target.value)}
+                                        className="text-[10px] font-semibold border border-slate-200 rounded-lg pl-5 pr-2 py-1.5 w-28 outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -2266,7 +2674,7 @@ export default function NewDispatch({
                 </div>
 
                 {/* ═══ Section 3: Batch Pricing ═══ */}
-                {itemType === "serialized" && activeTab === "multiple" && batchList.length > 0 && (
+                {((itemType === "serialized" && activeTab === "multiple") || activeTab === "mixed") && batchList.length > 0 && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
                       <div className="p-1.5 bg-amber-100 rounded-lg">
@@ -2288,12 +2696,14 @@ export default function NewDispatch({
                         <tbody className="divide-y divide-slate-100/80">
                           {batchSummary.map((group) => {
                             const price = modelPrices[group.modelGuid] || "";
-                            const rowTotal = Number(price) * group.count;
+                            const rowTotal = Number(price) * group.count + Number(group.totalCarePackUpgrade || 0);
+                            const avgLanding = group.count > 0 ? group.totalLanding / group.count : 0;
+                            const rowProfit = price !== "" && avgLanding > 0 ? (Number(price) - avgLanding) * group.count : null;
                             return (
                               <tr key={group.modelGuid} className="hover:bg-slate-50/50 transition-colors duration-150">
                                 <td className="px-6 py-4">
                                   <p className="font-extrabold text-slate-800 text-sm">{group.modelName}</p>
-                                  <div className="flex items-center gap-2 mt-1.5">
+                                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                     <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
                                       {group.companyName}
                                     </span>
@@ -2302,7 +2712,23 @@ export default function NewDispatch({
                                         MRP: ₹{group.mrp.toLocaleString("en-IN")}
                                       </span>
                                     )}
+                                    {avgLanding > 0 && (
+                                      <span className="text-[9px] text-slate-400">
+                                        Landing: ₹{avgLanding.toLocaleString("en-IN")}/unit
+                                      </span>
+                                    )}
+                                    {group.totalCarePackUpgrade > 0 && (
+                                      <span className="text-[9px] font-bold text-sky-600 bg-sky-50 border border-sky-100 px-2 py-0.5 rounded-md">
+                                        Care Pack Upgrade: +₹{group.totalCarePackUpgrade.toLocaleString("en-IN")}
+                                      </span>
+                                    )}
                                   </div>
+                                  {rowProfit !== null && (
+                                    <span className={`inline-flex items-center gap-1 mt-1.5 text-[9px] font-bold uppercase ${rowProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                                      {rowProfit >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                                      {rowProfit >= 0 ? "Profit" : "Loss"}: ₹{Math.abs(rowProfit).toLocaleString("en-IN")}
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="px-4 py-4 text-center w-20">
                                   <span className="inline-flex items-center justify-center w-9 h-9 bg-indigo-100 text-indigo-700 font-extrabold rounded-xl text-base">
@@ -2360,7 +2786,9 @@ export default function NewDispatch({
                     disabled={
                       isSubmitting ||
                       !canManage ||
-                      (itemType === "nonSerialized"
+                      (activeTab === "mixed"
+                        ? batchList.length === 0
+                        : itemType === "nonSerialized"
                         ? (!nonSerializedItemVariantId || !nonSerializedQty || Number(nonSerializedQty) <= 0 || !form.sellingPrice)
                         : (activeTab === "single" && !form.serialId) ||
                           (activeTab === "multiple" && batchList.length === 0))
@@ -2368,7 +2796,9 @@ export default function NewDispatch({
                     className={`w-full py-4.5 rounded-2xl text-base font-extrabold flex items-center justify-center gap-3 transition-all duration-300 ${
                       isSubmitting ||
                       !canManage ||
-                      (itemType === "nonSerialized"
+                      (activeTab === "mixed"
+                        ? batchList.length === 0
+                        : itemType === "nonSerialized"
                         ? (!nonSerializedItemVariantId || !nonSerializedQty || Number(nonSerializedQty) <= 0 || !form.sellingPrice)
                         : (activeTab === "single" && !form.serialId) ||
                           (activeTab === "multiple" && batchList.length === 0))
@@ -2385,10 +2815,12 @@ export default function NewDispatch({
                       <>
                         <Sparkles size={20} className="animate-pulse" />
                         <span>
-                          {itemType === "nonSerialized"
+                          {activeTab === "mixed"
+                            ? `Confirm Mixed Order • ₹${batchTotalValue.toLocaleString("en-IN")}`
+                            : itemType === "nonSerialized"
                             ? `Confirm Order ${form.sellingPrice ? `• ₹${(Number(form.sellingPrice) * Number(nonSerializedQty || 1)).toLocaleString("en-IN")}` : ""}`
                             : activeTab === "single"
-                              ? `Confirm Shipment ${form.sellingPrice ? `• ₹${Number(form.sellingPrice).toLocaleString("en-IN")}` : ""}`
+                              ? `Confirm Shipment ${form.sellingPrice ? `• ₹${(Number(form.sellingPrice) + Number(form.carePackUpgradePrice || 0)).toLocaleString("en-IN")}` : ""}`
                               : `Confirm Bulk Order • ₹${batchTotalValue.toLocaleString("en-IN")}`}
                         </span>
                       </>

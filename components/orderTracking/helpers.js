@@ -183,7 +183,9 @@ export function calculateBatchFinancials(items, returns = []) {
     // but a Draft order's item is still a single row covering its whole
     // `quantity` — multiplying was missing, so a draft with e.g. qty 11
     // showed only the per-unit price as if it were the line's total.
-    const price = Number(item.sellingPrice || 0) * (Number(item.quantity) || 1);
+    // carePackUpgradePrice is a flat one-time charge for that line (not
+    // per-unit), added on top — see NewDispatch.jsx's Care Pack upgrade picker.
+    const price = Number(item.sellingPrice || 0) * (Number(item.quantity) || 1) + Number(item.carePackUpgradePrice || 0);
     totalValue += price;
 
     if (isItemReturned(item, returns)) {

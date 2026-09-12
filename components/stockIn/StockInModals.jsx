@@ -2,12 +2,13 @@
 // Modals extracted from StockIn.jsx — markup and behavior unchanged.
 import React from "react";
 import { FileText, ListOrdered, Trash2 } from "lucide-react";
+import MasterDropdown from "@/components/common/MasterDropdown";
 
 export default function StockInModals({
-  autoSaveDraft, barcodeVariants, currentScannedBarcode, godowns,
+  autoSaveDraft, barcodeVariants, batchCarePack, currentScannedBarcode, godowns,
   handleDeleteSerial, handleSerialInputChange, handleSerialInputKeyDown,
   isFinalized, previewFileUrl, processUnitSelection, processVariantSelection,
-  saveSerialNumbersClick, serialNumbersToSave, serialPopupIndex,
+  saveSerialNumbersClick, serialNumbersToSave, serialPopupIndex, setBatchCarePack,
   setPendingVariantData, setShowInvoicePreview, setShowSerialModal,
   setShowUnitModal, setShowVariantModal, setStockItems, showInvoicePreview,
   showSerialModal, showUnitModal, showVariantModal, stockItems, units,
@@ -140,6 +141,21 @@ export default function StockInModals({
                  </div>
                )}
 
+               {stockItems[serialPopupIndex]?.hasSerialNumber && (
+                 <div className="mb-4 border-b border-slate-100 pb-4">
+                    <label className="block text-xs font-bold text-indigo-700 uppercase mb-2">Care Pack</label>
+                    <MasterDropdown
+                      code="CARE_PACK"
+                      placeholder="-- No Care Pack --"
+                      value={batchCarePack || ""}
+                      onChange={(e) => setBatchCarePack(e.target.value)}
+                      disabled={isFinalized}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 font-bold focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 outline-none disabled:bg-slate-100 transition-all cursor-pointer"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Applies to every serial entered below.</p>
+                 </div>
+               )}
+
                <div className="overflow-y-auto mb-6 pr-2 space-y-3">
                   {serialNumbersToSave.map((serialObj, iterIndex) => (
                      <div key={iterIndex} className="flex gap-2">
@@ -148,8 +164,8 @@ export default function StockInModals({
                           type="text"
                           disabled={isFinalized}
                           className={`w-full bg-slate-50 border rounded-lg px-4 py-2.5 font-mono text-sm font-bold outline-none transition-all shadow-sm disabled:bg-slate-100 ${
-                            serialObj.isDuplicate 
-                               ? 'border-red-500 text-red-600 focus:border-red-600 focus:ring-2 focus:ring-red-100 bg-red-50/50' 
+                            serialObj.isDuplicate
+                               ? 'border-red-500 text-red-600 focus:border-red-600 focus:ring-2 focus:ring-red-100 bg-red-50/50'
                                : 'border-slate-300 text-slate-800 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'
                           }`}
                           placeholder={`Serial #${iterIndex + 1}`}
@@ -158,7 +174,7 @@ export default function StockInModals({
                           onKeyDown={(e) => handleSerialInputKeyDown(e, iterIndex)}
                         />
                         {!isFinalized && (
-                           <button 
+                           <button
                              onClick={() => handleDeleteSerial(serialObj.serialId, iterIndex)}
                              className="bg-red-50 text-red-600 hover:bg-red-100 px-3 flex items-center justify-center rounded-lg border border-red-200"
                              title="Remove serial input"
