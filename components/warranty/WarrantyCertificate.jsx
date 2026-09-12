@@ -61,6 +61,7 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
   const [orderSearch, setOrderSearch]   = useState("");
   const [savedCerts, setSavedCerts]     = useState([]);
   const [certsLoading, setCertsLoading] = useState(false);
+  const [certSearch, setCertSearch]     = useState("");
 
   // Upload an existing certificate file (instead of generating one from the
   // HTML template) — one hidden input reused for every row, with the target
@@ -277,13 +278,25 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
     [filteredOrders, orderPage, orderPageSize]
   );
 
+  const filteredCerts = useMemo(() => {
+    const q = certSearch.trim().toLowerCase();
+    if (!q) return savedCerts;
+    return savedCerts.filter((c) =>
+      String(c.orderNumber || "").toLowerCase().includes(q) ||
+      (c.customerName || "").toLowerCase().includes(q) ||
+      (c.platform || "").toLowerCase().includes(q) ||
+      (c.gemOrderType || "").toLowerCase().includes(q) ||
+      (c.createdBy || "").toLowerCase().includes(q)
+    );
+  }, [savedCerts, certSearch]);
+
   const [certPage, setCertPage] = useState(1);
   const [certPageSize, setCertPageSize] = useState(LIST_PAGE_SIZE);
   useEffect(() => { setCertPage(1); }, [certPageSize]);
-  const certTotalPages = Math.max(1, Math.ceil(savedCerts.length / certPageSize));
+  const certTotalPages = Math.max(1, Math.ceil(filteredCerts.length / certPageSize));
   const paginatedCerts = useMemo(
-    () => savedCerts.slice((certPage - 1) * certPageSize, certPage * certPageSize),
-    [savedCerts, certPage, certPageSize]
+    () => filteredCerts.slice((certPage - 1) * certPageSize, certPage * certPageSize),
+    [filteredCerts, certPage, certPageSize]
   );
 
   // ── Generate certificate ────────────────────────────────────────────────────
@@ -864,24 +877,38 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
               <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
                 <Clock size={14} className="text-amber-500" />Saved Certificates
               </h2>
-              <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{savedCerts.length}</span>
-              <button onClick={loadCerts} className="ml-auto text-slate-400 hover:text-slate-600 transition-colors">
+              <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{filteredCerts.length}</span>
+              <button onClick={loadCerts} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <RefreshCw size={13} className={certsLoading ? "animate-spin" : ""} />
               </button>
+              <div className="relative w-72 ml-auto">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50 focus:bg-white transition-all"
+                  placeholder="Search order #, customer, platform…"
+                  value={certSearch}
+                  onChange={e => { setCertSearch(e.target.value); setCertPage(1); }}
+                />
+                {certSearch && (
+                  <button onClick={() => { setCertSearch(""); setCertPage(1); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
             </div>
             {certsLoading && (
               <div className="py-10 text-center text-slate-400 text-sm flex items-center justify-center gap-2">
                 <Loader2 size={16} className="animate-spin" />Loading…
               </div>
             )}
-            {!certsLoading && savedCerts.length === 0 && (
+            {!certsLoading && filteredCerts.length === 0 && (
               <div className="py-16 text-center text-slate-400">
                 <ShieldCheck size={40} className="mx-auto mb-3 opacity-20" />
-                <p className="text-sm font-medium">No saved certificates yet</p>
-                <p className="text-xs mt-1">Generate a certificate from the Generate tab</p>
+                <p className="text-sm font-medium">{certSearch ? "No certificates match your search" : "No saved certificates yet"}</p>
+                <p className="text-xs mt-1">{certSearch ? "" : "Generate a certificate from the Generate tab"}</p>
               </div>
             )}
-            {savedCerts.length > 0 && (
+            {filteredCerts.length > 0 && (
               <div className="overflow-y-auto flex-1 min-h-0">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 sticky top-0">
