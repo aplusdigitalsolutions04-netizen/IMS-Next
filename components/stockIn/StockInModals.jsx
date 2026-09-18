@@ -5,10 +5,10 @@ import { FileText, ListOrdered, Trash2 } from "lucide-react";
 import MasterDropdown from "@/components/common/MasterDropdown";
 
 export default function StockInModals({
-  autoSaveDraft, barcodeVariants, batchCarePack, currentScannedBarcode, godowns,
+  autoSaveDraft, barcodeVariants, batchCarePack, batchCarePackPrice, currentScannedBarcode, godowns,
   handleDeleteSerial, handleSerialInputChange, handleSerialInputKeyDown,
   isFinalized, previewFileUrl, processUnitSelection, processVariantSelection,
-  saveSerialNumbersClick, serialNumbersToSave, serialPopupIndex, setBatchCarePack,
+  saveSerialNumbersClick, serialNumbersToSave, serialPopupIndex, setBatchCarePack, setBatchCarePackPrice,
   setPendingVariantData, setShowInvoicePreview, setShowSerialModal,
   setShowUnitModal, setShowVariantModal, setStockItems, showInvoicePreview,
   showSerialModal, showUnitModal, showVariantModal, stockItems, units,
@@ -144,14 +144,28 @@ export default function StockInModals({
                {stockItems[serialPopupIndex]?.hasSerialNumber && (
                  <div className="mb-4 border-b border-slate-100 pb-4">
                     <label className="block text-xs font-bold text-indigo-700 uppercase mb-2">Care Pack</label>
-                    <MasterDropdown
-                      code="CARE_PACK"
-                      placeholder="-- No Care Pack --"
-                      value={batchCarePack || ""}
-                      onChange={(e) => setBatchCarePack(e.target.value)}
-                      disabled={isFinalized}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 font-bold focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 outline-none disabled:bg-slate-100 transition-all cursor-pointer"
-                    />
+                    <div className="flex gap-2">
+                      <MasterDropdown
+                        code="CARE_PACK"
+                        placeholder="-- No Care Pack --"
+                        value={batchCarePack || ""}
+                        onChange={(e) => setBatchCarePack(e.target.value)}
+                        disabled={isFinalized}
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 font-bold focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 outline-none disabled:bg-slate-100 transition-all cursor-pointer"
+                      />
+                      <div className="w-32 relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          disabled={isFinalized}
+                          value={batchCarePackPrice || ""}
+                          onChange={(e) => setBatchCarePackPrice(e.target.value)}
+                          placeholder="Price"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-7 pr-2 py-3 text-slate-800 font-bold focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 outline-none disabled:bg-slate-100 transition-all"
+                        />
+                      </div>
+                    </div>
                     <p className="text-[10px] text-slate-400 mt-1">Applies to every serial entered below.</p>
                  </div>
                )}

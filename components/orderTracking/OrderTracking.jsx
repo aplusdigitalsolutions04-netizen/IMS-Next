@@ -34,6 +34,8 @@ import { getDayFilterRange, isWithinDayFilter } from "@/lib/client/dayFilter";
 import { ordersService } from "@/lib/services/ordersService";
 import { platformsService } from "@/lib/services/platformsService";
 import { contractsService } from "@/lib/services/contractsService";
+import { installationsService } from "@/lib/services/installationsService";
+import InstallationDetailsModal from "./InstallationDetailsModal";
 
 // #, Order ID, and Action stay pinned (always shown) — everything else here
 // can be hidden via the Columns picker in the table toolbar.
@@ -987,6 +989,41 @@ export default function OrderTracking({
     }
   };
 
+  // Clicking "Yes" on Installation Required opens a quick-capture popup
+  // (technician/schedule/charges) instead of silently flipping the flag —
+  // installationRequired itself only actually gets set to true once that
+  // popup is dismissed (Save Details or Skip for now), not on this click.
+  const [showInstallationPrompt, setShowInstallationPrompt] = useState(false);
+  const [savingInstallationDetails, setSavingInstallationDetails] = useState(false);
+
+  const onRequestInstallation = () => setShowInstallationPrompt(true);
+
+  const skipInstallationPrompt = async () => {
+    await handleToggleInstallation(true);
+    setShowInstallationPrompt(false);
+  };
+
+  const saveInstallationDetails = async (formData) => {
+    if (!selectedBatch) return;
+    setSavingInstallationDetails(true);
+    try {
+      await handleToggleInstallation(true);
+      await Promise.all(
+        selectedBatch.items.map((item) => installationsService.updateInstallation(item.guid || item.id, formData))
+      );
+      setSelectedBatch((prev) => prev ? ({
+        ...prev,
+        items: prev.items.map((i) => ({ ...i, ...formData })),
+      }) : prev);
+      showToast("Installation details saved", "success");
+      setShowInstallationPrompt(false);
+    } catch (err) {
+      showToast(err.message || "Failed to save installation details", "error");
+    } finally {
+      setSavingInstallationDetails(false);
+    }
+  };
+
   const handleToggleGemUpload = async (value) => {
     if (!selectedBatch) return;
     setIsUpdating(true);
@@ -1110,7 +1147,15 @@ export default function OrderTracking({
             sellingPrice: Number(item.sellingPrice) || 0,
             contractFilename: uploadedContractFilename,
             invoiceFilename: uploadedInvoiceFilename,
-            serialId: item.newSerialId
+            serialId: item.newSerialId,
+            carePackUpgrade: item.carePackUpgrade || null,
+            carePackUpgradePrice: item.carePackUpgrade ? (Number(item.carePackUpgradePrice) || 0) : null,
+            // Only a non-serialized item carries an editable quantity (see
+            // OrderDetailModal.jsx's edit table) — a serialized item's
+            // quantity is always exactly 1 and never sent here, so the
+            // backend's own item-type check is what actually decides
+            // whether this gets applied.
+            quantity: (!item.serialNumberId && !item.serialGuid) ? (Math.max(1, Number(item.quantity) || 1)) : undefined,
           };
           return printerService.updateDispatch(item.guid || item.id, payload);
         })
@@ -1437,12 +1482,14 @@ export default function OrderTracking({
     }
 
     setHighlightedBatchId(targetBatch.batchKey || String(targetBatch.id));
-    setModalOpen(false);
-    setSelectedBatch(null);
+    // Coming from "View Full Order" (Global Search's dispatch result) — open
+    // the order straight away instead of just scrolling to and highlighting
+    // the row, since that's the whole point of that button.
+    openModal(targetBatch);
     if (typeof onFocusHandled === "function") {
       onFocusHandled();
     }
-  }, [focusOrderId, groupedBatches, returns, onFocusHandled]);
+  }, [focusOrderId, groupedBatches, returns, onFocusHandled, openModal]);
 
   useEffect(() => {
     if (!highlightedBatchId) return;
@@ -2313,7 +2360,7 @@ export default function OrderTracking({
             extraDocInputRef, extraDocType, handleDeleteExtraDoc, handleRemoveSerial,
             handleReplaceExtraDoc, handleReplaceStandardDoc, handleReplaceSerial,
             handleRestoreBatch, handleSaveEdits, handleSavePaymentEdit, handleSaveItemWarrantyDate,
-            handleToggleInstallation, handleToggleGemUpload, handleUpdateStatus, handleUploadExtraDoc,
+            handleToggleInstallation, onRequestInstallation, handleToggleGemUpload, handleUpdateStatus, handleUploadExtraDoc,
             handleViewDocument, isAdmin, isEditMode, isEditingPayment, isSupervisor, showToast,
             isUpdating, localSerials, localModels, modalDetailTab, newStatus, paymentEditForm,
             replaceWithSerialId, replacingItemId, restoringBatchKey, returns,
@@ -2325,6 +2372,15 @@ export default function OrderTracking({
             isAddingSerial, setIsAddingSerial, newSerialToAdd, setNewSerialToAdd,
             newItemSellingPrice, setNewItemSellingPrice, handleAddSerial,
           }}
+        />
+      )}
+
+      {showInstallationPrompt && selectedBatch && (
+        <InstallationDetailsModal
+          batch={selectedBatch}
+          onClose={skipInstallationPrompt}
+          onSave={saveInstallationDetails}
+          saving={savingInstallationDetails}
         />
       )}
       <AppearanceModal

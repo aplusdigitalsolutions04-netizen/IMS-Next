@@ -79,12 +79,27 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
   const [serialNumbersToSave, setSerialNumbersToSave] = useState([]);
   // One Care Pack applies to the whole batch being entered in the popup,
   // not per-serial — set alongside Target Godown, sent with every new
-  // serial this save writes.
-  const [batchCarePack, setBatchCarePack] = useState("");
+  // serial this save writes. Defaults to "1 Year" (opt-out, not opt-in);
+  // reopening a batch that already has serials saved restores whatever was
+  // actually saved for it instead (see openSerialPopup below), including an
+  // explicit "no Care Pack" choice.
+  const [batchCarePack, setBatchCarePack] = useState("1 Year");
+  const [batchCarePackPrice, setBatchCarePackPrice] = useState("");
 
   const [showVariantModal, setShowVariantModal] = useState(false);
   const [barcodeVariants, setBarcodeVariants] = useState([]);
   const [currentScannedBarcode, setCurrentScannedBarcode] = useState("");
+
+  // Toggle between the barcode-scan box (default) and a name-search box —
+  // only one shows at a time, switched via the search icon button next to
+  // the "Barcode Scan" label. Lets a line be added by item name for stock
+  // that never got a barcode mapped, reusing the exact same
+  // processVariantSelection/Unit-selection flow a barcode scan uses (just
+  // with no `code` to attach).
+  const [showItemSearch, setShowItemSearch] = useState(false);
+  const [itemSearchQuery, setItemSearchQuery] = useState("");
+  const [itemSearchResults, setItemSearchResults] = useState([]);
+  const [searchingItems, setSearchingItems] = useState(false);
 
   const [units, setUnits] = useState([]);
   const [godowns, setGodowns] = useState([]);
@@ -477,6 +492,41 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
     }
   };
 
+  // Debounced live search as the user types in the name-search box —
+  // mirrors handleBarcodeEnterPress's header-required gate, just without
+  // needing an Enter keypress.
+  useEffect(() => {
+    if (!showItemSearch) return;
+    const q = itemSearchQuery.trim();
+    if (q.length < 2) return;
+    const handle = setTimeout(async () => {
+      setSearchingItems(true);
+      try {
+        const data = await inventoryService.searchVariantsForStockIn(q);
+        setItemSearchResults(data);
+      } catch (error) {
+        console.error("Item search failed", error);
+        setItemSearchResults([]);
+      } finally {
+        setSearchingItems(false);
+      }
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [itemSearchQuery, showItemSearch]);
+
+  const handleItemSearchSelect = (variantData) => {
+    if (!vendorId || !invoiceNo || !invoiceDate) {
+      Swal.fire("Header Required", "Please select Vendor, Invoice No and Date before adding items", "warning");
+      return;
+    }
+    // No barcode to attach — same processVariantSelection a scan uses, just
+    // with code=null (a manually-added line merges with another manually-
+    // added line of the same variant+unit, never with a barcode-scanned one).
+    processVariantSelection(variantData, null);
+    setItemSearchQuery("");
+    setItemSearchResults([]);
+  };
+
   // Printer model barcode — skip unit selection, add directly with modelGuid
   const processModelItem = (data) => {
     if (!vendorId || !invoiceNo || !invoiceDate) {
@@ -727,8 +777,12 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
        setSerialNumbersToSave(inputs);
        // Care Pack is one value for the whole batch — reflect whatever the
        // already-saved serials (if any) were given, so reopening the popup
-       // doesn't silently reset it.
-       setBatchCarePack(serials[0]?.carePack || '');
+       // doesn't silently reset it. Only default to "1 Year" when there's
+       // nothing saved yet (a genuinely fresh batch) — if serials already
+       // exist, an explicitly empty carePack on them means "no Care Pack"
+       // was a deliberate choice, not something to override back to 1 Year.
+       setBatchCarePack(serials.length > 0 ? (serials[0]?.carePack || '') : '1 Year');
+       setBatchCarePackPrice(serials.length > 0 && serials[0]?.carePackPrice != null ? String(serials[0].carePackPrice) : '');
        setShowSerialModal(true);
     });
   };
@@ -799,7 +853,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
     const validSerials = serialNumbersToSave.map(x => x.serialValue.trim()).filter(x => x);
     const newSerialsToSave = serialNumbersToSave
       .filter(x => !x.serialId && x.serialValue.trim())
-      .map(x => ({ serialNumber: x.serialValue.trim(), carePack: batchCarePack || null }));
+      .map(x => ({ serialNumber: x.serialValue.trim(), carePack: batchCarePack || null, carePackPrice: batchCarePackPrice !== "" ? Number(batchCarePackPrice) : null }));
 
     // Always read current item from live state (avoids stale closure)
     const currentItem = stockItems[serialPopupIndex];
@@ -1154,23 +1208,75 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
         </div>
       </div>
 
-      {/* BARCODE SCANNER */}
+      {/* BARCODE SCANNER / ITEM SEARCH */}
       <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-6 mb-8">
-         <label className="block text-xs font-bold text-indigo-700 uppercase mb-2 flex items-center gap-2">
-           <Search size={14} /> Barcode Scan — Scan the item and press Enter (Alt+B)
+         <label className="flex items-center justify-between gap-2 mb-2">
+           <span className="text-xs font-bold text-indigo-700 uppercase flex items-center gap-2">
+             <Search size={14} /> {showItemSearch ? "Search Item by Name" : "Barcode Scan — Scan the item and press Enter (Alt+B)"}
+           </span>
+           <button
+             type="button"
+             disabled={isFinalized}
+             onClick={() => {
+               setShowItemSearch((prev) => !prev);
+               setItemSearchQuery("");
+               setItemSearchResults([]);
+             }}
+             title={showItemSearch ? "Switch back to barcode scan" : "Search item by name instead"}
+             className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+           >
+             {showItemSearch ? <><X size={13} /> Close Search</> : <><Search size={13} /> Search by Name</>}
+           </button>
          </label>
-         <div className="relative">
-            <Search size={20} className="absolute left-4 top-3.5 text-indigo-300" />
-            <input
-              id="barcode-scanner"
-              value={barcodeInput}
-              disabled={isFinalized}
-              onChange={(e) => setBarcodeInput(e.target.value)}
-              onKeyDown={handleBarcodeEnterPress}
-              className="w-full bg-white border-2 border-indigo-200 rounded-xl pl-12 pr-4 py-3 text-indigo-900 font-mono font-bold text-lg focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 outline-none transition-all shadow-sm placeholder:text-indigo-200 placeholder:font-sans placeholder:font-medium placeholder:text-base disabled:bg-slate-100 disabled:border-slate-200 disabled:placeholder:text-slate-300"
-              placeholder={isFinalized ? "Locked — Finalized Record" : "Scan barcode and press Enter…"}
-            />
-         </div>
+
+         {showItemSearch ? (
+           <div className="relative">
+             <Search size={20} className="absolute left-4 top-3.5 text-indigo-300" />
+             {searchingItems && <Loader2 size={18} className="absolute right-4 top-3.5 text-indigo-400 animate-spin" />}
+             <input
+               autoFocus
+               value={itemSearchQuery}
+               disabled={isFinalized}
+               onChange={(e) => setItemSearchQuery(e.target.value)}
+               className="w-full bg-white border-2 border-indigo-200 rounded-xl pl-12 pr-10 py-3 text-indigo-900 font-bold text-lg focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 outline-none transition-all shadow-sm placeholder:text-indigo-200 placeholder:font-medium placeholder:text-base disabled:bg-slate-100 disabled:border-slate-200 disabled:placeholder:text-slate-300"
+               placeholder={isFinalized ? "Locked — Finalized Record" : "Type item or variant name…"}
+             />
+             {itemSearchQuery.trim().length >= 2 && (
+               <div className="absolute z-20 mt-1 w-full bg-white border border-indigo-200 rounded-xl shadow-lg max-h-72 overflow-y-auto">
+                 {searchingItems ? (
+                   <div className="p-3 text-sm text-slate-400 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Searching...</div>
+                 ) : itemSearchResults.length === 0 ? (
+                   <div className="p-3 text-sm text-slate-400">No items found</div>
+                 ) : (
+                   itemSearchResults.map((r) => (
+                     <button
+                       key={r.itemVariantId}
+                       type="button"
+                       onClick={() => handleItemSearchSelect(r)}
+                       className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 border-b border-slate-100 last:border-0 transition-colors"
+                     >
+                       <div className="text-sm font-bold text-slate-800">{r.itemName}</div>
+                       <div className="text-xs text-slate-500">{r.variantCode}{r.hasSerialNumber ? " · Serial Tracked" : ""}</div>
+                     </button>
+                   ))
+                 )}
+               </div>
+             )}
+           </div>
+         ) : (
+           <div className="relative">
+              <Search size={20} className="absolute left-4 top-3.5 text-indigo-300" />
+              <input
+                id="barcode-scanner"
+                value={barcodeInput}
+                disabled={isFinalized}
+                onChange={(e) => setBarcodeInput(e.target.value)}
+                onKeyDown={handleBarcodeEnterPress}
+                className="w-full bg-white border-2 border-indigo-200 rounded-xl pl-12 pr-4 py-3 text-indigo-900 font-mono font-bold text-lg focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 outline-none transition-all shadow-sm placeholder:text-indigo-200 placeholder:font-sans placeholder:font-medium placeholder:text-base disabled:bg-slate-100 disabled:border-slate-200 disabled:placeholder:text-slate-300"
+                placeholder={isFinalized ? "Locked — Finalized Record" : "Scan barcode and press Enter…"}
+              />
+           </div>
+         )}
       </div>
 
       {/* ITEMS DATA GRID */}
@@ -1616,10 +1722,10 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
 
       <StockInModals
         {...{
-          autoSaveDraft, barcodeVariants, batchCarePack, currentScannedBarcode, godowns,
+          autoSaveDraft, barcodeVariants, batchCarePack, batchCarePackPrice, currentScannedBarcode, godowns,
           handleDeleteSerial, handleSerialInputChange, handleSerialInputKeyDown,
           isFinalized, previewFileUrl, processUnitSelection, processVariantSelection,
-          saveSerialNumbersClick, serialNumbersToSave, serialPopupIndex, setBatchCarePack,
+          saveSerialNumbersClick, serialNumbersToSave, serialPopupIndex, setBatchCarePack, setBatchCarePackPrice,
           setPendingVariantData, setShowInvoicePreview, setShowSerialModal,
           setShowUnitModal, setShowVariantModal, setStockItems, showInvoicePreview,
           showSerialModal, showUnitModal, showVariantModal, stockItems, units,

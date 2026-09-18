@@ -1,12 +1,13 @@
 "use client";
-import React, { useEffect, useState, useRef } from "react";
-import { FileText, Loader2, Trash2, X, ListOrdered, Pencil, Ban, Plus, Save, PackagePlus, Search, ArrowUpDown, Columns3, ChevronLeft, ChevronRight, UploadCloud } from "lucide-react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
+import { FileText, Loader2, Trash2, X, ListOrdered, Pencil, Ban, Plus, Save, PackagePlus, Search, ArrowUpDown, Columns3, ChevronLeft, ChevronRight, UploadCloud, FileDown, FileSpreadsheet, Tags } from "lucide-react";
 import Swal from "sweetalert2";
 import { contractsService } from "@/lib/services/contractsService";
 import { printerService } from "@/lib/services/api";
 import { useCompany } from "@/lib/client/CompanyContext";
 import { useAppData } from "@/lib/client/AppDataContext";
 import AddProductWizard from "./AddProductWizard";
+import { promptDeleteRemarks } from "@/lib/client/promptRemarks";
 
 const parseProducts = (val) => {
   if (!val) return [];
@@ -286,6 +287,62 @@ function ColumnPicker({ columns, visibleCols, onToggle, onSelectAll, onClearAll 
   );
 }
 
+function ImportResultsModal({ results, onClose }) {
+  const rows = [
+    ...results.success.map((r) => ({ ...r, status: "Created", color: "#047857", bg: "#ecfdf5" })),
+    ...results.skipped.map((r) => ({ ...r, status: "Skipped", color: "#b45309", bg: "#fffbeb" })),
+    ...results.failed.map((r) => ({ ...r, status: "Failed", color: "#be123c", bg: "#fff1f2" })),
+  ];
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
+          <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+            <FileSpreadsheet size={18} className="text-indigo-600" /> Import Results
+          </h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="px-4 py-3 border-b border-slate-100 flex gap-3 text-xs font-bold shrink-0">
+          <span className="text-emerald-700">Created: {results.success.length}</span>
+          <span className="text-amber-700">Skipped: {results.skipped.length}</span>
+          <span className="text-rose-700">Failed: {results.failed.length}</span>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="p-2 font-bold text-slate-500 uppercase">Row</th>
+                <th className="p-2 font-bold text-slate-500 uppercase">Contract Number</th>
+                <th className="p-2 font-bold text-slate-500 uppercase">Status</th>
+                <th className="p-2 font-bold text-slate-500 uppercase">Detail</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r, i) => (
+                <tr key={i}>
+                  <td className="p-2 text-slate-500">{r.row}</td>
+                  <td className="p-2 font-semibold text-slate-700">{r.contractNumber}</td>
+                  <td className="p-2">
+                    <span style={{ background: r.bg, color: r.color }} className="px-2 py-0.5 rounded-full font-bold">{r.status}</span>
+                  </td>
+                  <td className="p-2 text-slate-500">{r.reason || (r.products !== undefined ? `${r.products} product(s)` : "")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="p-4 border-t border-slate-200 flex justify-end shrink-0">
+          <button onClick={onClose} className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-md transition-all">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const CANCEL_REASONS = ["Mutual Cancellation", "Buyer not accepting", "Other reason"];
 
 function CancelContractModal({ contract, onClose, onCancelled }) {
@@ -367,7 +424,25 @@ function CancelContractModal({ contract, onClose, onCancelled }) {
 
 export default function ContractsList({ statusFilter = "Active", currentUser }) {
   const { activeCompany } = useCompany();
-  const { subscribeRealtime } = useAppData();
+  const { subscribeRealtime, refreshData, orders, dataStatus, loadOrdersData } = useAppData();
+  // AppDataContext's `orders` only ever populates once something asks for it
+  // (see app/(app)/orderTracking/page.jsx's identical guard) — arriving at
+  // Contracts directly, without having visited Order Processing first this
+  // session, would otherwise leave `orders` permanently empty here and never
+  // hide the button below.
+  useEffect(() => {
+    if (!dataStatus.orders) loadOrdersData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // An order already exists for this contract the moment ANY order shares
+  // its contractNumber as orderid — draft or already confirmed, doesn't
+  // matter (app/api/orders/draft/route.js blocks on any match, regardless
+  // of status). Building this once per orders-array change instead of
+  // re-scanning `orders` inside every row's render.
+  const contractNumbersWithOrder = useMemo(
+    () => new Set(orders.map((o) => String(o.orderid || "").trim()).filter(Boolean)),
+    [orders]
+  );
   // Delete is Admin-only by default, delegable via the "Delete Contracts"
   // Manage Roles checkbox (allow_delete_contracts) — see app/api/contracts/route.js.
   const canDelete = currentUser?.role === 'Admin' || !!currentUser?.allow_delete_contracts;
@@ -389,6 +464,11 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
   const pdfUploadInputRef = useRef(null);
   const [bulkUploading, setBulkUploading] = useState(false);
   const bulkPdfInputRef = useRef(null);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResults, setImportResults] = useState(null);
+  const importInputRef = useRef(null);
+  const [categoryFilter, setCategoryFilter] = useState("All");
   const toggleCol = (key) =>
     setVisibleCols((prev) => {
       const next = new Set(prev);
@@ -437,20 +517,17 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
       Swal.fire("Access Denied", "You do not have permission to delete contracts.", "error");
       return;
     }
-    const confirm = await Swal.fire({
+    const remarks = await promptDeleteRemarks({
       title: "Delete contract?",
       text: "This cannot be undone.",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Delete",
     });
-    if (!confirm.isConfirmed) return;
+    if (!remarks) return;
     try {
-      await contractsService.deleteContract(id);
+      await contractsService.deleteContract(id, remarks);
       await loadContracts();
     } catch (error) {
       console.error("Delete contract failed:", error);
-      Swal.fire("Error", error.message || "Failed to delete contract", "error");
+      Swal.fire("Error", error.response?.data?.message || error.message || "Failed to delete contract", "error");
     }
   };
 
@@ -603,6 +680,35 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
     });
   };
 
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await contractsService.exportContracts();
+    } catch (error) {
+      console.error("Export contracts failed:", error);
+      Swal.fire("Error", error?.response?.data?.message || "Failed to export contracts", "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportFileChosen = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImporting(true);
+    try {
+      const data = await contractsService.importContracts(file);
+      setImportResults(data.results);
+      if (data.results.success.length > 0) await loadContracts(true);
+    } catch (error) {
+      console.error("Import contracts failed:", error);
+      Swal.fire("Error", error?.response?.data?.message || "Failed to import contracts", "error");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const createDraftOrderForContract = async (c) => {
     const products = parseProducts(c.products);
     if (products.length === 0) {
@@ -682,6 +788,11 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
         await contractsService.updateContract(c.guid, { products: JSON.stringify(updated) });
       }
       await printerService.createOrderDraft({ ...c, products: updated, pdfFilename: c.pdfFilename });
+      // Order Tracking's Draft tab reads orders from the shared AppDataContext
+      // cache, which was last loaded before this draft existed — without this,
+      // the new draft is invisible there until some other action happens to
+      // reload the orders cache (e.g. a full page reload).
+      await refreshData({ includeOrders: true });
       Swal.fire("Draft created", "Order draft created — check the Draft tab in Order Processing.", "success");
     } catch (error) {
       console.error("Create order draft failed:", error);
@@ -696,9 +807,20 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
     return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   };
 
+  // Contracts don't carry a single category of their own — each one can
+  // bundle products across several GeM "Category & Quadrant" values — so the
+  // filter option list and the match below both work off that per-product
+  // field instead of a contract-level column.
+  const categoryOptions = useMemo(() => {
+    const set = new Set();
+    contracts.forEach((c) => parseProducts(c.products).forEach((p) => { if (p.categoryQuadrant) set.add(p.categoryQuadrant); }));
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [contracts]);
+
   const showingCancelled = statusFilter === "Cancelled";
   const visibleContracts = contracts
     .filter((c) => (showingCancelled ? c.status === "Cancelled" : c.status !== "Cancelled"))
+    .filter((c) => categoryFilter === "All" || parseProducts(c.products).some((p) => p.categoryQuadrant === categoryFilter))
     .filter((c) => {
       const q = searchTerm.trim().toLowerCase();
       if (!q) return true;
@@ -718,7 +840,7 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
   // "adjusting state when a prop changes" — React's own guidance is to do
   // that during render rather than in an effect (avoids an extra render
   // pass): https://react.dev/learn/you-might-not-need-an-effect
-  const pageResetKey = `${statusFilter}|${searchTerm}|${sortOrder}|${pageSize}`;
+  const pageResetKey = `${statusFilter}|${searchTerm}|${sortOrder}|${pageSize}|${categoryFilter}`;
   const [prevPageResetKey, setPrevPageResetKey] = useState(pageResetKey);
   if (pageResetKey !== prevPageResetKey) {
     setPrevPageResetKey(pageResetKey);
@@ -747,6 +869,13 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
         className="hidden"
         onChange={handleBulkPdfFilesChosen}
       />
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        onChange={handleImportFileChosen}
+      />
       <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-6">
         <FileText className={showingCancelled ? "text-rose-600" : "text-indigo-600"} size={28} />
         {showingCancelled ? "Cancelled Contracts" : "Saved Contracts"} ({visibleContracts.length})
@@ -762,6 +891,22 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
             className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
           />
         </div>
+        {categoryOptions.length > 0 && (
+          <div className="relative shrink-0">
+            <Tags size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2.5 text-sm font-semibold text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100 appearance-none"
+              title="Filter by Category & Quadrant"
+            >
+              <option value="All">All Categories</option>
+              {categoryOptions.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <button
           onClick={() => setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"))}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors shrink-0"
@@ -786,6 +931,26 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
           >
             {bulkUploading ? <Loader2 size={15} className="animate-spin" /> : <UploadCloud size={15} />}
             Bulk Upload PDFs
+          </button>
+        )}
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-emerald-600 hover:bg-emerald-50 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-wait"
+          title="Export contracts to Excel"
+        >
+          {exporting ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />}
+          Export
+        </button>
+        {!showingCancelled && (
+          <button
+            onClick={() => importInputRef.current?.click()}
+            disabled={importing}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-indigo-600 hover:bg-indigo-50 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-wait"
+            title="Import contracts from an Excel file in the same format as Export"
+          >
+            {importing ? <Loader2 size={15} className="animate-spin" /> : <FileSpreadsheet size={15} />}
+            Import
           </button>
         )}
       </div>
@@ -822,6 +987,7 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
             ) : (
               paginatedContracts.map((c, idx) => {
                 const isCancelled = c.status === "Cancelled";
+                const orderAlreadyExists = contractNumbersWithOrder.has(String(c.contractNumber || "").trim());
                 return (
                   <React.Fragment key={c.guid}>
                   <tr className={`hover:bg-slate-50 ${isCancelled ? "opacity-60" : ""}`}>
@@ -843,9 +1009,11 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
                         )}
                         {!isCancelled && (
                           <>
-                            <button onClick={() => handleCreateDraftOrder(c)} disabled={creatingDraftFor === c.guid} className="text-teal-600 hover:text-teal-800 disabled:opacity-40 disabled:cursor-wait" title="Create Order Draft">
-                              {creatingDraftFor === c.guid ? <Loader2 size={16} className="animate-spin" /> : <PackagePlus size={16} />}
-                            </button>
+                            {!orderAlreadyExists && (
+                              <button onClick={() => handleCreateDraftOrder(c)} disabled={creatingDraftFor === c.guid} className="text-teal-600 hover:text-teal-800 disabled:opacity-40 disabled:cursor-wait" title="Create Order Draft">
+                                {creatingDraftFor === c.guid ? <Loader2 size={16} className="animate-spin" /> : <PackagePlus size={16} />}
+                              </button>
+                            )}
                             <button onClick={() => setCancellingContract(c)} className="text-amber-500 hover:text-amber-700" title="Cancel Contract">
                               <Ban size={16} />
                             </button>
@@ -1032,6 +1200,10 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
 
       {wizardProduct && (
         <AddProductWizard product={wizardProduct} onClose={handleWizardClose} onLinked={handleWizardLinked} />
+      )}
+
+      {importResults && (
+        <ImportResultsModal results={importResults} onClose={() => setImportResults(null)} />
       )}
     </div>
   );

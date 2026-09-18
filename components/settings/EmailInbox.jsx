@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import { Inbox, Send, RefreshCw, Loader2, Mail, MailOpen, AlertCircle, ArrowLeft, Pencil } from "lucide-react";
+import { Inbox, Send, RefreshCw, Loader2, Mail, MailOpen, AlertCircle, ArrowLeft, Pencil, Search } from "lucide-react";
 import api from "@/lib/client/apiClient";
 import ComposeEmailModal from "./ComposeEmailModal";
 
@@ -42,6 +42,7 @@ export default function EmailInbox() {
   const [pollNote, setPollNote] = useState("");
   const [accountsError, setAccountsError] = useState("");
   const [showCompose, setShowCompose] = useState(false);
+  const [query, setQuery] = useState("");
   const timerRef = useRef(null);
 
   const loadAccounts = async () => {
@@ -85,17 +86,20 @@ export default function EmailInbox() {
   const switchTab = (tab) => {
     setActiveTab(tab);
     setSelected(null);
+    setQuery("");
     if (tab === "sent" && !sentLoaded) loadSentEmails();
   };
 
   const openAccount = (account) => {
     setSelectedAccount(account);
     setSelected(null);
+    setQuery("");
   };
 
   const backToAccounts = () => {
     setSelectedAccount(null);
     setSelected(null);
+    setQuery("");
   };
 
   const handlePoll = async () => {
@@ -154,6 +158,30 @@ export default function EmailInbox() {
     : activeTab === "inbox"
     ? messages.filter((m) => m.emailAccountGuid === selectedAccount.guid)
     : sentEmails.filter((e) => e.emailAccountGuid === selectedAccount.guid);
+
+  // Searches the full message, not just the sender/subject shown in the
+  // collapsed row — a GeM bid/contract number, model name, or anything else
+  // specific to that message lives in the body, not the subject line. Date
+  // is searchable both as MySQL stores it (ISO) and as it's displayed
+  // (formatDate's "27 Aug, 02:30 pm") so either one matches.
+  const filteredList = (() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((item) => {
+      const isSent = activeTab === "sent";
+      const person = isSent ? item.toAddress : (item.fromName || item.fromAddress || "");
+      const body = isSent ? item.body : (item.bodyText || item.bodyHtml || "");
+      const dateVal = isSent ? item.sentAt : item.receivedAt;
+      return (
+        (item.subject || "").toLowerCase().includes(q) ||
+        (person || "").toLowerCase().includes(q) ||
+        (body || "").toLowerCase().includes(q) ||
+        (isSent ? item.purpose : item.accountName || "").toLowerCase().includes(q) ||
+        (dateVal || "").toLowerCase().includes(q) ||
+        formatDate(dateVal).toLowerCase().includes(q)
+      );
+    });
+  })();
 
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6">
@@ -321,8 +349,22 @@ export default function EmailInbox() {
               </button>
             </div>
           </div>
+
+          <div className="relative mb-3">
+            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search mail"
+              className="w-full max-w-md pl-11 pr-4 py-2.5 rounded-full border border-slate-200 bg-slate-50 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+            />
+          </div>
+
           <div className="h-[560px] overflow-y-auto rounded-2xl border border-slate-200 divide-y divide-slate-100">
-            {list.map((item) => {
+            {filteredList.length === 0 ? (
+              <div className="text-center py-12 text-slate-400 text-sm">No emails match your search.</div>
+            ) : filteredList.map((item) => {
             const isSent = activeTab === "sent";
             const key = item.guid;
             const title = isSent ? item.toAddress : (item.fromName || item.fromAddress || "Unknown sender");

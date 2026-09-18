@@ -3,9 +3,11 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Swal from "sweetalert2";
 import axios from "axios";
-import { Plus, Loader2, ListTree, ArrowLeft, Trash2, Barcode, Hash, X, Edit2, Search, Settings2 } from "lucide-react";
+import { Plus, Loader2, ListTree, ArrowLeft, ArrowRightLeft, Trash2, Barcode, Hash, X, Edit2, Search, Settings2, PackagePlus } from "lucide-react";
 import CategorySpecificationModal from "../categoryMaster/CategorySpecificationModal";
 import MasterDropdown from "@/components/common/MasterDropdown";
+import { getStoredUser } from "@/lib/client/auth";
+import { promptDeleteRemarks } from "@/lib/client/promptRemarks";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -28,6 +30,12 @@ const ItemVariant = () => {
   const [specValues, setSpecValues] = useState({});
   const [loadingSpecDefs, setLoadingSpecDefs] = useState(false);
   const [showSpecModal, setShowSpecModal] = useState(false);
+  // A variant carried over from a Transfer Variant move can hold spec values
+  // whose specificationId isn't one of this item's own category fields (see
+  // GetItemVariantList/route.js) — specDefs above only covers add/edit for
+  // THIS category, so these need their own editable list, named off their
+  // own specification (not this category's), to actually fix/clear them.
+  const [foreignSpecDetails, setForeignSpecDetails] = useState([]);
 
   const getHeaders = () => {
     const token = sessionStorage.getItem("pt_auth_token");
@@ -60,10 +68,19 @@ const ItemVariant = () => {
 
   const resetSpecs = () => {
     setSpecValues({});
+    setForeignSpecDetails([]);
   };
   
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
+
+  // Add Serial No. / Add Stock buttons below are each gated by their own
+  // Manage Roles edit-flag (see components/users/constants.js), separate
+  // from general Item Master access.
+  const storedUser = getStoredUser();
+  const canAddSerial = !!storedUser?.allow_add_serial;
+  const canAddStock = !!storedUser?.allow_add_nonserialized_stock;
+  const canTransferVariant = !!storedUser?.allow_transfer_variant;
 
   // Click a variant to open a popup with its serial numbers
   const [expandedVariantId, setExpandedVariantId] = useState("");
@@ -96,15 +113,127 @@ const ItemVariant = () => {
     setNewSerialValue("");
     setNewLandingPrice("");
     setNewGodownGuid("");
+    setNewVendorId("");
+    setNewCarePackPrice("");
   };
 
   const [newSerialValue, setNewSerialValue] = useState("");
   const [newLandingPrice, setNewLandingPrice] = useState("");
   const [newGodownGuid, setNewGodownGuid] = useState("");
-  const [newCarePack, setNewCarePack] = useState("");
+  // Defaults to "1 Year" rather than blank — Care Pack is opt-out, not
+  // opt-in, for a freshly added serial; an Admin who genuinely wants none
+  // can still clear it via the dropdown.
+  const [newCarePack, setNewCarePack] = useState("1 Year");
+  const [newCarePackPrice, setNewCarePackPrice] = useState("");
+  const [newVendorId, setNewVendorId] = useState("");
   const [godowns, setGodowns] = useState([]);
   const [addingSerial, setAddingSerial] = useState(false);
   const [deletingSerialGuid, setDeletingSerialGuid] = useState("");
+
+  // Same idea as the Serial No. popup above, but for non-trackable variants —
+  // lets plain quantity be booked directly against a variant (outside the
+  // full Stock In workflow), recorded as its own price batch just like a
+  // regular Stock-In line (see lib/nonSerializedBatchHelpers.js). Existing
+  // batches aren't listed here — this is a quick add-only form; the batch
+  // breakdown (rate/received/remaining) is viewed via Current Stock instead.
+  const [batchModalVariant, setBatchModalVariant] = useState(null); // { itemVariantId, variantCode }
+  const [newBatchQty, setNewBatchQty] = useState("");
+  const [newBatchRate, setNewBatchRate] = useState("");
+  const [newBatchGodownGuid, setNewBatchGodownGuid] = useState("");
+  const [newBatchVendorId, setNewBatchVendorId] = useState("");
+  const [addingBatch, setAddingBatch] = useState(false);
+
+  const openVariantBatches = (v) => {
+    setBatchModalVariant(v);
+  };
+
+  const closeVariantBatches = () => {
+    setBatchModalVariant(null);
+    setNewBatchQty("");
+    setNewBatchRate("");
+    setNewBatchGodownGuid("");
+    setNewBatchVendorId("");
+  };
+
+  const handleAddStock = async () => {
+    const quantity = Number(newBatchQty);
+    if (!quantity || quantity <= 0 || !batchModalVariant) return;
+    setAddingBatch(true);
+    try {
+      await axios.post(
+        `${API_BASE_URL}/Inventory/AddVariantStock`,
+        {
+          itemVariantId: batchModalVariant.itemVariantId,
+          qty: quantity,
+          purchaseRate: newBatchRate !== "" ? Number(newBatchRate) : 0,
+          godownGuid: newBatchGodownGuid || null,
+          vendorId: newBatchVendorId || null,
+        },
+        { headers: getHeaders() }
+      );
+      Swal.fire("Success", "Stock added", "success");
+      closeVariantBatches();
+      fetchVariants(currentPage, pageSize);
+    } catch (error) {
+      Swal.fire("Error", error.response?.data?.message || "Failed to add stock", "error");
+    } finally {
+      setAddingBatch(false);
+    }
+  };
+
+  // Transfer a variant to a different Item Master entry, to any item
+  // regardless of category — stock, serials, spec values and barcodes all
+  // follow automatically since they're keyed by itemVariantId, not itemId
+  // (see app/Inventory/TransferVariant/route.js). Spec values keep their own
+  // label regardless of category (see the specDetails handling below), so
+  // they stay visible even after a cross-category move.
+  const [transferringVariant, setTransferringVariant] = useState(null);
+  const [transferDestItemId, setTransferDestItemId] = useState("");
+  const [allItems, setAllItems] = useState([]);
+  const [loadingAllItems, setLoadingAllItems] = useState(false);
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
+
+  const openTransferModal = async (v) => {
+    setTransferringVariant(v);
+    setTransferDestItemId("");
+    setLoadingAllItems(true);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/Inventory/GetItemList`, {
+        params: { limit: 1000 },
+        headers: getHeaders(),
+      });
+      setAllItems(response.data?.data || []);
+    } catch (error) {
+      console.error("Failed to load items:", error);
+      setAllItems([]);
+    } finally {
+      setLoadingAllItems(false);
+    }
+  };
+
+  const closeTransferModal = () => {
+    setTransferringVariant(null);
+    setTransferDestItemId("");
+  };
+
+  const handleTransferVariant = async () => {
+    if (!transferringVariant || !transferDestItemId) return;
+    setTransferSubmitting(true);
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/Inventory/TransferVariant`,
+        { itemVariantId: transferringVariant.itemVariantId, destinationItemId: transferDestItemId },
+        { headers: getHeaders() }
+      );
+      Swal.fire("Transferred", response.data?.message || "Variant transferred successfully", "success");
+      closeTransferModal();
+      fetchVariants();
+    } catch (error) {
+      Swal.fire("Error", error.response?.data?.message || "Failed to transfer variant", "error");
+    } finally {
+      setTransferSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     const fetchGodowns = async () => {
@@ -118,31 +247,83 @@ const ItemVariant = () => {
     fetchGodowns();
   }, []);
 
-  const handleDeleteSerial = (serial) => {
-    Swal.fire({
+  const [vendors, setVendors] = useState([]);
+  useEffect(() => {
+    const fetchVendors = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/Inventory/GetVendorList`, { headers: getHeaders() });
+        setVendors(response.data?.data || []);
+      } catch (error) {
+        console.error("Failed to load vendors", error);
+      }
+    };
+    fetchVendors();
+  }, []);
+
+  const handleDeleteSerial = async (serial) => {
+    const remarks = await promptDeleteRemarks({
       title: "Delete Serial No.?",
       text: `This will remove "${serial.value}" from stock.`,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Yes, Delete",
-      cancelButtonText: "Cancel",
-    }).then(async (result) => {
-      if (!result.isConfirmed) return;
-      setDeletingSerialGuid(serial.guid);
-      try {
-        await axios.post(
-          `${API_BASE_URL}/Inventory/DeleteVariantSerial`,
-          { serialGuid: serial.guid },
-          { headers: getHeaders() }
-        );
-        await openVariantSerials(serialModalVariant);
-        fetchVariants(currentPage, pageSize);
-      } catch (error) {
-        Swal.fire("Error", error.response?.data?.message || "Failed to delete serial", "error");
-      } finally {
-        setDeletingSerialGuid("");
-      }
     });
+    if (!remarks) return;
+    setDeletingSerialGuid(serial.guid);
+    try {
+      await axios.post(
+        `${API_BASE_URL}/Inventory/DeleteVariantSerial`,
+        { serialGuid: serial.guid, remarks },
+        { headers: getHeaders() }
+      );
+      await openVariantSerials(serialModalVariant);
+      fetchVariants(currentPage, pageSize);
+    } catch (error) {
+      Swal.fire("Error", error.response?.data?.message || "Failed to delete serial", "error");
+    } finally {
+      setDeletingSerialGuid("");
+    }
+  };
+
+  const [editingSerial, setEditingSerial] = useState(null); // { guid, value, landingPrice, godownGuid, vendorId, carePack, carePackPrice }
+  const [savingSerialEdit, setSavingSerialEdit] = useState(false);
+
+  const openEditSerial = (s) => {
+    setEditingSerial({
+      guid: s.guid,
+      value: s.value || "",
+      landingPrice: s.landingPrice ? String(s.landingPrice) : "",
+      godownGuid: s.godownGuid || "",
+      vendorId: s.vendorId || "",
+      carePack: s.carePack || "",
+      carePackPrice: s.carePackPrice != null ? String(s.carePackPrice) : "",
+    });
+  };
+
+  const closeEditSerial = () => setEditingSerial(null);
+
+  const handleSaveSerialEdit = async () => {
+    if (!editingSerial || !editingSerial.value.trim()) return;
+    setSavingSerialEdit(true);
+    try {
+      await axios.post(
+        `${API_BASE_URL}/Inventory/EditVariantSerial`,
+        {
+          serialGuid: editingSerial.guid,
+          value: editingSerial.value.trim(),
+          landingPrice: editingSerial.landingPrice !== "" ? Number(editingSerial.landingPrice) : 0,
+          godownGuid: editingSerial.godownGuid || null,
+          vendorId: editingSerial.vendorId || null,
+          carePack: editingSerial.carePack || null,
+          carePackPrice: editingSerial.carePackPrice !== "" ? Number(editingSerial.carePackPrice) : null,
+        },
+        { headers: getHeaders() }
+      );
+      closeEditSerial();
+      await openVariantSerials(serialModalVariant);
+      fetchVariants(currentPage, pageSize);
+    } catch (error) {
+      Swal.fire("Error", error.response?.data?.message || "Failed to update serial", "error");
+    } finally {
+      setSavingSerialEdit(false);
+    }
   };
 
   const handleAddSerial = async () => {
@@ -162,6 +343,8 @@ const ItemVariant = () => {
           landingPrice: newLandingPrice !== "" ? Number(newLandingPrice) : 0,
           godownGuid: newGodownGuid || null,
           carePack: newCarePack || null,
+          carePackPrice: newCarePackPrice !== "" ? Number(newCarePackPrice) : null,
+          vendorId: newVendorId || null,
         },
         { headers: getHeaders() }
       );
@@ -292,6 +475,9 @@ const ItemVariant = () => {
     setSpecValues(
       Object.fromEntries(Object.entries(v.specs || {}).map(([specId, val]) => [specId, val ?? ""]))
     );
+    setForeignSpecDetails(
+      (v.specDetails || []).filter((sd) => !specDefs.some((d) => String(d.specificationId) === String(sd.specificationId)))
+    );
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -302,38 +488,30 @@ const ItemVariant = () => {
     resetSpecs();
   };
 
-  const handleDeleteVariant = (id) => {
-    Swal.fire({
+  const handleDeleteVariant = async (id) => {
+    const remarks = await promptDeleteRemarks({
       title: "Delete Variant?",
       text: "Are you sure you want to delete this variant?",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Yes, Delete",
-      cancelButtonText: "Cancel",
-    }).then(async (result) => {
-      if (result.isConfirmed) {
-        setTableLoading(true);
-        try {
-          const res = await axios.post(`${API_BASE_URL}/Inventory/DeleteItemVariant`, 
-            { itemVariantId: id }, 
-            { headers: getHeaders() }
-          );
-          
-          if (res.data?.message === "Success" || !res.data?.message) {
-            Swal.fire("Deleted", "Variant deleted successfully", "success");
-            fetchVariants();
-          } else {
-            Swal.fire("Error", res.data?.message || "Failed to delete", "error");
-          }
-        } catch (error) {
-          console.error(error);
-          // If the backend returns empty response on success as per CSHTML jQuery ajax
-          fetchVariants(); 
-        } finally {
-          setTableLoading(false);
-        }
-      }
     });
+    if (!remarks) return;
+    setTableLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE_URL}/Inventory/DeleteItemVariant`,
+        { itemVariantId: id, remarks },
+        { headers: getHeaders() }
+      );
+
+      if (res.data?.message === "Success" || !res.data?.message) {
+        Swal.fire("Deleted", "Variant deleted successfully", "success");
+        fetchVariants();
+      } else {
+        Swal.fire("Error", res.data?.message || "Failed to delete", "error");
+      }
+    } catch (error) {
+      Swal.fire("Error", error.response?.data?.message || "Failed to delete variant", "error");
+    } finally {
+      setTableLoading(false);
+    }
   };
 
   return (
@@ -468,6 +646,27 @@ const ItemVariant = () => {
               ))
             )}
           </div>
+          {itemVariantId && foreignSpecDetails.length > 0 && (
+            <div className="mt-5 pt-5 border-t border-dashed border-slate-200">
+              <p className="text-xs font-bold text-amber-600 uppercase mb-1">Other Specifications</p>
+              <p className="text-[11px] text-slate-400 mb-3">
+                Carried over from a different category (likely via Transfer Variant) — fix the value here, or clear it to remove.
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {foreignSpecDetails.map((spec) => (
+                  <div key={spec.specificationId}>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{spec.specName}</label>
+                    <textarea
+                      value={specValues[spec.specificationId] ?? ""}
+                      onChange={(e) => setSpecValues((prev) => ({ ...prev, [spec.specificationId]: e.target.value }))}
+                      rows={2}
+                      className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-amber-100 resize-y"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -535,14 +734,26 @@ const ItemVariant = () => {
                         >
                           <Edit2 size={14} />
                         </button>
-                        {isTrackable && (
-                          <button
-                            onClick={() => openVariantSerials(v)}
-                            title="Serial No."
-                            className="bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 p-2 rounded-lg transition-all shadow-sm flex items-center justify-center"
-                          >
-                            <Hash size={14} />
-                          </button>
+                        {isTrackable ? (
+                          canAddSerial && (
+                            <button
+                              onClick={() => openVariantSerials(v)}
+                              title="Serial No."
+                              className="bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 p-2 rounded-lg transition-all shadow-sm flex items-center justify-center"
+                            >
+                              <Hash size={14} />
+                            </button>
+                          )
+                        ) : (
+                          canAddStock && (
+                            <button
+                              onClick={() => openVariantBatches(v)}
+                              title="Add Stock"
+                              className="bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 text-emerald-700 p-2 rounded-lg transition-all shadow-sm flex items-center justify-center"
+                            >
+                              <PackagePlus size={14} />
+                            </button>
+                          )
                         )}
                         <button
                           onClick={() => router.push(`/variantBarcode?itemVariantId=${v.itemVariantId}`)}
@@ -551,6 +762,15 @@ const ItemVariant = () => {
                         >
                           <Barcode size={14} />
                         </button>
+                        {canTransferVariant && (
+                          <button
+                            onClick={() => openTransferModal(v)}
+                            title="Transfer to another Item"
+                            className="bg-teal-50 border border-teal-100 hover:bg-teal-100 text-teal-700 p-2 rounded-lg transition-all shadow-sm flex items-center justify-center"
+                          >
+                            <ArrowRightLeft size={14} />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDeleteVariant(v.itemVariantId)}
                           title="Delete"
@@ -561,10 +781,21 @@ const ItemVariant = () => {
                       </div>
                     </td>
                   </tr>
-                  {isExpanded && (
+                  {isExpanded && (() => {
+                    // specDefs are this ITEM's category fields (shown even when
+                    // empty, so you can see what's fillable here). specDetails
+                    // are whatever this VARIANT actually carries — which can
+                    // include values from a category it belonged to before a
+                    // Transfer Variant move; those still show here (with their
+                    // own name) instead of silently disappearing, same as the
+                    // variant's stock/serials already survive a transfer.
+                    const foreignSpecs = (v.specDetails || []).filter(
+                      (sd) => !specDefs.some((d) => String(d.specificationId) === String(sd.specificationId))
+                    );
+                    return (
                     <tr className="bg-slate-50/70">
                       <td colSpan={colCount} className="px-6 py-4">
-                        {specDefs.length === 0 ? (
+                        {specDefs.length === 0 && foreignSpecs.length === 0 ? (
                           <p className="text-xs text-slate-400">No specifications defined for this category.</p>
                         ) : (
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -576,11 +807,18 @@ const ItemVariant = () => {
                                 </p>
                               </div>
                             ))}
+                            {foreignSpecs.map((spec) => (
+                              <div key={spec.specificationId}>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{spec.specName} <span className="normal-case font-medium text-slate-300">(other category)</span></p>
+                                <p className="text-sm font-semibold text-slate-700">{spec.value || "-"}</p>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </td>
                     </tr>
-                  )}
+                    );
+                  })()}
                   </React.Fragment>
                   );
                 })
@@ -666,7 +904,7 @@ const ItemVariant = () => {
 
           {serialModalVariant && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closeVariantSerials}>
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                   <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                     <Hash size={18} className="text-indigo-600" /> Serial Numbers — {serialModalVariant.variantCode}
@@ -718,16 +956,41 @@ const ItemVariant = () => {
                       Add
                     </button>
                   </div>
-                  <div className="mt-2 w-48">
-                    <MasterDropdown
-                      code="CARE_PACK"
-                      placeholder="Care Pack (optional)"
-                      value={newCarePack}
-                      onChange={(e) => setNewCarePack(e.target.value)}
-                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none bg-white text-slate-700"
-                    />
+                  <div className="flex gap-2 mt-2">
+                    <div className="w-48">
+                      <MasterDropdown
+                        code="CARE_PACK"
+                        placeholder="Care Pack (optional)"
+                        value={newCarePack}
+                        onChange={(e) => setNewCarePack(e.target.value)}
+                        className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none bg-white text-slate-700"
+                      />
+                    </div>
+                    <div className="w-32 relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={newCarePackPrice}
+                        onChange={(e) => setNewCarePackPrice(e.target.value)}
+                        className="w-full border border-slate-300 rounded-xl pl-7 pr-2 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none"
+                        placeholder="CP Price"
+                        title="Care Pack Price"
+                      />
+                    </div>
+                    <select
+                      value={newVendorId}
+                      onChange={(e) => setNewVendorId(e.target.value)}
+                      className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none bg-white text-slate-700"
+                      title="Vendor"
+                    >
+                      <option value="">Select Vendor (optional)</option>
+                      {vendors.map((v) => (
+                        <option key={v.vendorId || v.id} value={v.vendorId || v.id}>{v.vendorFirmName || v.name}</option>
+                      ))}
+                    </select>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1">Landing Price is pre-filled with the last used price for this variant — change it if this batch is different. Care Pack (if any) applies to every serial added in this batch.</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Landing Price is pre-filled with the last used price for this variant — change it if this batch is different. Care Pack, its price, and Vendor (if any) apply to every serial added in this batch.</p>
                 </div>
 
                 <div className="flex-1 overflow-y-auto px-6 py-4">
@@ -741,16 +1004,23 @@ const ItemVariant = () => {
                     <table className="w-full text-left border-collapse text-sm">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200">
+                          <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">#</th>
                           <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Serial No.</th>
                           <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Status</th>
                           <th className="p-2.5 text-xs font-bold text-slate-500 uppercase">Vendor</th>
                           <th className="p-2.5 text-xs font-bold text-slate-500 uppercase text-right">Landing Price</th>
+                          <th className="p-2.5 text-xs font-bold text-slate-500 uppercase text-right">Care Pack Price</th>
+                          <th className="p-2.5 text-xs font-bold text-slate-500 uppercase text-right">Total</th>
                           <th className="p-2.5 text-xs font-bold text-slate-500 uppercase text-center">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {serialModalRows.map((s) => (
+                        {serialModalRows.map((s, idx) => {
+                          const landing = Number(s.landingPrice) || 0;
+                          const cpPrice = Number(s.carePackPrice) || 0;
+                          return (
                           <tr key={s.guid}>
+                            <td className="p-2.5 text-slate-400">{idx + 1}</td>
                             <td className="p-2.5 font-mono font-bold text-slate-800">{s.value}</td>
                             <td className="p-2.5">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
@@ -760,23 +1030,38 @@ const ItemVariant = () => {
                               </span>
                             </td>
                             <td className="p-2.5 text-slate-600">{s.vendorName || "-"}</td>
-                            <td className="p-2.5 text-right text-slate-600">{s.landingPrice ? `₹${s.landingPrice}` : "-"}</td>
+                            <td className="p-2.5 text-right text-slate-600">{landing ? `₹${landing.toLocaleString("en-IN")}` : "-"}</td>
+                            <td className="p-2.5 text-right text-slate-600">
+                              {cpPrice ? `₹${cpPrice.toLocaleString("en-IN")}` : "-"}
+                              {s.carePack && <span className="block text-[10px] text-violet-500">{s.carePack}</span>}
+                            </td>
+                            <td className="p-2.5 text-right font-bold text-emerald-700">₹{(landing + cpPrice).toLocaleString("en-IN")}</td>
                             <td className="p-2.5 text-center">
-                              {s.status === "Available" ? (
+                              <div className="inline-flex items-center gap-1.5">
                                 <button
-                                  onClick={() => handleDeleteSerial(s)}
-                                  disabled={deletingSerialGuid === s.guid}
-                                  title="Delete"
-                                  className="bg-red-50 border border-red-100 hover:bg-red-100 text-red-600 p-1.5 rounded-lg transition-all disabled:opacity-50 inline-flex items-center justify-center"
+                                  onClick={() => openEditSerial(s)}
+                                  title="Edit"
+                                  className="bg-amber-50 border border-amber-100 hover:bg-amber-100 text-amber-700 p-1.5 rounded-lg transition-all inline-flex items-center justify-center"
                                 >
-                                  {deletingSerialGuid === s.guid ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                  <Edit2 size={13} />
                                 </button>
-                              ) : (
-                                <span className="text-[10px] text-slate-300">—</span>
-                              )}
+                                {s.status === "Available" ? (
+                                  <button
+                                    onClick={() => handleDeleteSerial(s)}
+                                    disabled={deletingSerialGuid === s.guid}
+                                    title="Delete"
+                                    className="bg-red-50 border border-red-100 hover:bg-red-100 text-red-600 p-1.5 rounded-lg transition-all disabled:opacity-50 inline-flex items-center justify-center"
+                                  >
+                                    {deletingSerialGuid === s.guid ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] text-slate-300">—</span>
+                                )}
+                              </div>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   )}
@@ -792,6 +1077,193 @@ const ItemVariant = () => {
             </div>
           )}
 
+          {editingSerial && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={closeEditSerial}>
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <Edit2 size={18} className="text-amber-600" /> Edit Serial No.
+                  </h2>
+                  <button onClick={closeEditSerial} className="text-slate-400 hover:text-slate-700">
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className="px-6 py-5 space-y-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Serial Number</label>
+                    <input
+                      type="text"
+                      value={editingSerial.value}
+                      onChange={(e) => setEditingSerial((prev) => ({ ...prev, value: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Landing Price</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editingSerial.landingPrice}
+                        onChange={(e) => setEditingSerial((prev) => ({ ...prev, landingPrice: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Godown</label>
+                      <select
+                        value={editingSerial.godownGuid}
+                        onChange={(e) => setEditingSerial((prev) => ({ ...prev, godownGuid: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100 bg-white"
+                      >
+                        <option value="">-- None --</option>
+                        {godowns.map((g) => (
+                          <option key={g.guid || g.id} value={g.guid || g.id}>{g.godownName || g.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Vendor</label>
+                    <select
+                      value={editingSerial.vendorId}
+                      onChange={(e) => setEditingSerial((prev) => ({ ...prev, vendorId: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100 bg-white"
+                    >
+                      <option value="">-- None --</option>
+                      {vendors.map((v) => (
+                        <option key={v.vendorId || v.id} value={v.vendorId || v.id}>{v.vendorFirmName || v.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Care Pack</label>
+                      <MasterDropdown
+                        code="CARE_PACK"
+                        placeholder="-- None --"
+                        value={editingSerial.carePack}
+                        onChange={(e) => setEditingSerial((prev) => ({ ...prev, carePack: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Care Pack Price</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editingSerial.carePackPrice}
+                        onChange={(e) => setEditingSerial((prev) => ({ ...prev, carePackPrice: e.target.value }))}
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
+                  <button onClick={closeEditSerial} className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveSerialEdit}
+                    disabled={savingSerialEdit || !editingSerial.value.trim()}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {savingSerialEdit ? <Loader2 size={14} className="animate-spin" /> : <Edit2 size={14} />}
+                    {savingSerialEdit ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {batchModalVariant && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closeVariantBatches}>
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <PackagePlus size={18} className="text-emerald-600" /> Add Stock — {batchModalVariant.variantCode}
+                  </h2>
+                  <button onClick={closeVariantBatches} className="text-slate-400 hover:text-slate-700">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="px-6 pt-4">
+                  <div className="flex gap-2">
+                    <div className="w-28">
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Qty</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={newBatchQty}
+                        onChange={(e) => setNewBatchQty(e.target.value)}
+                        className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-100 outline-none"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="w-32">
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Purchase Rate</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={newBatchRate}
+                          onChange={(e) => setNewBatchRate(e.target.value)}
+                          className="w-full border border-slate-300 rounded-xl pl-7 pr-2 py-2 text-sm focus:ring-2 focus:ring-emerald-100 outline-none"
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Godown</label>
+                      <select
+                        value={newBatchGodownGuid}
+                        onChange={(e) => setNewBatchGodownGuid(e.target.value)}
+                        className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-100 outline-none bg-white text-slate-700"
+                      >
+                        <option value="">Select Godown (optional)</option>
+                        {godowns.map((g) => (
+                          <option key={g.guid || g.id} value={g.guid || g.id}>{g.godownName || g.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        onClick={handleAddStock}
+                        disabled={addingBatch || !newBatchQty}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-all disabled:opacity-50 shrink-0"
+                      >
+                        {addingBatch ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Vendor</label>
+                    <select
+                      value={newBatchVendorId}
+                      onChange={(e) => setNewBatchVendorId(e.target.value)}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-100 outline-none bg-white text-slate-700"
+                    >
+                      <option value="">Select Vendor (optional)</option>
+                      {vendors.map((v) => (
+                        <option key={v.vendorId || v.id} value={v.vendorId || v.id}>{v.vendorFirmName || v.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-2">Each add is recorded as its own price batch — old batches keep their own rate instead of being averaged away.</p>
+                </div>
+
+                <div className="flex items-center justify-end px-6 py-4 mt-2 border-t border-slate-100">
+                  <button onClick={closeVariantBatches} className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100">
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {showSpecModal && categoryId && (
             <CategorySpecificationModal
               category={{ categoryId, categoryName }}
@@ -800,6 +1272,72 @@ const ItemVariant = () => {
                 fetchSpecDefs();
               }}
             />
+          )}
+
+          {transferringVariant && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closeTransferModal}>
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <ArrowRightLeft size={18} className="text-teal-600" /> Transfer Variant
+                  </h2>
+                  <button onClick={closeTransferModal} className="text-slate-400 hover:text-slate-700">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="px-6 py-5 space-y-4">
+                  <p className="text-sm text-slate-500">
+                    Move <span className="font-bold text-slate-700">{transferringVariant.variantCode}</span> to a different item —
+                    its stock, serial numbers, specifications, and barcodes all move with it.
+                  </p>
+
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block">Destination Item</label>
+                    {loadingAllItems ? (
+                      <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
+                        <Loader2 size={14} className="animate-spin" /> Loading items...
+                      </div>
+                    ) : (() => {
+                      const eligibleItems = allItems.filter((it) => it.itemId !== rawItemId && !!it.isTrackable === !!isTrackable);
+                      return eligibleItems.length === 0 ? (
+                        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+                          No other item with the same &quot;Ask Serial No.&quot; setting exists yet. Create one first (Item Master), then transfer here.
+                        </p>
+                      ) : (
+                        <select
+                          value={transferDestItemId}
+                          onChange={(e) => setTransferDestItemId(e.target.value)}
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                        >
+                          <option value="">Select an item...</option>
+                          {eligibleItems.map((it) => (
+                            <option key={it.itemId} value={it.itemId}>{it.itemName}{it.categoryName ? ` (${it.categoryName})` : ""}</option>
+                          ))}
+                        </select>
+                      );
+                    })()}
+                    <p className="text-[11px] text-slate-400 mt-1.5">
+                      Only items with the same &quot;Ask Serial No.&quot; setting are shown, so stock keeps showing up correctly after the move.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
+                  <button onClick={closeTransferModal} className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleTransferVariant}
+                    disabled={transferSubmitting || !transferDestItemId}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {transferSubmitting ? <Loader2 size={14} className="animate-spin" /> : <ArrowRightLeft size={14} />}
+                    {transferSubmitting ? "Transferring..." : "Transfer"}
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
   );

@@ -47,18 +47,31 @@ export const GET = withErrorHandling(async (request) => {
 
   if (rows.length) {
     const variantIds = rows.map((r) => r.itemVariantId);
+    // Joined straight to dropdown_master by specificationId — not scoped to
+    // this item's own category — so a variant's spec values still resolve to
+    // their real name/label after Transfer Variant moves it under an item in
+    // a different category. Category Master defines which fields you can
+    // EDIT for a given category (see GetCategorySpecificationList), but what
+    // a variant already HAS should keep showing regardless of which item it
+    // currently sits under, same as its stock/serials already do.
     const [specRows] = await mysqlPool.query(
-      `SELECT itemVariantId, specificationId, value
-       FROM inventoryitemvariantspecvalue
-       WHERE itemVariantId IN (?) AND companyGuid = ?`,
+      `SELECT sv.itemVariantId, sv.specificationId, sv.value, dm.dropdown_name as specName
+       FROM inventoryitemvariantspecvalue sv
+       LEFT JOIN dropdown_master dm ON sv.specificationId = dm.id
+       WHERE sv.itemVariantId IN (?) AND sv.companyGuid = ?`,
       [variantIds, user.companyId]
     );
     const specsByVariant = specRows.reduce((acc, r) => {
       (acc[r.itemVariantId] ||= {})[r.specificationId] = r.value;
       return acc;
     }, {});
+    const specDetailsByVariant = specRows.reduce((acc, r) => {
+      (acc[r.itemVariantId] ||= []).push({ specificationId: r.specificationId, specName: r.specName || "Spec", value: r.value });
+      return acc;
+    }, {});
     rows.forEach((r) => {
       r.specs = specsByVariant[r.itemVariantId] || {};
+      r.specDetails = specDetailsByVariant[r.itemVariantId] || [];
     });
   }
 

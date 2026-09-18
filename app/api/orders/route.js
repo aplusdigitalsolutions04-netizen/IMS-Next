@@ -4,11 +4,14 @@ import { authenticateRequest, authorizeOrdersRequest, requireCompany } from "@/l
 import { mapDispatchRow } from "@/lib/helpers";
 import { ORDER_SELECT } from "@/lib/ordersQuery";
 import { withErrorHandling } from "@/lib/apiResponse";
+import { ensureCarePackColumn, ensureCarePackPriceColumn } from "@/lib/carePackMigration";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
   authorizeOrdersRequest(user, "GET", new URL(request.url).pathname, null);
+  await ensureCarePackColumn();
+  await ensureCarePackPriceColumn();
 
   const cId = user.companyId;
   const [orders] = await mysqlPool.query(ORDER_SELECT + " WHERE oi.companyGuid = ? AND o.companyGuid = ? ORDER BY o.dispatchDate DESC", Array(10).fill(cId));

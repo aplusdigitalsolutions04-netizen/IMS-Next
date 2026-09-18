@@ -3,6 +3,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { ensureDeletedByColumns } from "@/lib/deletedItemsMigration";
 
 // Deletes a serial added against an Item Master variant (the counterpart to
 // AddVariantSerial) — soft-deletes the serial row and, if it was still
@@ -15,8 +16,11 @@ export const POST = withErrorHandling(async (request) => {
   requireAuth(user);
   requireCompany(user);
 
-  const { serialGuid } = await parseJsonBody(request);
+  const { serialGuid, remarks } = await parseJsonBody(request);
   if (!serialGuid) throw new ApiError(400, "serialGuid is required.");
+  const trimmedRemarks = String(remarks || "").trim();
+  if (!trimmedRemarks) throw new ApiError(400, "A remark is required to delete.");
+  await ensureDeletedByColumns();
 
   const conn = await mysqlPool.getConnection();
   try {
@@ -33,7 +37,10 @@ export const POST = withErrorHandling(async (request) => {
       throw new ApiError(400, `This serial is "${serial.serialStatus}" and can't be deleted directly — use Returns instead.`);
     }
 
-    await conn.query("UPDATE inventorystockinserial SET isDeleted = 1 WHERE guid = ?", [serialGuid]);
+    await conn.query(
+      "UPDATE inventorystockinserial SET isDeleted = 1, deletedBy = ?, deletedAt = NOW(), deleteRemarks = ? WHERE guid = ?",
+      [user.username || user.fullName || "Unknown", trimmedRemarks, serialGuid]
+    );
 
     if (serial.itemVariantId) {
       await conn.query(

@@ -30,8 +30,14 @@ export const GET = withErrorHandling(async (request) => {
 
   const masterId = await getMasterId();
 
+  // is_active is a BIT(1) column — mysql2 returns BIT columns as raw Buffers
+  // (e.g. <Buffer 00>), not booleans/numbers. That Buffer survives
+  // JSON.stringify as a truthy {type:"Buffer",data:[...]} object no matter
+  // its actual value, so the frontend's `option.isActive` was always truthy
+  // regardless of the real state — every option looked (and toggled as)
+  // permanently active. Casting to UNSIGNED forces a plain 0/1 instead.
   const [rows] = await mysqlPool.query(
-    "SELECT guid, option_label AS name, option_value AS value, is_active AS isActive, display_order AS sortOrder FROM dropdown_option WHERE dropdown_id = ? ORDER BY display_order ASC, option_label ASC",
+    "SELECT guid, option_label AS name, option_value AS value, CAST(is_active AS UNSIGNED) AS isActive, display_order AS sortOrder FROM dropdown_option WHERE dropdown_id = ? ORDER BY display_order ASC, option_label ASC",
     [masterId]
   );
   return NextResponse.json({ data: rows });

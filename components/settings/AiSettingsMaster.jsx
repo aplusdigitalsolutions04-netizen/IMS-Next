@@ -4,11 +4,17 @@ import { Sparkles, Loader2, KeyRound, Save, BarChart3, Filter, Eye, EyeOff, Indi
 import Swal from "sweetalert2";
 import { aiSettingsService } from "@/lib/services/aiSettingsService";
 
+// Mirrors SOURCE_LABELS in app/api/admin/ai-usage/route.js — every distinct
+// value lib/aiParse.js's logUsage() actually writes to ai_usage_log.source
+// needs an entry here, or it's invisible from this filter (shows as raw
+// text in the table with no way to isolate it) — "orders-save-as-contract"
+// (OrderTracking's "Save as Contract" AI extraction) was missing this way.
 const SOURCE_OPTIONS = [
   { value: "", label: "All sources" },
   { value: "parse-order", label: "Order AI Parse" },
   { value: "parse-file", label: "Order File AI Parse" },
   { value: "contracts-parse", label: "Contract AI Parse" },
+  { value: "orders-save-as-contract", label: "Save Order as Contract" },
 ];
 
 function StatCard({ label, value }) {

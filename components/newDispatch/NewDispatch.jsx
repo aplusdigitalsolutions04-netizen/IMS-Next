@@ -129,6 +129,7 @@ export default function NewDispatch({
     mrp: 0,
     modelGuid: null,
     carePack: null,
+    carePackPrice: 0,
     carePackUpgrade: null,
     carePackUpgradePrice: "",
     quantity: 1,
@@ -526,6 +527,7 @@ export default function NewDispatch({
           returnCount: Number(foundSerial.returnCount || 0),
           latestReturnReason: foundSerial.latestReturnReason || "",
           carePack: foundSerial.carePack || null,
+          carePackPrice: foundSerial.carePackPrice || 0,
           carePackUpgrade: null,
           carePackUpgradePrice: ""
         }
@@ -549,6 +551,7 @@ export default function NewDispatch({
         sellingPrice: prev.sellingPrice || (model?.mrp ? String(model.mrp) : ""),
         quantity: 1,
         carePack: foundSerial.carePack || null,
+        carePackPrice: foundSerial.carePackPrice || 0,
         carePackUpgrade: null,
         carePackUpgradePrice: ""
       }));
@@ -582,6 +585,7 @@ export default function NewDispatch({
           mrp: 0,
           modelGuid: null,
           carePack: null,
+          carePackPrice: 0,
           carePackUpgrade: null,
           carePackUpgradePrice: "",
           quantity: 1
@@ -2144,16 +2148,33 @@ export default function NewDispatch({
                             <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-1">
                               {f.fieldName} {f.isRequired === 1 && <span className="text-red-500">*</span>}
                             </label>
-                            <input
-                              type={f.fieldType}
-                              required={f.isRequired === 1}
-                              className="w-full border border-slate-300/80 p-2.5 rounded-xl text-sm bg-white focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 outline-none transition-all"
-                              value={form.platformFields?.[f.guid] || ""}
-                              onChange={e => setForm(prev => ({
-                                ...prev,
-                                platformFields: { ...prev.platformFields, [f.guid]: e.target.value }
-                              }))}
-                            />
+                            {f.fieldType === "dropdown" ? (
+                              <select
+                                required={f.isRequired === 1}
+                                className="w-full border border-slate-300/80 p-2.5 rounded-xl text-sm bg-white focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 outline-none transition-all"
+                                value={form.platformFields?.[f.guid] || ""}
+                                onChange={e => setForm(prev => ({
+                                  ...prev,
+                                  platformFields: { ...prev.platformFields, [f.guid]: e.target.value }
+                                }))}
+                              >
+                                <option value="">Select {f.fieldName}...</option>
+                                {(f.fieldOptions || []).map((opt) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type={f.fieldType}
+                                required={f.isRequired === 1}
+                                className="w-full border border-slate-300/80 p-2.5 rounded-xl text-sm bg-white focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 outline-none transition-all"
+                                value={form.platformFields?.[f.guid] || ""}
+                                onChange={e => setForm(prev => ({
+                                  ...prev,
+                                  platformFields: { ...prev.platformFields, [f.guid]: e.target.value }
+                                }))}
+                              />
+                            )}
                           </div>
                         ))}
                       </div>
@@ -2208,6 +2229,18 @@ export default function NewDispatch({
                                 {profit >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
                                 {profit >= 0 ? "Profit" : "Loss"}: ₹{Math.abs(profit)}
                               </span>
+                            </div>
+                          )}
+                          {form.landingPrice > 0 && (
+                            <div className="p-2.5 bg-white/60 border border-emerald-100 rounded-lg space-y-1">
+                              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold">
+                                <span>Serial: <span className="font-mono text-slate-700">{form.serialInput}</span></span>
+                                {form.carePack && <span className="text-violet-600">{form.carePack} Care Pack: ₹{Number(form.carePackPrice || 0).toLocaleString("en-IN")}</span>}
+                              </div>
+                              <div className="flex items-center justify-between pt-1 border-t border-emerald-100">
+                                <span className="text-[10px] font-extrabold text-slate-600 uppercase">Total Value</span>
+                                <span className="text-sm font-extrabold text-emerald-700">₹{(Number(form.landingPrice || 0) + Number(form.carePackPrice || 0)).toLocaleString("en-IN")}</span>
+                              </div>
                             </div>
                           )}
                         </div>

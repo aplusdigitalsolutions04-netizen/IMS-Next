@@ -31,7 +31,9 @@ export const GET = withErrorHandling(async (request) => {
     SELECT itv.itemVariantId as guid, itv.itemVariantId as id, itv.variantName as name,
       i.itemName as itemName,
       b.brandName as company, 1 as isSerialized, IFNULL(sc.availableCount,0) as stockCount,
-      s.lastPurchaseRate as lastLandingPrice
+      s.lastPurchaseRate as lastLandingPrice,
+      itv.sellingPrice as mrp,
+      itv.packagingCost, itv.packageLength, itv.packageWidth, itv.packageHeight, itv.packageWeight
     FROM inventoryitemvariant itv
     JOIN inventoryitemmaster i ON itv.itemId=i.itemId AND i.isDeleted=0 AND i.isTrackable=1
     JOIN companies co ON itv.companyGuid=co.guid AND co.isActive=1

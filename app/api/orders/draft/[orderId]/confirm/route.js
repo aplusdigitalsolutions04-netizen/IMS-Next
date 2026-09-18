@@ -42,7 +42,7 @@ export const POST = withErrorHandling(async (request, { params }) => {
     }
 
     for (const item of items) {
-      const { draftItemGuid, modelGuid, serialGuids, nonSerialized } = item;
+      const { draftItemGuid, modelGuid, serialGuids, nonSerialized, quantity: requestedQuantity } = item;
       if (!draftItemGuid || !modelGuid) {
         throw new ApiError(400, "Each item requires a model.");
       }
@@ -58,9 +58,14 @@ export const POST = withErrorHandling(async (request, { params }) => {
         throw new ApiError(404, `Draft item ${draftItemGuid} not found.`);
       }
       const draftItem = draftItemRows[0];
-      const quantity = Number(draftItem.quantity) || 1;
 
       if (nonSerialized) {
+        // ConfirmDraftModal.jsx lets the user edit quantity for a
+        // non-serialized item away from the draft's original — that edited
+        // count is what actually got validated against available stock
+        // client-side, so it's what must be booked here too. Falls back to
+        // the draft's original quantity only if the request omitted it.
+        const quantity = Number(requestedQuantity) > 0 ? Number(requestedQuantity) : (Number(draftItem.quantity) || 1);
         // The picker's `modelGuid` is an itemVariantId (the established
         // convention for Item-Master-only products, same as everywhere else
         // in the app — the legacy `models` table has been retired).
@@ -93,9 +98,11 @@ export const POST = withErrorHandling(async (request, { params }) => {
         continue;
       }
 
-      if (serialGuids.length !== quantity) {
-        throw new ApiError(400, `Expected ${quantity} serial number(s) for this item, got ${serialGuids.length}.`);
-      }
+      // ConfirmDraftModal.jsx lets the user add/remove serial-number slots
+      // for a serialized item, so how many units are actually being
+      // dispatched is however many serials were picked — not the draft's
+      // original quantity, which used to be enforced here and made the
+      // Add/Remove Unit buttons unusable (any changed count was rejected).
       // order_items.sellingPrice is already a PER-UNIT price — it's written
       // straight from the contract's unitPrice at draft creation (see
       // app/api/orders/draft/route.js), never a total. Dividing it by

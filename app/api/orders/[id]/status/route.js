@@ -16,7 +16,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
 
   if (status === "Order Cancelled") {
     await mysqlPool.query("UPDATE inventorystockinserial SET serialStatus='Available' WHERE guid=? AND companyGuid=?", [serialNumberGuid, user.companyId]);
-    await mysqlPool.query("UPDATE orders SET status=?,isDeleted=1,cancellationReason=?,cancelledBy=?,cancelledAt=NOW() WHERE guid=? AND companyGuid=?", [status, reason || "No reason", cancelledBy || "Unknown", orderGuid, user.companyId]);
+    await mysqlPool.query("UPDATE orders SET status=?,isDeleted=1,cancellationReason=?,cancelledBy=?,cancelledAt=NOW() WHERE guid=? AND companyGuid=?", [status, reason || "No reason", cancelledBy || user.username || user.fullName || "Unknown", orderGuid, user.companyId]);
   } else {
     await mysqlPool.query("UPDATE orders SET status=? WHERE guid=? AND isDeleted=0 AND companyGuid=?", [status, orderGuid, user.companyId]);
   }

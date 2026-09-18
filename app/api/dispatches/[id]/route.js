@@ -4,6 +4,7 @@ import { authenticateRequest, authorizeDispatchRequest, ApiError } from "@/lib/a
 import { mapDispatchRow } from "@/lib/helpers";
 import { updateDispatchItem } from "@/lib/dispatchHelpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { ensureCarePackColumn, ensureOrderItemsCarePackColumns } from "@/lib/carePackMigration";
 
 export const GET = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
@@ -51,6 +52,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
   const [rows] = await mysqlPool.query(`
     SELECT
         oi.guid as id, oi.serialNumberGuid as serialGuid, oi.modelGuid, oi.sellingPrice, oi.warranty, oi.quantity, oi.contractFilename, oi.warrantyStartDate as itemWarrantyStartDate,
+        oi.carePackUpgrade, oi.carePackUpgradePrice,
         o.guid as _orderId, o.orderid, o.platform, o.orderDate, o.createdAt, o.dispatchDate, o.dispatchedBy, o.status,
         o.gemOrderType, o.bidNumber, o.customerName as customer, o.consigneeName, o.buyerEmail, o.consigneeEmail,
         o.paymentAuthorityEmail,
@@ -61,7 +63,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
         ol.courierPartner, ol.trackingId, ol.logisticsStatus, ol.logisticsDispatchDate, ol.podFilename, ol.lastDeliveryDate,
         ins.installationRequired, ins.installationStatus, ins.technicianName, ins.technicianContact,
         ins.installationCharges, ins.installationRemarks, ins.scheduledDate, ins.installationDate,
-        s.serialNumber as serialValue, s.landingPrice,
+        s.serialNumber as serialValue, s.landingPrice, s.carePack as originalCarePack,
         fbiv.variantName as modelName, fbbm.brandName as companyName,
         p.paymentDate as paymentReceivedDate, p.amount as paymentReceivedAmount, p.utrId
     FROM order_items oi
@@ -89,6 +91,8 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   const body = await parseJsonBody(request);
   const user = await authenticateRequest(request);
   authorizeDispatchRequest(user, "PUT", body);
+  await ensureCarePackColumn();
+  await ensureOrderItemsCarePackColumns();
   const { id: guid } = await params;
 
   if (guid.startsWith("SO-")) {

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import {
   Trash2, X, CheckSquare, Search, AlertCircle,
@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown,
   Box, Clock, Phone, UploadCloud, FileText,
   Receipt, MapPin, Info, Banknote, Package,
-  Edit2, Save, ExternalLink, User
+  Edit2, Save, ExternalLink, User, FileDown, FileSpreadsheet, Loader2
 } from "lucide-react";
 import { printerService } from "@/lib/services/api";
 import api from "@/lib/client/apiClient";
@@ -156,6 +156,10 @@ export default function Dispatch({
   const [tempHeight, setTempHeight] = useState("");
   const [tempWeight, setTempWeight] = useState("");
   const [localModels, setLocalModels] = useState(models);
+  const [exportingPackaging, setExportingPackaging] = useState(false);
+  const [importingPackaging, setImportingPackaging] = useState(false);
+  const [packagingImportResults, setPackagingImportResults] = useState(null);
+  const packagingImportInputRef = useRef(null);
   const [logisticsBatch, setLogisticsBatch] = useState(null);
   const [isSavingLogistics, setIsSavingLogistics] = useState(false);
   const [isSendingBackToBilling, setIsSendingBackToBilling] = useState(false);
@@ -548,6 +552,36 @@ export default function Dispatch({
       } catch (error) {
         toast.error("Failed to update model cost: " + error.message);
       }
+    }
+  };
+
+  const handleExportPackaging = async () => {
+    setExportingPackaging(true);
+    try {
+      await printerService.exportPackagingExcel();
+    } catch (error) {
+      toast.error("Failed to export packaging data: " + error.message);
+    } finally {
+      setExportingPackaging(false);
+    }
+  };
+
+  const handleImportPackagingFileChosen = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImportingPackaging(true);
+    try {
+      const data = await printerService.importPackagingExcel(file);
+      setPackagingImportResults(data.results);
+      if (data.results.success.length > 0) {
+        const refreshed = await printerService.getModels();
+        setLocalModels(Array.isArray(refreshed) ? refreshed : []);
+      }
+    } catch (error) {
+      toast.error("Failed to import packaging data: " + (error.response?.data?.message || error.message));
+    } finally {
+      setImportingPackaging(false);
     }
   };
 
@@ -1158,7 +1192,29 @@ export default function Dispatch({
       {showPackagingModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl p-6 flex flex-col max-h-[85vh]">
-            <div className="flex justify-between items-center mb-4 shrink-0"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Package className="text-pink-500" size={20} /> Packaging Cost & Dimensions</h3><button onClick={() => setShowPackagingModal(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={18} /></button></div>
+            <div className="flex justify-between items-center mb-4 shrink-0 gap-3">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Package className="text-pink-500" size={20} /> Packaging Cost & Dimensions</h3>
+              <div className="flex items-center gap-2">
+                <input ref={packagingImportInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportPackagingFileChosen} />
+                <button
+                  onClick={handleExportPackaging}
+                  disabled={exportingPackaging}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                  title="Export to Excel"
+                >
+                  {exportingPackaging ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />} Export
+                </button>
+                <button
+                  onClick={() => packagingImportInputRef.current?.click()}
+                  disabled={importingPackaging}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                  title="Import from an Excel file in the same format as Export"
+                >
+                  {importingPackaging ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />} Import
+                </button>
+                <button onClick={() => setShowPackagingModal(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={18} /></button>
+              </div>
+            </div>
             <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl">
               <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-bold sticky top-0">
@@ -1191,6 +1247,35 @@ export default function Dispatch({
               </table>
             </div>
             <div className="mt-4 flex justify-end shrink-0"><button onClick={() => setShowPackagingModal(false)} className="px-4 py-2 bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md">Done</button></div>
+          </div>
+        </div>
+      )}
+
+      {packagingImportResults && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setPackagingImportResults(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><FileSpreadsheet size={18} className="text-indigo-600" /> Import Results</h3>
+              <button onClick={() => setPackagingImportResults(null)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500"><X size={18} /></button>
+            </div>
+            <div className="px-4 py-3 border-b border-slate-100 flex gap-3 text-xs font-bold shrink-0">
+              <span className="text-emerald-700">Updated: {packagingImportResults.success.length}</span>
+              <span className="text-rose-700">Failed: {packagingImportResults.failed.length}</span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 text-xs space-y-1">
+              {packagingImportResults.failed.map((r, i) => (
+                <div key={i} className="flex justify-between gap-2 py-1 border-b border-slate-50">
+                  <span className="text-slate-600">Row {r.row} — {r.item}</span>
+                  <span className="text-rose-600 font-semibold shrink-0">{r.reason}</span>
+                </div>
+              ))}
+              {packagingImportResults.failed.length === 0 && (
+                <p className="text-slate-400">All rows updated successfully.</p>
+              )}
+            </div>
+            <div className="p-4 border-t border-slate-200 flex justify-end shrink-0">
+              <button onClick={() => setPackagingImportResults(null)} className="px-4 py-2 bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md">Close</button>
+            </div>
           </div>
         </div>
       )}

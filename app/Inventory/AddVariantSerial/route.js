@@ -1,24 +1,27 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth, requireCompany, ApiError } from "@/lib/auth";
-import { authorizeInventory } from "@/lib/inventoryAuth";
+import { authenticateRequest, requireAuth, requireCompany, requireEditPermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
-import { ensureCarePackColumn } from "@/lib/carePackMigration";
+import { ensureCarePackColumn, ensureCarePackPriceColumn } from "@/lib/carePackMigration";
 
 // Adds one or more serial numbers directly against an Item Master variant —
 // a quick manual add (outside the full Stock In workflow) for when you just
 // need to register serials against an existing model/variant, optionally
 // tagging them to a godown. Accepts either a single `value` or a `values`
 // array for bulk add — all inserted with the same landingPrice/godownGuid.
+// Gated by its own edit-flag (allow_add_serial) rather than the broad
+// allow_edit_inventory — this specific button can be delegated to a role
+// independently of general inventory-edit rights (see Manage Roles).
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  authorizeInventory(user, "POST");
   requireAuth(user);
   requireCompany(user);
+  requireEditPermission(user, "allow_add_serial");
   await ensureCarePackColumn();
+  await ensureCarePackPriceColumn();
 
-  const { itemVariantId, value, values, landingPrice, godownGuid, carePack } = await parseJsonBody(request);
+  const { itemVariantId, value, values, landingPrice, godownGuid, carePack, carePackPrice, vendorId } = await parseJsonBody(request);
 
   const rawValues = Array.isArray(values) && values.length > 0 ? values : [value];
   const serialValues = rawValues
@@ -62,14 +65,15 @@ export const POST = withErrorHandling(async (request) => {
     }
 
     const rate = Number(landingPrice) || 0;
+    const cpPrice = carePackPrice !== undefined && carePackPrice !== null && carePackPrice !== "" ? Number(carePackPrice) : null;
     const guids = [];
     for (const serialValue of serialValues) {
       const guid = randomUUID();
       guids.push(guid);
       await conn.query(
-        `INSERT INTO inventorystockinserial (serialId, guid, companyGuid, itemVariantId, godownGuid, serialNumber, serialStatus, landingPrice, isUsed, isDeleted, createdAt, carePack)
-         VALUES (?, ?, ?, ?, ?, ?, 'Available', ?, 0, 0, NOW(), ?)`,
-        [guid, guid, user.companyId, itemVariantId, godownGuid || null, serialValue, rate, carePack || null]
+        `INSERT INTO inventorystockinserial (serialId, guid, companyGuid, itemVariantId, godownGuid, serialNumber, serialStatus, landingPrice, isUsed, isDeleted, createdAt, carePack, carePackPrice, vendorId)
+         VALUES (?, ?, ?, ?, ?, ?, 'Available', ?, 0, 0, NOW(), ?, ?, ?)`,
+        [guid, guid, user.companyId, itemVariantId, godownGuid || null, serialValue, rate, carePack || null, cpPrice, vendorId || null]
       );
     }
 

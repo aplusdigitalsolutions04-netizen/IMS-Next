@@ -273,6 +273,8 @@ export function AppDataProvider({ children, currentUser }) {
         // Set at Stock In time (see app/api/serials/route.js's vendorName
         // join) — the vendor this specific serial was purchased from.
         vendor: foundSerial.vendorName || null,
+        carePack: foundSerial.carePack || null,
+        carePackPrice: foundSerial.carePackPrice,
         dispatch: dispatchInfo,
         cancelledDispatch: cancelledDispatchInfo,
         returnRecord: returnInfo,

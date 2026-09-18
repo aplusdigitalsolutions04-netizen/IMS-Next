@@ -4,6 +4,7 @@ import { authenticateRequest, requireCompany, ApiError } from "@/lib/auth";
 import { authorizeSerials as authorize } from "@/lib/serialsAuth";
 import { logUserActivity } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { ensureDeletedByColumns } from "@/lib/deletedItemsMigration";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
@@ -34,8 +35,12 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
   authorize(user, "DELETE");
   const { id } = await params;
 
+  await ensureDeletedByColumns();
   const [[serial]] = await mysqlPool.query("SELECT serialNumber FROM inventorystockinserial WHERE guid=?", [id]);
-  const [result] = await mysqlPool.query("UPDATE inventorystockinserial SET isDeleted=1 WHERE guid=? AND companyGuid=?", [id, user.companyId]);
+  const [result] = await mysqlPool.query(
+    "UPDATE inventorystockinserial SET isDeleted=1, deletedBy=?, deletedAt=NOW() WHERE guid=? AND companyGuid=?",
+    [user.username || user.fullName || "Unknown", id, user.companyId]
+  );
   if (result.affectedRows === 0) throw new ApiError(404, "Serial not found");
   await logUserActivity(mysqlPool, user, "Delete Serial", [{ field: "serialNumber", oldValue: serial?.serialNumber || id, newValue: "Deleted" }], request.headers.get("x-forwarded-for") || null);
   return NextResponse.json({ message: "Serial deleted (soft)" });

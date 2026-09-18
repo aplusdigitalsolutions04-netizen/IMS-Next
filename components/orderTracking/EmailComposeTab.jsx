@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { Mail, RefreshCw, Eye, AlertCircle, CheckCircle, Send, Plus, X, FileText, Loader2 } from "lucide-react";
+import { Mail, RefreshCw, Eye, AlertCircle, CheckCircle, Send, Plus, X, FileText, Loader2, History, PenSquare, CornerUpLeft } from "lucide-react";
 import api from "@/lib/client/apiClient";
 
 // Extracted out of OrderDetailModal.jsx — was ~800 lines inlined into that
@@ -36,6 +36,27 @@ export default function EmailComposeTab({ orderGuid }) {
   const [pendingVars, setPendingVars] = React.useState([]);
   const [pendingVarValues, setPendingVarValues] = React.useState({});
 
+  // What's actually been sent regarding this order, and any reply received
+  // for it — see app/api/orders/[id]/email-history/route.js. A reply is
+  // matched purely by Message-ID threading (In-Reply-To/References), never
+  // by "same address", so it shows up here even when it doesn't come back
+  // from the exact address the original went to.
+  const [history, setHistory] = React.useState([]);
+  const [historyLoading, setHistoryLoading] = React.useState(true);
+  const [expandedReplyGuid, setExpandedReplyGuid] = React.useState(null);
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await api.get(`/orders/${orderGuid}/email-history`);
+      setHistory(res.data?.data || []);
+    } catch (e) {
+      console.error("Failed to load email history:", e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   // `blank` = "Skip" was picked in the template step — recipient still
   // comes from the order (that's just useful default data, not a
   // template), but subject/body come back empty instead of prefilled from
@@ -49,7 +70,7 @@ export default function EmailComposeTab({ orderGuid }) {
     return active.length === 1 ? active[0].guid : null;
   };
 
-  const loadEmailDraft = async (templateGuid, { blank = false } = {}) => {
+  const loadEmailDraft = async (templateGuid, { blank = false, accountsList } = {}) => {
     setEmailDraft({ to: "", cc: "", bcc: "", subject: "", body: "", loading: true });
     setPendingVars([]);
     setPendingVarValues({});
@@ -70,11 +91,24 @@ export default function EmailComposeTab({ orderGuid }) {
       // The template's own Email Account wins when it has one; otherwise
       // (older template with none set, or "Skip") fall back to the sole
       // account if there's only one — same rule Email Templates uses.
-      setPickedAccountGuid(res.data?.accountGuid || soleAccountGuid(accounts));
+      setPickedAccountGuid(res.data?.accountGuid || soleAccountGuid(accountsList || accounts));
       setEmailError("");
     } catch (e) {
       setEmailDraft((d) => ({ ...d, loading: false }));
       setEmailError(e?.response?.data?.message || "Could not load email template. Check backend.");
+    }
+  };
+
+  const loadAccounts = async () => {
+    try {
+      const res = await api.get("/email-accounts");
+      const list = res.data?.data || [];
+      setAccounts(list);
+      return list;
+    } catch (e) {
+      console.error("Failed to load email accounts:", e);
+      setAccounts([]);
+      return [];
     }
   };
 
@@ -96,10 +130,30 @@ export default function EmailComposeTab({ orderGuid }) {
     if (!orderGuid) return;
     setPickedTemplateGuid(null);
     setPickedTemplatePurpose(null);
-    // Always land on "choose a template" first — no silent default.
-    loadTemplateOptions();
+    setTemplatePicker(null);
+    setEmailDraft(null);
+    // Land on the order's email history first, with explicit Template/
+    // Compose buttons to start a new one — not straight into "choose a
+    // template" the moment the tab opens.
+    loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderGuid]);
+
+  const startWithTemplate = () => {
+    loadTemplateOptions();
+  };
+
+  const startBlankCompose = async () => {
+    setPickedTemplateGuid(null);
+    setPickedTemplatePurpose("general");
+    const list = await loadAccounts();
+    await loadEmailDraft(null, { blank: true, accountsList: list });
+  };
+
+  const backToHistory = () => {
+    setTemplatePicker(null);
+    setEmailDraft(null);
+  };
 
   const pickTemplate = (tpl) => {
     setPickedTemplateGuid(tpl.guid);
@@ -168,6 +222,7 @@ export default function EmailComposeTab({ orderGuid }) {
         body: emailDraft.body,
         purpose: pickedTemplatePurpose,
         accountGuid: pickedAccountGuid,
+        orderGuid,
         attachments: emailAttachments.map((a) => ({
           filename: a.name,
           content: a.base64,
@@ -176,16 +231,14 @@ export default function EmailComposeTab({ orderGuid }) {
         })),
       });
       setEmailSent(true);
-      // Used to just null out emailDraft here, which left the tab
-      // completely blank afterward — templatePicker was already null (set
-      // in confirmTemplate) and "Change Template" only exists inside the
-      // now-gone compose view, so there was no way back to it without
-      // leaving and reopening the order. Reload the template picker instead
-      // so the tab always has something usable on screen, sent or not.
+      // Back to the history view (now showing this send) instead of
+      // reopening the template picker — the history is the natural "landing
+      // spot" for this tab now, with Template/Compose as explicit ways back
+      // in rather than something forced open right after every send.
       setTimeout(() => {
         setEmailDraft(null);
-        loadTemplateOptions();
-      }, 2000);
+        loadHistory();
+      }, 1500);
     } catch (e) {
       setEmailError(e?.response?.data?.message || "Failed to send email");
     } finally {
@@ -195,8 +248,84 @@ export default function EmailComposeTab({ orderGuid }) {
 
   return (
     <div className="space-y-3">
+      {!templatePicker && !emailDraft && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5"><History size={15} className="text-indigo-600" /> Email History</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={startWithTemplate}
+                className="flex items-center gap-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg transition"
+              >
+                <FileText size={13} /> Template
+              </button>
+              <button
+                onClick={startBlankCompose}
+                className="flex items-center gap-1.5 text-xs font-bold text-slate-600 border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 px-3 py-1.5 rounded-lg transition"
+              >
+                <PenSquare size={13} /> Compose
+              </button>
+            </div>
+          </div>
+
+          {historyLoading ? (
+            <div className="flex items-center justify-center gap-2 text-slate-500 text-sm p-10">
+              <Loader2 size={18} className="animate-spin text-indigo-500" /> Loading history...
+            </div>
+          ) : history.length === 0 ? (
+            <div className="text-center py-10 text-slate-400 border border-dashed border-slate-200 rounded-xl">
+              <Mail size={24} className="mx-auto mb-2 opacity-30" />
+              <p className="text-xs font-semibold">No emails sent for this order yet.</p>
+              <p className="text-[11px] mt-1">Use Template or Compose above to send one.</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-0.5">
+              {history.map((email) => (
+                <div key={email.guid} className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="px-3.5 py-2.5 bg-slate-50">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-bold text-slate-800 truncate">To: {email.toAddress}</span>
+                      {email.repliedAt ? (
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 shrink-0">
+                          <CheckCircle size={10} /> Replied
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-400 bg-slate-100 rounded-full px-2 py-0.5 shrink-0">No reply yet</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 truncate mt-0.5">{email.subject || "(no subject)"}</p>
+                    <p className="text-[10px] text-slate-400 mt-1">{new Date(email.sentAt).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+                  </div>
+                  {email.replies.map((reply) => (
+                    <div key={reply.guid} className="border-t border-slate-100">
+                      <button
+                        onClick={() => setExpandedReplyGuid((g) => (g === reply.guid ? null : reply.guid))}
+                        className="w-full flex items-center justify-between gap-2 px-3.5 py-2 text-left hover:bg-indigo-50/40 transition"
+                      >
+                        <span className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 truncate">
+                          <CornerUpLeft size={12} className="shrink-0" /> Reply from {reply.fromName || reply.fromAddress}
+                        </span>
+                        <span className="text-[10px] text-slate-400 shrink-0">{new Date(reply.receivedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                      </button>
+                      {expandedReplyGuid === reply.guid && (
+                        <div className="px-3.5 pb-3 text-xs text-slate-700 whitespace-pre-wrap">
+                          {reply.bodyText || (reply.bodyHtml ? <span className="text-slate-400 italic">(HTML content — open in Email Inbox to view)</span> : "(empty message)")}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {templatePicker && (
         <div className="space-y-3">
+          <button onClick={backToHistory} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-indigo-600">
+            <History size={13} /> Back to History
+          </button>
           <div className="border border-slate-200 rounded-xl overflow-hidden">
             <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
               <p className="text-sm font-bold text-slate-800">Choose Template</p>
@@ -254,7 +383,9 @@ export default function EmailComposeTab({ orderGuid }) {
       {!templatePicker && emailDraft && !emailDraft.loading && (
         <div className="border border-slate-200 rounded-xl overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
-            <p className="text-xs font-bold text-slate-600">Compose</p>
+            <button onClick={backToHistory} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-indigo-600">
+              <History size={13} /> Back to History
+            </button>
             <div className="flex items-center gap-2">
               <button
                 onClick={reopenTemplatePicker}

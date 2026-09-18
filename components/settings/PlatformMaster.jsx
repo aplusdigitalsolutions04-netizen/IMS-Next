@@ -362,6 +362,8 @@ function ManageFieldsModal({ platform, onClose }) {
   const [loading, setLoading] = React.useState(true);
   const [newFieldName, setNewFieldName] = React.useState("");
   const [newFieldType, setNewFieldType] = React.useState("text");
+  const [newFieldOptions, setNewFieldOptions] = React.useState([]);
+  const [newOptionDraft, setNewOptionDraft] = React.useState("");
   const [newIsRequired, setNewIsRequired] = React.useState(false);
   const [busyId, setBusyId] = React.useState(null);
 
@@ -379,20 +381,54 @@ function ManageFieldsModal({ platform, onClose }) {
 
   React.useEffect(() => { loadFields(); }, []);
 
+  const addOptionPill = () => {
+    const trimmed = newOptionDraft.trim();
+    if (!trimmed) return;
+    setNewFieldOptions((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+    setNewOptionDraft("");
+  };
+
+  const removeOptionPill = (opt) => {
+    setNewFieldOptions((prev) => prev.filter((o) => o !== opt));
+  };
+
+  const handleOptionDraftKeyDown = (e) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addOptionPill();
+    } else if (e.key === "Backspace" && !newOptionDraft && newFieldOptions.length > 0) {
+      // Same "backspace on empty input deletes the last tag" convention as
+      // most tag inputs — lets someone fix a typo'd option without reaching
+      // for the mouse.
+      setNewFieldOptions((prev) => prev.slice(0, -1));
+    }
+  };
+
   const handleAddField = async (e) => {
     e.preventDefault();
     if (!newFieldName.trim()) return;
+    // A half-typed option still sitting in the draft box when Add is
+    // clicked is almost certainly meant to be included, not silently
+    // dropped.
+    const optionsList = newOptionDraft.trim() ? [...newFieldOptions, newOptionDraft.trim()] : newFieldOptions;
+    if (newFieldType === "dropdown" && optionsList.length === 0) {
+      Swal.fire("Options required", "Add at least one option for a Dropdown field.", "warning");
+      return;
+    }
     setBusyId("add");
     try {
       await platformsService.addPlatformField(platform.guid, {
         fieldName: newFieldName.trim(),
         fieldType: newFieldType,
+        fieldOptions: newFieldType === "dropdown" ? optionsList : undefined,
         isRequired: newIsRequired,
         sortOrder: fields.length
       });
       setNewFieldName("");
       setNewIsRequired(false);
       setNewFieldType("text");
+      setNewFieldOptions([]);
+      setNewOptionDraft("");
       await loadFields();
     } catch (err) {
       Swal.fire("Error", err?.response?.data?.message || "Failed to add field", "error");
@@ -445,26 +481,53 @@ function ManageFieldsModal({ platform, onClose }) {
           )}
 
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 block">Custom Fields</label>
-          <form onSubmit={handleAddField} className="flex gap-3 mb-8 items-end">
-            <div className="flex-1">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Field Name</label>
-              <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="e.g. AWB Number" required className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300" />
+          <form onSubmit={handleAddField} className="mb-8">
+            <div className="flex gap-3 items-end">
+              <div className="flex-1">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Field Name</label>
+                <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="e.g. AWB Number" required className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300" />
+              </div>
+              <div className="w-36">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Type</label>
+                <select value={newFieldType} onChange={e => setNewFieldType(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300">
+                  <option value="text">Text</option>
+                  <option value="number">Number</option>
+                  <option value="date">Date</option>
+                  <option value="dropdown">Dropdown</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2 mb-3 px-2">
+                <input type="checkbox" id="req" checked={newIsRequired} onChange={e => setNewIsRequired(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" />
+                <label htmlFor="req" className="text-sm font-medium text-slate-700">Required</label>
+              </div>
+              <button type="submit" disabled={busyId === "add" || !newFieldName.trim()} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all">
+                {busyId === "add" ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />} Add
+              </button>
             </div>
-            <div className="w-32">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Type</label>
-              <select value={newFieldType} onChange={e => setNewFieldType(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300">
-                <option value="text">Text</option>
-                <option value="number">Number</option>
-                <option value="date">Date</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2 mb-3 px-2">
-              <input type="checkbox" id="req" checked={newIsRequired} onChange={e => setNewIsRequired(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" />
-              <label htmlFor="req" className="text-sm font-medium text-slate-700">Required</label>
-            </div>
-            <button type="submit" disabled={busyId === "add" || !newFieldName.trim()} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all">
-              {busyId === "add" ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />} Add
-            </button>
+            {newFieldType === "dropdown" && (
+              <div className="mt-3">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Dropdown Options</label>
+                <div className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-2 flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-indigo-100 focus-within:border-indigo-300">
+                  {newFieldOptions.map((opt) => (
+                    <span key={opt} className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 pl-2.5 pr-1 py-1 rounded-full">
+                      {opt}
+                      <button type="button" onClick={() => removeOptionPill(opt)} className="p-0.5 text-indigo-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors">
+                        <X size={10} />
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    value={newOptionDraft}
+                    onChange={e => setNewOptionDraft(e.target.value)}
+                    onKeyDown={handleOptionDraftKeyDown}
+                    onBlur={addOptionPill}
+                    placeholder={newFieldOptions.length === 0 ? "Type an option, press Enter..." : "Add another..."}
+                    className="flex-1 min-w-[120px] outline-none text-sm px-1 py-1 bg-transparent"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">Press Enter (or comma) after each option — these show up as the choices during New Dispatch.</p>
+              </div>
+            )}
           </form>
 
           {loading ? (
@@ -472,20 +535,16 @@ function ManageFieldsModal({ platform, onClose }) {
           ) : fields.length === 0 ? (
             <div className="text-center py-10 text-slate-400 text-sm">No custom fields defined for {platform.name}.</div>
           ) : (
-            <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
               {fields.map(f => (
-                <div key={f.guid} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
-                  <div>
-                    <div className="font-bold text-slate-700 flex items-center gap-2">
-                      {f.fieldName}
-                      {f.isRequired === 1 && <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full uppercase tracking-wide">Required</span>}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1 uppercase tracking-wide">{f.fieldType} Input</div>
-                  </div>
-                  <button type="button" onClick={() => handleDeleteField(f.guid)} disabled={busyId === f.guid} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                    {busyId === f.guid ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                <span key={f.guid} className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200 pl-3 pr-1.5 py-1.5 rounded-full">
+                  {f.fieldName}
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">· {f.fieldType}</span>
+                  {f.isRequired === 1 && <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full uppercase">Required</span>}
+                  <button type="button" onClick={() => handleDeleteField(f.guid)} disabled={busyId === f.guid} title="Delete" className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors">
+                    {busyId === f.guid ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
                   </button>
-                </div>
+                </span>
               ))}
             </div>
           )}

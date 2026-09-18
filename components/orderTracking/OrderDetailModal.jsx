@@ -147,7 +147,7 @@ export default function OrderDetailModal({
   currentUser, editFormData, editItems, extraDocCustomLabel, extraDocFile,
   extraDocInputRef, extraDocType, handleDeleteExtraDoc, handleRemoveSerial,
   handleReplaceExtraDoc, handleReplaceStandardDoc, handleReplaceSerial, handleRestoreBatch, handleSaveEdits,
-  handleSavePaymentEdit, handleSaveItemWarrantyDate, handleToggleInstallation, handleToggleGemUpload, handleUpdateStatus,
+  handleSavePaymentEdit, handleSaveItemWarrantyDate, handleToggleInstallation, onRequestInstallation, handleToggleGemUpload, handleUpdateStatus,
   handleUploadExtraDoc, handleViewDocument, isAdmin, isEditMode, isEditingPayment,
   isSupervisor, isUpdating, localSerials, localModels, modalDetailTab, newStatus, paymentEditForm, showToast,
   replaceWithSerialId, replacingItemId, restoringBatchKey, returns,
@@ -173,6 +173,21 @@ export default function OrderDetailModal({
   const [gatepassLoading, setGatepassLoading] = React.useState(false);
   const [savingContract, setSavingContract] = React.useState(false);
   const [confirmReplaceContractGuid, setConfirmReplaceContractGuid] = React.useState(null);
+
+  // Ordered (by display_order, ascending duration) Care Pack options — same
+  // fetch/shape as NewDispatch's picker, reused here so the Edit flow offers
+  // the same Care Pack upgrade UI as order creation.
+  const [carePackOptions, setCarePackOptions] = React.useState([]);
+  React.useEffect(() => {
+    api.get("/dropdown/CARE_PACK")
+      .then((res) => setCarePackOptions(res.data?.data || []))
+      .catch((err) => console.error("Failed to load Care Pack options:", err));
+  }, []);
+  const getCarePackUpgradeOptions = (currentCarePack) => {
+    if (!currentCarePack) return carePackOptions;
+    const idx = carePackOptions.findIndex((o) => o.value === currentCarePack);
+    return idx === -1 ? carePackOptions : carePackOptions.slice(idx + 1);
+  };
 
   // Ordered items per the linked GeM contract (if any) — reference only,
   // shown alongside what was actually dispatched so a deliberate
@@ -814,34 +829,94 @@ export default function OrderDetailModal({
                                 <tr>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">#</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Model</th>
-                                  <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Serial Number</th>
+                                  <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Serial No. / Qty</th>
+                                  <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Care Pack</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase text-right">Price (₹)</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase text-center">Action</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                {editItems.map((item, idx) => (
+                                {editItems.map((item, idx) => {
+                                  const isNonSerialized = !item.serialNumberId && !item.serialGuid;
+                                  return (
                                   <tr key={idx}>
                                     <td className="px-3 py-2 text-slate-400 font-bold">{idx + 1}</td>
                                     <td className={`px-3 py-2 font-medium ${item.modelName === "Not Found" ? "text-red-500" : "text-slate-700"}`}>{item.modelName || "Unknown"}</td>
                                     <td className="px-3 py-2">
-                                      <input
-                                        className="w-full border border-slate-200 bg-slate-50 p-1.5 rounded text-xs font-mono focus:ring-2 focus:ring-amber-400 outline-none"
-                                        placeholder="Scan or type serial no."
-                                        value={item.serialValue || ""}
-                                        onChange={(e) => {
-                                          const u = [...editItems];
-                                          u[idx] = { ...u[idx], serialValue: e.target.value };
-                                          setEditItems(u);
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === "Enter") {
-                                            e.preventDefault();
-                                            fetchModelForEditRow(idx, e.target.value);
-                                          }
-                                        }}
-                                        onBlur={(e) => fetchModelForEditRow(idx, e.target.value)}
-                                      />
+                                      {isNonSerialized ? (
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          className="w-24 border border-slate-200 bg-slate-50 p-1.5 rounded text-xs font-mono focus:ring-2 focus:ring-amber-400 outline-none"
+                                          placeholder="Qty"
+                                          value={item.quantity ?? 1}
+                                          onChange={(e) => {
+                                            const u = [...editItems];
+                                            u[idx] = { ...u[idx], quantity: e.target.value };
+                                            setEditItems(u);
+                                          }}
+                                        />
+                                      ) : (
+                                        <input
+                                          className="w-full border border-slate-200 bg-slate-50 p-1.5 rounded text-xs font-mono focus:ring-2 focus:ring-amber-400 outline-none"
+                                          placeholder="Scan or type serial no."
+                                          value={item.serialValue || ""}
+                                          onChange={(e) => {
+                                            const u = [...editItems];
+                                            u[idx] = { ...u[idx], serialValue: e.target.value };
+                                            setEditItems(u);
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                              e.preventDefault();
+                                              fetchModelForEditRow(idx, e.target.value);
+                                            }
+                                          }}
+                                          onBlur={(e) => fetchModelForEditRow(idx, e.target.value)}
+                                        />
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {isNonSerialized ? (
+                                        <span className="text-[9px] text-slate-400">—</span>
+                                      ) : (
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${item.carePack ? "text-sky-600 bg-sky-50 border border-sky-100" : "text-slate-400 bg-slate-100"}`}>
+                                          {item.carePack || "No Care Pack"}
+                                        </span>
+                                        {getCarePackUpgradeOptions(item.carePack).length > 0 && (
+                                          <>
+                                            <select
+                                              value={item.carePackUpgrade || ""}
+                                              onChange={(e) => {
+                                                const u = [...editItems];
+                                                u[idx] = { ...u[idx], carePackUpgrade: e.target.value || null };
+                                                setEditItems(u);
+                                              }}
+                                              className="text-[9px] font-semibold border border-slate-200 rounded px-1 py-1 bg-white outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400"
+                                            >
+                                              <option value="">{item.carePack ? "Upgrade..." : "Add..."}</option>
+                                              {getCarePackUpgradeOptions(item.carePack).map((o) => (
+                                                <option key={o.value} value={o.value}>{o.label}</option>
+                                              ))}
+                                            </select>
+                                            {item.carePackUpgrade && (
+                                              <input
+                                                type="number"
+                                                placeholder="₹ price"
+                                                value={item.carePackUpgradePrice || ""}
+                                                onChange={(e) => {
+                                                  const u = [...editItems];
+                                                  u[idx] = { ...u[idx], carePackUpgradePrice: e.target.value };
+                                                  setEditItems(u);
+                                                }}
+                                                className="text-[9px] font-semibold border border-slate-200 rounded px-1.5 py-1 w-20 outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400"
+                                              />
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
+                                      )}
                                     </td>
                                     <td className="px-3 py-2">
                                       <input
@@ -858,16 +933,17 @@ export default function OrderDetailModal({
                                     <td className="px-3 py-2 text-center">
                                       {(isAdmin || currentUser?.allow_edit_dispatch) && (
                                         <button
-                                          onClick={() => handleRemoveSerial(item.guid || item.id, item.serialValue)}
+                                          onClick={() => handleRemoveSerial(item.guid || item.id, isNonSerialized ? item.modelName : item.serialValue)}
                                           className="p-1 text-red-500 hover:bg-red-50 rounded transition-colors"
-                                          title="Remove Serial from Order"
+                                          title={isNonSerialized ? "Remove Item from Order" : "Remove Serial from Order"}
                                         >
                                           <Trash2 size={11} />
                                         </button>
                                       )}
                                     </td>
                                   </tr>
-                                ))}
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>
@@ -972,7 +1048,7 @@ export default function OrderDetailModal({
                             { id: "details", label: "Details", Icon: ClipboardList },
                             { id: "documents", label: "Documents", Icon: FileText },
                             { id: "actions", label: "Actions", Icon: Zap },
-                            ...((selectedBatch.firmName === "GeM" || selectedBatch.platform === "GeM") ? [{ id: "email", label: "Email", Icon: Mail }] : []),
+                            { id: "email", label: "Email", Icon: Mail },
                           ].map(tab => (
                             <button
                               key={tab.id}
@@ -1176,7 +1252,7 @@ export default function OrderDetailModal({
                                 className={`px-3 py-1 rounded text-[10px] font-bold transition ${!isInstallationRequired(selectedBatch.installationRequired) ? "bg-slate-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                               >No</button>
                               <button
-                                onClick={() => handleToggleInstallation(true)}
+                                onClick={() => onRequestInstallation()}
                                 disabled={isUpdating}
                                 className={`px-3 py-1 rounded text-[10px] font-bold transition ${isInstallationRequired(selectedBatch.installationRequired) ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                               >Yes</button>
@@ -1495,6 +1571,18 @@ export default function OrderDetailModal({
                               const isMarketplace = selectedBatch.firmName === "Amazon" || selectedBatch.firmName === "Flipkart";
                               const selectedBatchChallanFilename =
                                 (selectedBatch.documents || []).find((d) => d.docType === "challan")?.filename || null;
+                              const selectedBatchInstallationReportFilename =
+                                (selectedBatch.documents || []).find((d) => d.docType === "installationReport")?.filename || null;
+                              const installationReportCard = isInstallationRequired(selectedBatch.installationRequired) && (
+                                <DocCard
+                                  label="Installation Report"
+                                  filename={selectedBatchInstallationReportFilename}
+                                  onView={() => handleViewDocument(selectedBatchInstallationReportFilename)}
+                                  onReplace={(f) => handleReplaceExtraDoc(selectedBatchInstallationReportFilename, "installationReport", f)}
+                                  canReplace={canEditOrder && !isCancelledOrder}
+                                  accentBg="bg-violet-50" accentText="text-violet-600" buttonClass="bg-violet-600 hover:bg-violet-700"
+                                />
+                              );
                               const gatePassAction = (
                                 <button onClick={downloadGatepass} disabled={gatepassLoading} className="w-full text-xs font-bold bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 active:scale-95">
                                   {gatepassLoading ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} Download
@@ -1520,6 +1608,7 @@ export default function OrderDetailModal({
                                       accentBg="bg-amber-50" accentText="text-amber-600" buttonClass="bg-amber-600 hover:bg-amber-700"
                                     />
                                     <DocCard label="Gate Pass" accentBg="bg-teal-50" accentText="text-teal-600" action={gatePassAction} />
+                                    {installationReportCard}
                                   </>
                                 );
                               }
@@ -1568,6 +1657,7 @@ export default function OrderDetailModal({
                                     accentBg="bg-emerald-50" accentText="text-emerald-600" buttonClass="bg-emerald-600 hover:bg-emerald-700"
                                   />
                                   <DocCard label="Gate Pass" accentBg="bg-teal-50" accentText="text-teal-600" action={gatePassAction} />
+                                  {installationReportCard}
                                 </>
                               );
                             })()}
@@ -2451,7 +2541,7 @@ export default function OrderDetailModal({
                                 No
                               </button>
                               <button
-                                onClick={() => handleToggleInstallation(true)}
+                                onClick={() => onRequestInstallation()}
                                 disabled={isUpdating}
                                 className={`px-3 py-1 rounded text-[10px] font-bold transition ${isInstallationRequired(selectedBatch.installationRequired)
                                     ? "bg-indigo-600 text-white shadow-sm"

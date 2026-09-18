@@ -20,10 +20,17 @@ export const GET = withErrorHandling(async (request) => {
   const fyStart = searchParams.get("fyStart");
   const fyEnd = searchParams.get("fyEnd");
 
+  // Joined out to variant/item here (GetCurrentStock does the same via its
+  // whereClause) so a serial left over from a soft-deleted item — DeleteItem
+  // only flags the item row, never its variants — doesn't inflate this count
+  // past what Current Stock shows for the same company.
   const [[serializedRow]] = await mysqlPool.query(
-    `SELECT COUNT(*) as count FROM inventorystockinserial
-     WHERE serialStatus = 'Available' AND isDeleted = 0 AND companyGuid = ?
-       ${fyStart && fyEnd ? "AND createdAt BETWEEN ? AND ?" : ""}`,
+    `SELECT COUNT(*) as count FROM inventorystockinserial sr
+     JOIN inventoryitemvariant v ON sr.itemVariantId = v.itemVariantId
+     JOIN inventoryitemmaster i ON v.itemId = i.itemId
+     WHERE sr.serialStatus = 'Available' AND sr.isDeleted = 0 AND sr.companyGuid = ?
+       AND v.isDeleted = 0 AND i.isDeleted = 0
+       ${fyStart && fyEnd ? "AND sr.createdAt BETWEEN ? AND ?" : ""}`,
     fyStart && fyEnd ? [user.companyId, fyStart, fyEnd] : [user.companyId]
   );
 
@@ -31,12 +38,21 @@ export const GET = withErrorHandling(async (request) => {
   // in inventoryvariantstock.availablePCS — no per-unit createdAt exists for
   // these, so there's no FY slice to apply; it's just the current on-hand
   // balance (same convention GetCurrentStock/route.js uses for these rows).
+  // Filters mirror GetCurrentStock/route.js's whereClause exactly — without
+  // them this card double-counted stock that Current Stock deliberately
+  // hides: leftover variants of a soft-deleted item (DeleteItem only flags
+  // the item row, not its variants), SYSTEM_COMBOS' internal bookkeeping
+  // variant, and combo-parent variants (their availablePCS is a derived
+  // rollup of their components, not real standalone stock).
   const [[nonSerializedRow]] = await mysqlPool.query(
     `SELECT COALESCE(SUM(s.availablePCS), 0) as total
      FROM inventoryvariantstock s
      JOIN inventoryitemvariant v ON s.itemVariantId = v.itemVariantId
      JOIN inventoryitemmaster i ON v.itemId = i.itemId
-     WHERE i.isTrackable = 0 AND v.isDeleted = 0 AND v.companyGuid = ?`,
+     WHERE i.isTrackable = 0 AND v.isDeleted = 0 AND i.isDeleted = 0 AND v.companyGuid = ?
+       AND EXISTS (SELECT 1 FROM companies WHERE guid = v.companyGuid AND isActive = 1)
+       AND i.itemName != 'SYSTEM_COMBOS'
+       AND v.itemVariantId NOT IN (SELECT parentVariantId FROM inventorycombomapping WHERE isDeleted = 0)`,
     [user.companyId]
   );
 

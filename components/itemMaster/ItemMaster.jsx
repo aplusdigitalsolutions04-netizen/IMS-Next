@@ -1,11 +1,12 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import Swal from "sweetalert2";
-import { Edit2, Trash2, Plus, Loader2, Package, ListTree } from "lucide-react";
+import { Edit2, Trash2, Plus, Loader2, Package, ListTree, Search, Hash } from "lucide-react";
 import { useRouter as useNavigate } from "next/navigation";
 import { legacyApi } from "@/lib/client/http";
 import PageHeader from "../common/PageHeader";
 import Pagination from "../common/Pagination";
+import { promptDeleteRemarks } from "@/lib/client/promptRemarks";
 
 export default function ItemMaster() {
   const router = useNavigate();
@@ -36,6 +37,9 @@ export default function ItemMaster() {
   // Filter items down to one category (e.g. "Printer") instead of showing
   // everything mixed together flat.
   const [filterCategoryId, setFilterCategoryId] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  // "" = both, "true"/"false" = only serialized / only non-serialized.
+  const [filterIsTrackable, setFilterIsTrackable] = useState("");
 
   // Fetch initial dropdown data
   const fetchDependencies = async () => {
@@ -54,11 +58,16 @@ export default function ItemMaster() {
   };
 
   // Fetch Items
-  const fetchItems = async (page = currentPage, limit = pageSize, catFilter = filterCategoryId) => {
+  const fetchItems = async (page = currentPage, limit = pageSize, catFilter = filterCategoryId, search = searchTerm, trackableFilter = filterIsTrackable) => {
     setTableLoading(true);
     try {
       const response = await legacyApi.get("/Inventory/GetItemList", {
-        params: { page, limit, ...(catFilter ? { categoryId: catFilter } : {}) },
+        params: {
+          page, limit,
+          ...(catFilter ? { categoryId: catFilter } : {}),
+          ...(search ? { search } : {}),
+          ...(trackableFilter ? { isTrackable: trackableFilter } : {}),
+        },
       });
       setItems(response.data?.data || []);
       setTotalRecords(response.data?.total || 0);
@@ -92,9 +101,16 @@ export default function ItemMaster() {
   }, []);
 
   useEffect(() => {
-    fetchItems(currentPage, pageSize, filterCategoryId);
+    fetchItems(currentPage, pageSize, filterCategoryId, searchTerm, filterIsTrackable);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, pageSize, filterCategoryId]);
+  }, [currentPage, pageSize, filterCategoryId, searchTerm, filterIsTrackable]);
+
+  // Reset to page 1 whenever a filter/search changes — staying on page 4 of
+  // the old unfiltered list after narrowing the results would just show
+  // "No items found" instead of the actual matches on page 1.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterCategoryId, searchTerm, filterIsTrackable]);
 
   useEffect(() => {
     fetchBrandsForCategory(categoryId);
@@ -143,34 +159,27 @@ export default function ItemMaster() {
     }
   };
 
-  const handleDeleteItem = (id) => {
-    Swal.fire({
+  const handleDeleteItem = async (id) => {
+    const remarks = await promptDeleteRemarks({
       title: "Are you sure?",
-      text: "This item will be deactivated",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Yes, delete",
-      cancelButtonText: "Cancel",
-    }).then(async (result) => {
-      if (result.isConfirmed) {
-        setTableLoading(true);
-        try {
-          const res = await legacyApi.post("/Inventory/DeleteItem", { itemId: id });
-
-          if (res.data?.message === "Success") {
-            Swal.fire("Deleted", "Item deleted successfully", "success");
-            fetchItems();
-          } else {
-            Swal.fire("Error", res.data?.message || "Failed to delete", "error");
-          }
-        } catch (error) {
-          console.error(error);
-          Swal.fire("Error", "Something went wrong", "error");
-        } finally {
-          setTableLoading(false);
-        }
-      }
+      text: "This item will be deactivated.",
     });
+    if (!remarks) return;
+    setTableLoading(true);
+    try {
+      const res = await legacyApi.post("/Inventory/DeleteItem", { itemId: id, remarks });
+
+      if (res.data?.message === "Success") {
+        Swal.fire("Deleted", "Item deleted successfully", "success");
+        fetchItems();
+      } else {
+        Swal.fire("Error", res.data?.message || "Failed to delete", "error");
+      }
+    } catch (error) {
+      Swal.fire("Error", error.response?.data?.message || "Something went wrong", "error");
+    } finally {
+      setTableLoading(false);
+    }
   };
 
   const handleEdit = (item) => {
@@ -279,19 +288,47 @@ export default function ItemMaster() {
         </div>
       </div>
 
-      {/* Category Filter */}
-      <div className="flex items-center gap-3 mb-4">
-        <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">
-          <ListTree size={13} /> Category
-        </label>
-        <select
-          value={filterCategoryId}
-          onChange={(e) => { setFilterCategoryId(e.target.value); setCurrentPage(1); }}
-          className="bg-white border border-slate-300 rounded-xl px-4 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 shadow-sm"
-        >
-          <option value="">All Categories</option>
-          {categories.map((c) => (<option key={c.categoryId} value={c.categoryId}>{c.categoryName}</option>))}
-        </select>
+      {/* Search + Filters */}
+      <div className="mb-4 space-y-3">
+        <div className="relative w-full">
+          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by item name, code, HSN, brand..."
+            className="w-full bg-white border border-slate-300 rounded-xl pl-11 pr-4 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-500 shadow-sm"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 whitespace-nowrap">
+              <ListTree size={13} /> Category
+            </label>
+            <select
+              value={filterCategoryId}
+              onChange={(e) => setFilterCategoryId(e.target.value)}
+              className="bg-white border border-slate-300 rounded-xl px-4 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 shadow-sm"
+            >
+              <option value="">All Categories</option>
+              {categories.map((c) => (<option key={c.categoryId} value={c.categoryId}>{c.categoryName}</option>))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 whitespace-nowrap">
+              <Hash size={13} /> Ask Serial No.
+            </label>
+            <select
+              value={filterIsTrackable}
+              onChange={(e) => setFilterIsTrackable(e.target.value)}
+              className="bg-white border border-slate-300 rounded-xl px-4 py-2 text-sm text-slate-800 outline-none focus:border-indigo-500 shadow-sm"
+            >
+              <option value="">Both</option>
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Table Section */}

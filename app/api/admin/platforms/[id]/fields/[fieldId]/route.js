@@ -7,7 +7,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   requirePermissionOrEditFlag(user, "platformMaster", "allow_manage_platform_fields", "You do not have permission to manage platform fields.");
   const { fieldId } = await params;
-  const { fieldName, fieldType, isRequired, sortOrder } = await parseJsonBody(request);
+  const { fieldName, fieldType, fieldOptions, isRequired, sortOrder } = await parseJsonBody(request);
 
   const updates = [];
   const values = [];
@@ -19,6 +19,11 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   if (fieldType !== undefined) {
     updates.push("fieldType = ?");
     values.push(fieldType);
+  }
+  if (fieldOptions !== undefined) {
+    const cleanedOptions = Array.isArray(fieldOptions) ? fieldOptions.map((o) => String(o).trim()).filter(Boolean) : [];
+    updates.push("fieldOptions = ?");
+    values.push(cleanedOptions.length > 0 ? JSON.stringify(cleanedOptions) : null);
   }
   if (isRequired !== undefined) {
     updates.push("isRequired = ?");

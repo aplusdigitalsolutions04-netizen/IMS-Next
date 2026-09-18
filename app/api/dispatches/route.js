@@ -192,6 +192,7 @@ export const PUT = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
   authorizeDispatchRequest(user, "PUT", body);
+  await ensureOrderItemsCarePackColumns();
 
   const { updates } = body;
   if (!Array.isArray(updates)) {

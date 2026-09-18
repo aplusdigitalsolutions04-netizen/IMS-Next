@@ -3,6 +3,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeReadWrite, requireCompany, requirePermission, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
+import { ensureDeletedByColumns } from "@/lib/deletedItemsMigration";
 
 const EDITABLE_FIELDS = [
   "bidNumber", "contractNumber", "generatedDate", "buyerContact", "products", "buyerEmail", "buyerGstin",
@@ -157,6 +158,9 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
   requirePermission(user, "contracts", "You do not have permission to access contracts.");
   authorize(user, "DELETE");
   const { id } = await params;
+  const { remarks } = await parseJsonBody(request);
+  const trimmedRemarks = String(remarks || "").trim();
+  if (!trimmedRemarks) throw new ApiError(400, "A remark is required to delete.");
 
   const conn = await mysqlPool.getConnection();
   try {
@@ -180,9 +184,10 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
       }
     }
 
+    await ensureDeletedByColumns();
     const [result] = await conn.query(
-      "UPDATE contracts SET isDeleted=1 WHERE guid=? AND companyGuid=?",
-      [id, user.companyId]
+      "UPDATE contracts SET isDeleted=1, deletedBy=?, deletedAt=NOW(), deleteRemarks=? WHERE guid=? AND companyGuid=?",
+      [user.username || user.fullName || "Unknown", trimmedRemarks, id, user.companyId]
     );
     if (result.affectedRows === 0) throw new ApiError(404, "Contract not found");
 

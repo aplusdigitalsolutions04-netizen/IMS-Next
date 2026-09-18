@@ -106,7 +106,8 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
     const inventoryGroup = ["currentStock","stockIn","fbfFbaManagement","godownTransfer"];
     const ordersGroup = ["orderTracking","dispatch","stockOut"];
     const operationsGroup = ["returns","damaged"];
-    const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","emailInbox","sentEmails","apiLogs","backupRestore","rateLimitSettings","aiSettings","platformMaster","deliveryPartnerMaster","clientMaster","carePackMaster","googleDrive"];
+    const mainEmailGroup = ["sentEmails","emailInbox"];
+    const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","apiLogs","backupRestore","rateLimitSettings","aiSettings","platformMaster","deliveryPartnerMaster","clientMaster","carePackMaster","googleDrive","deletedItems"];
 
     const expandTo = (group) => {
       setIsSidebarVisible(true);
@@ -196,6 +197,15 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               <Wrench size={20} />
             </Link>
           )}
+          {(hasPermission('sentEmails') || hasPermission('emailInbox')) && (
+            <button
+              onClick={() => expandTo("mainEmail")}
+              title="Email"
+              className={`p-2.5 rounded-xl transition-colors ${mainEmailGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <Mail size={20} />
+            </button>
+          )}
           {hasGroup("operations") && (
             <button
               onClick={() => expandTo("operations")}
@@ -225,7 +235,7 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
   }
 
   // Settings mode
-  if (['companyMaster','users','roles','userActivity','reports','profile','settings','notifications','warrantyEmail','emailAccounts','emailTemplates','emailInbox','sentEmails','apiLogs','backupRestore','rateLimitSettings','aiSettings','platformMaster','deliveryPartnerMaster','clientMaster','carePackMaster','googleDrive'].includes(activeTab)) {
+  if (['companyMaster','users','roles','userActivity','reports','profile','settings','notifications','warrantyEmail','emailAccounts','emailTemplates','apiLogs','backupRestore','rateLimitSettings','aiSettings','platformMaster','deliveryPartnerMaster','clientMaster','carePackMaster','googleDrive','deletedItems'].includes(activeTab)) {
     return (
       <aside className="bg-white border-r flex flex-col w-64 h-full shrink-0 animate-sidebar-in transition-all">
         <div className="p-4 flex items-center justify-between border-b border-slate-100">
@@ -327,7 +337,7 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               <Bell size={18} /> <span>Notifications</span>
             </Link>
           )}
-          {(hasPermission('emailAccounts') || hasPermission('emailTemplates') || hasPermission('sentEmails') || hasPermission('emailInbox')) && (
+          {(hasPermission('emailAccounts') || hasPermission('emailTemplates')) && (
             <div className="space-y-1">
               <button onClick={() => toggleSubmenu('email')} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
                 <div className="flex items-center gap-3"><Mail size={18} /><span>Email</span></div>
@@ -345,21 +355,11 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
                       <FileText size={14} className="flex-shrink-0" /> <span className="truncate">Email Templates</span>
                     </Link>
                   )}
-                  {hasPermission('sentEmails') && (
-                    <Link href="/sentEmails" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'sentEmails' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-                      <Send size={14} className="flex-shrink-0" /> <span className="truncate">Sent Emails</span>
-                    </Link>
-                  )}
-                  {hasPermission('emailInbox') && (
-                    <Link href="/emailInbox" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailInbox' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-                      <Inbox size={14} className="flex-shrink-0" /> <span className="truncate">Email Inbox</span>
-                    </Link>
-                  )}
                 </div>
               )}
             </div>
           )}
-          {(hasPermission('apiLogs') || hasPermission('backupRestore') || hasPermission('rateLimitSettings') || hasPermission('aiSettings') || hasPermission('googleDrive')) && (
+          {(hasPermission('apiLogs') || hasPermission('backupRestore') || hasPermission('rateLimitSettings') || hasPermission('aiSettings') || hasPermission('googleDrive') || hasPermission('deletedItems')) && (
             <div className="space-y-1">
               <button onClick={() => toggleSubmenu('admin')} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
                 <div className="flex items-center gap-3"><ShieldAlert size={18} /><span>Admin</span></div>
@@ -390,6 +390,11 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
                   {hasPermission('googleDrive') && (
                     <Link href="/googleDrive" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'googleDrive' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
                       <HardDrive size={14} className="flex-shrink-0" /> <span className="truncate">Google Drive</span>
+                    </Link>
+                  )}
+                  {hasPermission('deletedItems') && (
+                    <Link href="/deletedItems" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'deletedItems' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      <RotateCcw size={14} className="flex-shrink-0" /> <span className="truncate">Deleted Items</span>
                     </Link>
                   )}
                 </div>
@@ -531,6 +536,30 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
           <Link href="/installations" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'installations' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <Wrench size={18} /> <span>Installations</span>
           </Link>
+        )}
+
+        {/* EMAIL (Sent Emails + Email Inbox) */}
+        {(hasPermission('sentEmails') || hasPermission('emailInbox')) && (
+          <div className="space-y-1">
+            <button onClick={() => toggleSubmenu('mainEmail')} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+              <div className="flex items-center gap-3"><Mail size={18} /><span>Email</span></div>
+              {expandedMenus.mainEmail ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {expandedMenus.mainEmail && (
+              <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
+                {hasPermission('sentEmails') && (
+                  <Link href="/sentEmails" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'sentEmails' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Send size={14} className="flex-shrink-0" /> <span className="truncate">Sent Emails</span>
+                  </Link>
+                )}
+                {hasPermission('emailInbox') && (
+                  <Link href="/emailInbox" className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'emailInbox' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    <Inbox size={14} className="flex-shrink-0" /> <span className="truncate">Email Inbox</span>
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {/* OPERATIONS */}

@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, CheckCircle2, Loader2, Search, ChevronDown, Box } from "lucide-react";
+import { X, CheckCircle2, Loader2, Search, ChevronDown, Box, Plus, Trash2 } from "lucide-react";
 import { inventoryService } from "@/lib/services/inventoryService";
 
 // Searchable serial-number picker — a plain text input that filters the
@@ -115,10 +115,17 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
   // full Item Master catalog (both trackable and non-trackable) once here so
   // non-serialized items resolve correctly.
   const [fullCatalog, setFullCatalog] = useState([]);
+  // Until this resolves, a non-serialized item's model can't be found in
+  // either `models` or `fullCatalog` yet — isNonSerializedModel() would
+  // wrongly default it to "serialized" for that first render, flashing the
+  // wrong (serial-number) picker before flipping to the right one. Gate
+  // rendering on this instead of racing it.
+  const [catalogLoading, setCatalogLoading] = useState(true);
   useEffect(() => {
     inventoryService.getCurrentStock({ limit: 2000 })
       .then((res) => setFullCatalog(Array.isArray(res?.data) ? res.data : []))
-      .catch((err) => console.error("Failed to load item catalog:", err.message));
+      .catch((err) => console.error("Failed to load item catalog:", err.message))
+      .finally(() => setCatalogLoading(false));
   }, []);
 
   const getModel = (modelGuid) => {
@@ -186,6 +193,42 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
     });
   };
 
+  // Non-serialized items are represented as N identical {modelGuid} slots
+  // (one per unit, no serial needed) — changing the model applies to all of
+  // them at once, and changing quantity just grows/shrinks the array.
+  const updateNonSerializedModel = (itemKey, modelGuid) => {
+    setSelections((prev) => ({
+      ...prev,
+      [itemKey]: prev[itemKey].map(() => ({ modelGuid, serialGuid: "" })),
+    }));
+  };
+
+  const updateNonSerializedQty = (itemKey, newCount) => {
+    setSelections((prev) => {
+      const units = [...prev[itemKey]];
+      const modelGuid = units[0]?.modelGuid || "";
+      if (newCount > units.length) {
+        while (units.length < newCount) units.push({ modelGuid, serialGuid: "" });
+      } else {
+        units.length = Math.max(1, newCount);
+      }
+      return { ...prev, [itemKey]: units };
+    });
+  };
+
+  // Serialized items need one slot per physical unit; add/remove a slot to
+  // change how many units of this line are being dispatched.
+  const addSerialUnit = (itemKey) => {
+    setSelections((prev) => ({ ...prev, [itemKey]: [...prev[itemKey], { modelGuid: "", serialGuid: "" }] }));
+  };
+
+  const removeSerialUnit = (itemKey, idx) => {
+    setSelections((prev) => {
+      const units = prev[itemKey].filter((_, i) => i !== idx);
+      return { ...prev, [itemKey]: units.length ? units : [{ modelGuid: "", serialGuid: "" }] };
+    });
+  };
+
   // Live available stock for a non-serialized item — same source used to
   // resolve model names, so this stays consistent with what the backend
   // will actually check on confirm (app/api/orders/draft/[orderId]/confirm/route.js).
@@ -240,7 +283,7 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <CheckCircle2 size={18} className="text-indigo-600" /> Confirm Draft Order
@@ -255,7 +298,11 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
             Confirm the model for each item. Serialized models need a serial number picked per unit; non-serialized models (stationery/consumables) just need the model confirmed — stock is deducted automatically. This order will move to Active once confirmed.
           </p>
 
-          {items.map((item) => {
+          {catalogLoading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
+              <Loader2 size={16} className="animate-spin" /> Loading item catalog…
+            </div>
+          ) : items.map((item) => {
             const itemKey = item.id || item.guid;
             const units = selections[itemKey] || [];
             const nonSerialized = isNonSerializedModel(units[0]?.modelGuid);
@@ -264,18 +311,33 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
                 <div className="text-sm font-semibold text-slate-700 mb-3">{item.remarks || "Product"}</div>
 
                 {nonSerialized ? (
-                  <div className="grid grid-cols-2 gap-3 items-center">
-                    <div className="border border-slate-200 bg-slate-50 rounded-lg px-3 py-2 text-sm text-slate-600 flex items-center truncate" title={getModel(units[0].modelGuid)?.name}>
-                      {getModel(units[0].modelGuid)?.name || "Model"}
-                    </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <select
+                      className="flex-1 min-w-[180px] border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={units[0]?.modelGuid || ""}
+                      onChange={(e) => updateNonSerializedModel(itemKey, e.target.value)}
+                    >
+                      <option value="">Select Model</option>
+                      {allPickableModels.map((m) => (
+                        <option key={m.id || m.guid} value={m.id || m.guid}>{m.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      value={units.length}
+                      onChange={(e) => updateNonSerializedQty(itemKey, parseInt(e.target.value, 10) || 1)}
+                      className="w-20 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                      title="Quantity"
+                    />
                     {(() => {
-                      const stock = getAvailableStock(units[0].modelGuid);
+                      const stock = getAvailableStock(units[0]?.modelGuid);
                       const insufficient = stock !== null && stock < units.length;
                       return (
                         <div className={`inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg px-3 py-2 border ${
                           insufficient ? "text-red-700 bg-red-50 border-red-200" : "text-amber-700 bg-amber-50 border-amber-200"
                         }`}>
-                          <Box size={13} /> Non-Serialized — Qty {units.length}
+                          <Box size={13} /> Non-Serialized
                           {stock !== null && (
                             <span className="opacity-80">
                               {insufficient ? ` — only ${stock} in stock` : ` (${stock} in stock)`}
@@ -287,36 +349,42 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {units.map((unit, idx) => {
-                      const resolvedModel = getModel(unit.modelGuid);
-                      const modelName = resolvedModel?.name;
-                      return (
-                        <div key={idx} className="grid grid-cols-2 gap-3">
-                          {unit.modelGuid && resolvedModel ? (
-                            <div className="border border-slate-200 bg-slate-50 rounded-lg px-3 py-2 text-sm text-slate-600 flex items-center truncate" title={modelName}>
-                              {modelName || "Model"}
-                            </div>
-                          ) : (
-                            <select
-                              className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                              value={unit.modelGuid}
-                              onChange={(e) => updateUnit(itemKey, idx, "modelGuid", e.target.value)}
-                            >
-                              <option value="">Select Model</option>
-                              {allPickableModels.map((m) => (
-                                <option key={m.id || m.guid} value={m.id || m.guid}>{m.name}</option>
-                              ))}
-                            </select>
-                          )}
-                          <SerialSearchSelect
-                            value={unit.serialGuid}
-                            disabled={!unit.modelGuid}
-                            options={availableSerialsByModel(unit.modelGuid, unit.serialGuid)}
-                            onChange={(serialGuid) => updateUnit(itemKey, idx, "serialGuid", serialGuid)}
-                          />
-                        </div>
-                      );
-                    })}
+                    {units.map((unit, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-3">
+                        <select
+                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                          value={unit.modelGuid}
+                          onChange={(e) => updateUnit(itemKey, idx, "modelGuid", e.target.value)}
+                        >
+                          <option value="">Select Model</option>
+                          {allPickableModels.map((m) => (
+                            <option key={m.id || m.guid} value={m.id || m.guid}>{m.name}</option>
+                          ))}
+                        </select>
+                        <SerialSearchSelect
+                          value={unit.serialGuid}
+                          disabled={!unit.modelGuid}
+                          options={availableSerialsByModel(unit.modelGuid, unit.serialGuid)}
+                          onChange={(serialGuid) => updateUnit(itemKey, idx, "serialGuid", serialGuid)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeSerialUnit(itemKey, idx)}
+                          disabled={units.length <= 1}
+                          title="Remove this unit"
+                          className="text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed px-1"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => addSerialUnit(itemKey)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                    >
+                      <Plus size={14} /> Add unit
+                    </button>
                   </div>
                 )}
               </div>
@@ -332,7 +400,7 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
           </button>
           <button
             onClick={handleSubmit}
-            disabled={submitting || !isComplete}
+            disabled={submitting || catalogLoading || !isComplete}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {submitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}

@@ -4,7 +4,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, ApiError } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
-import { ensureCarePackColumn } from "@/lib/carePackMigration";
+import { ensureCarePackColumn, ensureCarePackPriceColumn } from "@/lib/carePackMigration";
 
 export const POST = withErrorHandling(async (request) => {
   const body = await parseJsonBody(request);
@@ -12,6 +12,7 @@ export const POST = withErrorHandling(async (request) => {
   authorizeInventory(user, "POST");
   requireAuth(user);
   await ensureCarePackColumn();
+  await ensureCarePackPriceColumn();
 
   const { stockInDetailId, itemVariantId, serialNumbers } = body;
 
@@ -20,9 +21,9 @@ export const POST = withErrorHandling(async (request) => {
   }
 
   // Each entry is either a plain string (no Care Pack) or {serialNumber,
-  // carePack} — supporting both keeps this route backward-compatible with
-  // any other caller still sending the old array-of-strings shape.
-  const entries = serialNumbers.map((sn) => (typeof sn === "string" ? { serialNumber: sn, carePack: null } : sn));
+  // carePack, carePackPrice} — supporting both keeps this route backward-
+  // compatible with any other caller still sending the old array-of-strings shape.
+  const entries = serialNumbers.map((sn) => (typeof sn === "string" ? { serialNumber: sn, carePack: null, carePackPrice: null } : sn));
   const serialValues = entries.map((e) => e.serialNumber);
 
   const dedupedInput = new Set(serialValues);
@@ -44,9 +45,9 @@ export const POST = withErrorHandling(async (request) => {
       );
       if (dupRows.length > 0) throw new Error(`Serial Number ${dupRows[0].serialNumber} already exists`);
 
-      const values = entries.map((e) => [uuidv4(), stockInDetailId, itemVariantId || null, e.serialNumber, user.companyId, e.carePack || null]);
+      const values = entries.map((e) => [uuidv4(), stockInDetailId, itemVariantId || null, e.serialNumber, user.companyId, e.carePack || null, e.carePackPrice != null && e.carePackPrice !== "" ? Number(e.carePackPrice) : null]);
       await connection.query(
-        "INSERT INTO inventorystockinserial (serialId, stockInDetailId, itemVariantId, serialNumber, companyGuid, carePack) VALUES ?",
+        "INSERT INTO inventorystockinserial (serialId, stockInDetailId, itemVariantId, serialNumber, companyGuid, carePack, carePackPrice) VALUES ?",
         [values]
       );
       await connection.commit();

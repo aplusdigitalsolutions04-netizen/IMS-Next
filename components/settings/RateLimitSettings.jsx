@@ -10,12 +10,15 @@ const msToLabel = (ms) => {
   return `${Math.round(ms / 1000)} second(s)`;
 };
 
+const PAGE_SIZE = 10;
+
 export default function RateLimitSettings() {
   const [rules, setRules] = useState([]);
   const [buckets, setBuckets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [drafts, setDrafts] = useState({}); // guid -> { windowMs, maxRequests }
   const [savingId, setSavingId] = useState(null);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     try {
@@ -76,6 +79,10 @@ export default function RateLimitSettings() {
       Swal.fire("Error", "Failed to reset counter", "error");
     }
   };
+
+  const totalPages = Math.max(1, Math.ceil(buckets.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedBuckets = buckets.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   if (loading) {
     return (
@@ -157,6 +164,7 @@ export default function RateLimitSettings() {
         <table className="w-full text-xs text-left">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
+              <th className="px-4 py-2.5 font-bold text-slate-500 uppercase w-10">#</th>
               <th className="px-4 py-2.5 font-bold text-slate-500 uppercase">IP Address</th>
               <th className="px-4 py-2.5 font-bold text-slate-500 uppercase">Rule</th>
               <th className="px-4 py-2.5 font-bold text-slate-500 uppercase">Tried Username(s)</th>
@@ -168,14 +176,15 @@ export default function RateLimitSettings() {
           <tbody className="divide-y divide-slate-100">
             {buckets.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">No active request tracking right now.</td>
+                <td colSpan={7} className="px-4 py-8 text-center text-slate-400">No active request tracking right now.</td>
               </tr>
             ) : (
-              buckets.map((b) => {
+              pagedBuckets.map((b, idx) => {
                 const rule = rules.find((r) => r.ruleKey === b.ruleKey);
                 const isOverLimit = rule && b.count > rule.maxRequests;
                 return (
                   <tr key={`${b.ruleKey}-${b.ip}`} className={isOverLimit ? "bg-red-50" : "hover:bg-slate-50"}>
+                    <td className="px-4 py-2.5 text-slate-400">{(safePage - 1) * PAGE_SIZE + idx + 1}</td>
                     <td className="px-4 py-2.5 font-mono text-slate-700">{b.ip}</td>
                     <td className="px-4 py-2.5 text-slate-600 capitalize">{b.ruleKey}</td>
                     <td className="px-4 py-2.5 text-slate-600">
@@ -205,6 +214,17 @@ export default function RateLimitSettings() {
           </tbody>
         </table>
       </div>
+
+      {buckets.length > 0 && (
+        <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
+          <span>Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, buckets.length)} of {buckets.length}</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1} className="px-3 py-1.5 font-bold rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">Prev</button>
+            <span className="font-bold text-slate-600">Page {safePage} of {totalPages}</span>
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages} className="px-3 py-1.5 font-bold rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">Next</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

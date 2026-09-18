@@ -116,7 +116,13 @@ export default function SidePanel({
                     <div className="border border-slate-200/80 rounded-2xl bg-slate-50/80 max-h-[480px] overflow-y-auto shadow-inner">
                       <div className="divide-y divide-slate-200/80">
                         {selectedPanelSerials.map((serial) => {
-                          const model = models.find((m) => String(m.id) === String(serial.modelGuid));
+                          // /api/serials never actually returns a `modelGuid`
+                          // field (only `modelId`/`itemVariantId`), so
+                          // matching on modelGuid alone always misses and
+                          // both badges below fall back to "Unknown" — same
+                          // fallback NewDispatch.jsx's own filter already
+                          // uses for this exact serial shape.
+                          const model = models.find((m) => String(m.id) === String(serial.modelGuid) || String(m.id) === String(serial.itemVariantId));
                           const serialDisplay = getSerialValue(serial);
                           const isAlreadyAdded = batchList.some((b) => String(b.serialId) === String(serial.guid));
 

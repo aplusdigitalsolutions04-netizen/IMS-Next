@@ -21,7 +21,7 @@ export default function GlobalSearchModal({ showFinancials }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
         <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 p-4 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
 
@@ -36,7 +36,7 @@ export default function GlobalSearchModal({ showFinancials }) {
           </div>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-3">
           <div className="flex justify-center">
             <span
               className={`px-4 py-1.5 rounded-full text-xs font-bold shadow-sm flex items-center gap-1.5 ${
@@ -54,32 +54,44 @@ export default function GlobalSearchModal({ showFinancials }) {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
+          <div className={`grid gap-2 ${searchResult.vendor ? "grid-cols-3" : "grid-cols-2"}`}>
+            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center">
               <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Model</p>
-              <p className="text-sm font-bold text-slate-700 truncate" title={searchResult.model}>
+              <p className="text-xs font-bold text-slate-700 truncate" title={searchResult.model}>
                 {searchResult.model}
               </p>
             </div>
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
+            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center">
               <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Company</p>
-              <p className="text-sm font-bold text-slate-700">{searchResult.company}</p>
+              <p className="text-xs font-bold text-slate-700 truncate">{searchResult.company}</p>
             </div>
+            {searchResult.vendor && (
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center">
+                <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Vendor</p>
+                <p className="text-xs font-bold text-slate-700 truncate" title={searchResult.vendor}>
+                  {searchResult.vendor}
+                </p>
+              </div>
+            )}
           </div>
 
-          {searchResult.vendor && (
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
-              <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Vendor (Stock In)</p>
-              <p className="text-sm font-bold text-slate-700 truncate" title={searchResult.vendor}>
-                {searchResult.vendor}
-              </p>
-            </div>
-          )}
-
-          {showFinancials && (
-            <div className="bg-gradient-to-br from-emerald-50 to-green-50 p-3 rounded-xl border border-emerald-200 text-center">
-              <p className="text-[9px] text-emerald-500 uppercase font-bold tracking-wider mb-0.5">Landing Price</p>
-              <p className="text-xl font-extrabold text-emerald-700">₹{searchResult.landingPrice?.toLocaleString("en-IN") || 0}</p>
+          {(searchResult.carePack || showFinancials) && (
+            <div className={`grid gap-2 ${searchResult.carePack && showFinancials ? "grid-cols-2" : "grid-cols-1"}`}>
+              {searchResult.carePack && (
+                <div className="bg-violet-50 p-3 rounded-xl border border-violet-200 text-center">
+                  <p className="text-[9px] text-violet-500 uppercase font-bold tracking-wider mb-0.5">Care Pack</p>
+                  <p className="text-sm font-bold text-violet-700">
+                    {searchResult.carePack}
+                    {showFinancials && searchResult.carePackPrice ? ` — ₹${Number(searchResult.carePackPrice).toLocaleString("en-IN")}` : ""}
+                  </p>
+                </div>
+              )}
+              {showFinancials && (
+                <div className="bg-gradient-to-br from-emerald-50 to-green-50 p-3 rounded-xl border border-emerald-200 text-center">
+                  <p className="text-[9px] text-emerald-500 uppercase font-bold tracking-wider mb-0.5">Landing Price</p>
+                  <p className="text-lg font-extrabold text-emerald-700">₹{searchResult.landingPrice?.toLocaleString("en-IN") || 0}</p>
+                </div>
+              )}
             </div>
           )}
 

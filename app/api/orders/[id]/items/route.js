@@ -5,12 +5,15 @@ import { authenticateRequest, authorizeOrdersRequest, requireAuth, requireCompan
 import { mapDispatchRow, recordSerialMovement } from "@/lib/helpers";
 import { ORDER_SELECT } from "@/lib/ordersQuery";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { ensureCarePackColumn, ensureCarePackPriceColumn } from "@/lib/carePackMigration";
 
 export const POST = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   requireAuth(user);
   requireCompany(user);
   authorizeOrdersRequest(user, "POST", new URL(request.url).pathname, null);
+  await ensureCarePackColumn();
+  await ensureCarePackPriceColumn();
   const { id: orderGuid } = await params;
 
   const { newSerialId, sellingPrice, warranty, addedBy } = await parseJsonBody(request);

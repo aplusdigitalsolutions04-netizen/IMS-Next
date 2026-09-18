@@ -3,7 +3,7 @@ import {
   Wrench, AlertOctagon, Tags, Layers, History, FileText, Bell, Shield, Database,
   Ruler, ArrowDownCircle, ArrowUpCircle, Plus, Truck, Users,
   Building2, Globe, UploadCloud, Mail, Inbox, Send, ShieldAlert, DatabaseBackup,
-  ShieldHalf, HardDrive, Trash2, ArrowRightLeft, Briefcase, Sparkles,
+  ShieldHalf, HardDrive, Trash2, ArrowRightLeft, Briefcase, Sparkles, Hash, PackagePlus, RotateCcw,
 } from "lucide-react";
 
 // Having view access to a tab is enough to add/edit everything in it, except
@@ -17,6 +17,7 @@ const MASTER_EDIT_ENTRIES = [
   { key: "brand",    label: "Brand" },
   { key: "vendor",   label: "Vendor" },
   { key: "item",     label: "Item" },
+  { key: "variant",  label: "Variant" },
   { key: "combo",    label: "Combo" },
   { key: "unit",     label: "Unit" },
   { key: "mapping",  label: "Cate-Brand Mapping" },
@@ -88,6 +89,7 @@ export const PERMISSIONS_LIST = [
   { id: "rateLimitSettings",  label: "Rate Limiting",          icon: ShieldHalf },
   { id: "aiSettings",         label: "AI Settings",            icon: Sparkles },
   { id: "googleDrive",        label: "Google Drive",           icon: HardDrive },
+  { id: "deletedItems",       label: "Deleted Items",          icon: RotateCcw },
 ];
 
 export const PERMISSION_GROUPS = [
@@ -96,7 +98,7 @@ export const PERMISSION_GROUPS = [
   { name: "Inventory",        icon: History,      color: "sky",     permissions: ["print_models", "print_serials", "warranty", "stat_stock_in", "stat_current_stock", "fbfFbaManagement", "godownTransfer"] },
   { name: "Admin & Analytics",icon: BarChart3,    color: "emerald", permissions: ["dashboard", "notifications", "users", "roles", "userActivity", "reports", "contracts"] },
   { name: "Email",            icon: Mail,         color: "amber",   permissions: ["emailAccounts", "emailTemplates", "emailInbox", "sentEmails"] },
-  { name: "System Admin",     icon: ShieldAlert,  color: "rose",    permissions: ["apiLogs", "backupRestore", "rateLimitSettings", "aiSettings", "googleDrive"] },
+  { name: "System Admin",     icon: ShieldAlert,  color: "rose",    permissions: ["apiLogs", "backupRestore", "rateLimitSettings", "aiSettings", "googleDrive", "deletedItems"] },
 ];
 
 // Order Processing, Billing, and Dispatch are the only tabs where view
@@ -126,6 +128,15 @@ export const EDIT_PERMISSIONS = [
   { key: "allow_edit_order_processing", label: "Edit Orders",               icon: ShoppingCart, group: "Orders" },
   { key: "allow_edit_billing",          label: "Edit Billing",              icon: Receipt,      group: "Orders" },
   { key: "allow_edit_dispatch",         label: "Edit Dispatch",             icon: Truck,        group: "Orders" },
+  // Separate from the broad "Item Master" view permission (which already
+  // covers editing variants/specs) — these two specifically gate the two
+  // stock-adding actions inside a variant's row: registering serial numbers
+  // (serialized items) and booking plain quantity (non-serialized items).
+  // See app/Inventory/AddVariantSerial/route.js and
+  // app/Inventory/AddVariantStock/route.js.
+  { key: "allow_add_serial",              label: "Add Serial No. (Item Master)",       icon: Hash,        group: "Master Data" },
+  { key: "allow_add_nonserialized_stock", label: "Add Stock Qty (Item Master)",        icon: PackagePlus, group: "Master Data" },
+  { key: "allow_transfer_variant",        label: "Transfer Variant (Item Master)",     icon: ArrowRightLeft, group: "Master Data" },
   ...MASTER_EDIT_ENTRIES,
   ...FULL_CRUD_ENTRIES,
   ...ADMIN_ONLY_DELETE_ENTRIES,

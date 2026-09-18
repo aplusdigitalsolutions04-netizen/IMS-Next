@@ -8,6 +8,7 @@ const SOURCE_LABELS = {
   "parse-order": "Order AI Parse",
   "parse-file": "Order File AI Parse",
   "contracts-parse": "Contract AI Parse",
+  "orders-save-as-contract": "Save Order as Contract",
 };
 
 function buildWhere(searchParams) {
