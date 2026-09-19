@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany, authorizeMasterWrite, authorizeMasterDelete, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { ensureCarePackColumn } from "@/lib/carePackMigration";
 
 const CODE = "CARE_PACK";
 
@@ -54,6 +55,7 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
   const option = await findOwnedOption(guid);
   if (!option) throw new ApiError(404, "Care Pack option not found.");
 
+  await ensureCarePackColumn();
   const [[{ usageCount }]] = await mysqlPool.query(
     "SELECT COUNT(*) as usageCount FROM inventorystockinserial WHERE carePack = ?",
     [option.option_value]

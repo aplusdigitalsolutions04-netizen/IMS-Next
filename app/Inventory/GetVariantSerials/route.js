@@ -3,12 +3,15 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, requireCompany } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
+import { ensureCarePackColumn, ensureCarePackPriceColumn } from "@/lib/carePackMigration";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   authorizeInventory(user, "GET");
   requireAuth(user);
   requireCompany(user);
+  await ensureCarePackColumn();
+  await ensureCarePackPriceColumn();
 
   const { searchParams } = new URL(request.url);
   const itemVariantId = searchParams.get("itemVariantId");

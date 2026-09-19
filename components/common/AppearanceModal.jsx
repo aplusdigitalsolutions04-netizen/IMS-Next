@@ -341,7 +341,7 @@ export default function AppearanceModal({ isOpen, onClose, item, type, onUpdated
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Applied to this row (Adjust intensity for each):</p>
                 <div className="grid grid-cols-1 gap-3">
                   {selectedTags.filter(t => globalTags.some(gt => gt.tagName === t.tagName)).map((tag, idx) => {
-                    const [colorHex, defaultInt] = tag.tagColor.split("|");
+                    const [colorHex, defaultInt] = tag.tagColor ? tag.tagColor.split("|") : [];
                     const currentIntensity = tag.intensity || parseInt(defaultInt) || 15;
                     
                     return (

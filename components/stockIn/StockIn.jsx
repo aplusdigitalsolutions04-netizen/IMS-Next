@@ -219,7 +219,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
 
       const reportData = data.map(h => ({
         "Invoice No": h.invoiceNo,
-        "Date": h.invoiceDate.split("T")[0],
+        "Date": h.invoiceDate ? h.invoiceDate.split("T")[0] : "-",
         "Vendor": h.vendorFirmName || h.vendorName || "-",
         "Total Qty": h.totalQty || 0,
         "Total Amount": h.totalAmount || 0,
@@ -1575,7 +1575,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
                                </div>
                             </div>
                           </td>
-                          <td className="py-4 px-6 text-sm font-medium text-slate-600">{h.invoiceDate.split("T")[0]}</td>
+                          <td className="py-4 px-6 text-sm font-medium text-slate-600">{h.invoiceDate ? h.invoiceDate.split("T")[0] : "-"}</td>
                           <td className="py-4 px-6 text-sm font-bold text-indigo-700">{h.vendorFirmName || h.vendorName || "-"}</td>
                           <td className="py-4 px-6 text-sm font-medium text-slate-700">
                             {h.itemTypeCount > 1 ? (

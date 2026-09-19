@@ -1917,7 +1917,7 @@ export default function OrderTracking({
                   } catch (e) { validTags = []; }
 
                   let tagBgColor = undefined;
-                  if (validTags.length > 0) {
+                  if (validTags.length > 0 && validTags[0].tagColor) {
                     const [colorHex, tagInt] = validTags[0].tagColor.split("|");
                     const opacityPercent = validTags[0].intensity || parseInt(tagInt) || 15;
                     const opacityHex = Math.round(opacityPercent * 2.55).toString(16).padStart(2, '0');
