@@ -16,7 +16,7 @@ function SerialSearchSelect({ value, options, onChange, disabled }) {
   const [rect, setRect] = useState(null);
   const inputRef = useRef(null);
 
-  const selected = options.find((o) => String(o.id || o.guid) === String(value));
+  const selected = options.find((o) => sameId(o.id || o.guid, value));
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -105,6 +105,15 @@ function SerialSearchSelect({ value, options, onChange, disabled }) {
 // catalog's stockQuantity gets decremented instead — no serial ever needed.
 // This modal collects those selections and posts them to
 // /api/orders/draft/:orderId/confirm.
+// GUIDs reach this modal from several different sources (catalog list,
+// serials list, draft item prefill, saved reservations) that don't all
+// necessarily agree on casing for the same underlying value — a plain
+// String() equality check between two differently-cased copies of the exact
+// same guid silently fails even though they identify the same record, e.g.
+// showing a correctly-matched model with zero of its actual available
+// serials. Every id/guid comparison in this file goes through this instead.
+const sameId = (a, b) => !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase();
+
 export default function ConfirmDraftModal({ batch, orderId, models, serials, onClose, onConfirm, onSaveSelections }) {
   const items = batch?.items || [];
 
@@ -130,9 +139,9 @@ export default function ConfirmDraftModal({ batch, orderId, models, serials, onC
   }, []);
 
   const getModel = (modelGuid) => {
-    const fromModels = models.find((m) => String(m.id || m.guid) === String(modelGuid));
+    const fromModels = models.find((m) => sameId(m.id || m.guid, modelGuid));
     if (fromModels) return fromModels;
-    const fromCatalog = fullCatalog.find((v) => String(v.itemVariantId) === String(modelGuid));
+    const fromCatalog = fullCatalog.find((v) => sameId(v.itemVariantId, modelGuid));
     return fromCatalog ? { id: fromCatalog.itemVariantId, guid: fromCatalog.itemVariantId, name: fromCatalog.variantName, isSerialized: !!fromCatalog.isTrackable } : undefined;
   };
 
@@ -186,7 +195,7 @@ export default function ConfirmDraftModal({ batch, orderId, models, serials, onC
             if (!next[draftItemGuid] || units.length === 0) return;
             const sorted = [...units].sort((a, b) => a.unitIndex - b.unitIndex);
             next[draftItemGuid] = sorted.map((u) => {
-              if (u.serialGuid) mine.add(String(u.serialGuid));
+              if (u.serialGuid) mine.add(String(u.serialGuid).toLowerCase());
               return { modelGuid: u.modelGuid || "", serialGuid: u.serialGuid || "" };
             });
           });
@@ -206,17 +215,17 @@ export default function ConfirmDraftModal({ batch, orderId, models, serials, onC
   // re-open, since the "selected" serial isn't there to re-pick either).
   const availableSerialsByModel = useMemo(() => {
     const chosen = new Set();
-    Object.values(selections).forEach((units) => units.forEach((u) => u.serialGuid && chosen.add(u.serialGuid)));
+    Object.values(selections).forEach((units) => units.forEach((u) => u.serialGuid && chosen.add(String(u.serialGuid).toLowerCase())));
     return (modelGuid, ownSerialGuid) => serials.filter((s) => {
       const status = String(s.status || "").trim().toLowerCase();
       const serialModelId = s.modelId || s.modelGuid || s.itemVariantId;
-      const sId = String(s.id || s.guid);
-      const isOwn = ownSerialGuid && sId === String(ownSerialGuid);
+      const sId = String(s.id || s.guid).toLowerCase();
+      const isOwn = sameId(ownSerialGuid, s.id || s.guid);
       // A serial this same draft already reserved via a previous "Save" sits
       // at status 'Reserved' (not 'Available') everywhere else in the app —
       // still pickable here, since it's this draft's own reservation.
       const isAvailableToMe = status === "available" || (status === "reserved" && reservedSerialGuidsMine.has(sId));
-      return String(serialModelId) === String(modelGuid) && isAvailableToMe && (isOwn || !chosen.has(sId));
+      return sameId(serialModelId, modelGuid) && isAvailableToMe && (isOwn || !chosen.has(sId));
     });
   }, [serials, selections, reservedSerialGuidsMine]);
 
@@ -269,7 +278,7 @@ export default function ConfirmDraftModal({ batch, orderId, models, serials, onC
   // resolve model names, so this stays consistent with what the backend
   // will actually check on confirm (app/api/orders/draft/[orderId]/confirm/route.js).
   const getAvailableStock = (modelGuid) => {
-    const entry = fullCatalog.find((v) => String(v.itemVariantId) === String(modelGuid));
+    const entry = fullCatalog.find((v) => sameId(v.itemVariantId, modelGuid));
     return entry ? Number(entry.availablePCS) || 0 : null;
   };
 
@@ -354,7 +363,7 @@ export default function ConfirmDraftModal({ batch, orderId, models, serials, onC
       // background data refresh lands before this saves and shows them as
       // just 'Reserved' with no way to tell they're this draft's own.
       const freshlyReserved = new Set();
-      payload.forEach((entry) => entry.units.forEach((u) => u.serialGuid && freshlyReserved.add(String(u.serialGuid))));
+      payload.forEach((entry) => entry.units.forEach((u) => u.serialGuid && freshlyReserved.add(String(u.serialGuid).toLowerCase())));
       setReservedSerialGuidsMine(freshlyReserved);
     } catch (err) {
       setError(err?.response?.data?.message || err.message || "Failed to save selections.");
