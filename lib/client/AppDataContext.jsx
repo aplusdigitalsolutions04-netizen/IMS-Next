@@ -233,17 +233,48 @@ export function AppDataProvider({ children, currentUser }) {
     const lowerQuery = query.toLowerCase();
     let foundSerial = serials.find((s) => (s.serialNumber || "").toLowerCase() === lowerQuery);
 
+    // Order ID / GeM ID / warranty search — matched against every item on
+    // that order (not just the first one via .find()), since an order can
+    // have several dispatched items (see components/newDispatch/NewDispatch.jsx's
+    // "multiple"/"mixed" tabs) and can mix serialized items with
+    // non-serialized quantity lines that have no physical serial at all.
+    // Previously this only ever looked up ONE dispatch, then required a
+    // matching entry in `serials` to show anything — a non-serialized first
+    // item (no serialGuid) meant `foundSerial` never resolved and the whole
+    // search silently showed nothing, even though the order genuinely
+    // existed and the query obviously matched it.
     if (!foundSerial) {
-      const foundDispatch = dispatches.find((d) => d.customerName && d.customerName.toLowerCase() === lowerQuery);
-      if (foundDispatch) {
-        foundSerial = serials.find((s) => (s.guid || s.id) === (foundDispatch.serialGuid || foundDispatch.serialNumberId));
-      }
-    }
+      const orderDispatches = dispatches.filter(
+        (d) => !d.isDeleted && (
+          (d.customerName && d.customerName.toLowerCase() === lowerQuery) ||
+          (d.warranty && d.warranty.toLowerCase().includes(lowerQuery))
+        )
+      );
 
-    if (!foundSerial) {
-      const foundDispatch = dispatches.find((d) => d.warranty && d.warranty.toLowerCase().includes(lowerQuery));
-      if (foundDispatch) {
-        foundSerial = serials.find((s) => (s.guid || s.id) === (foundDispatch.serialGuid || foundDispatch.serialNumberId));
+      if (orderDispatches.length === 1) {
+        foundSerial = serials.find((s) => (s.guid || s.id) === (orderDispatches[0].serialGuid || orderDispatches[0].serialNumberId));
+      }
+
+      // Multiple items, or a single item with no serial to fall back to
+      // (non-serialized) — show an order-level summary instead of an
+      // incomplete/blank single-serial card.
+      if (orderDispatches.length > 1 || (orderDispatches.length === 1 && !foundSerial)) {
+        const first = orderDispatches[0];
+        setSearchResult({
+          type: "order",
+          orderId: first.customerName,
+          platform: first.firmName,
+          orderDate: first.dispatchDate || first.orderDate,
+          items: orderDispatches.map((d) => ({
+            serial: d.serialValue || null,
+            model: d.modelName || "Unknown",
+            company: d.companyName || "Unknown",
+            quantity: d.quantity || 1,
+            status: d.status,
+          })),
+        });
+        setShowSearchModal(true);
+        return;
       }
     }
 

@@ -814,9 +814,17 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
          await inventoryService.deleteSerialNumber(serialId);
        } catch(e) {
            console.error(e);
+           // The backend refuses to delete a serial that's no longer
+           // Available (e.g. already Dispatched against a real order) —
+           // that rejection has to stop this function here, or the row
+           // below still gets spliced out of the popup and the line's qty
+           // still gets decremented, silently desyncing the Stock-In draft
+           // from a serial that's actually still there.
+           Swal.fire("Can't Remove", e?.response?.data?.message || "Failed to remove this serial.", "error");
+           return;
        }
      }
-     
+
      const newList = [...serialNumbersToSave];
      newList.splice(localIndex, 1);
      setSerialNumbersToSave(newList);

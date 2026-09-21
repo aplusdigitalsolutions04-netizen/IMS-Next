@@ -19,6 +19,82 @@ export default function GlobalSearchModal({ showFinancials }) {
     router.push(`/orderTracking?focus=${encodeURIComponent(String(orderId).trim())}`);
   };
 
+  // A search that matched an order with several items (or a single
+  // non-serialized item, which has no physical serial to build the usual
+  // single-serial card around) — see AppDataContext.jsx's search effect —
+  // gets its own summary view instead of the per-serial layout below.
+  if (searchResult.type === "order") {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+          <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 p-4 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+            <div className="relative flex justify-between items-start">
+              <div>
+                <p className="text-[10px] font-semibold text-indigo-200 uppercase tracking-wider mb-0.5">Order ID</p>
+                <h3 className="text-lg font-extrabold text-white tracking-wide">#{searchResult.orderId}</h3>
+              </div>
+              <button onClick={clearGlobalSearch} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors">
+                <X size={16} className="text-white" />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center">
+                <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Platform</p>
+                <p className="text-xs font-bold text-slate-700 truncate">{searchResult.platform || "Unknown"}</p>
+              </div>
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center">
+                <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Date</p>
+                <p className="text-xs font-bold text-slate-700 truncate">
+                  {searchResult.orderDate ? format(new Date(searchResult.orderDate), "dd MMM yyyy") : "—"}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 rounded-xl border border-blue-200 overflow-hidden">
+              <h4 className="text-[10px] font-bold text-blue-600 uppercase px-4 pt-3 pb-1 flex items-center gap-1.5">
+                <Truck size={14} /> {searchResult.items.length} Item{searchResult.items.length === 1 ? "" : "s"} In This Order
+              </h4>
+              <div className="divide-y divide-blue-100">
+                {searchResult.items.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between px-4 py-2 text-xs">
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-700 truncate">{item.model}</p>
+                      <p className="text-slate-400 truncate">{item.company}</p>
+                    </div>
+                    <div className="text-right shrink-0 pl-3">
+                      <p className="font-mono font-semibold text-slate-600">{item.serial ? `#${item.serial}` : `Qty: ${item.quantity}`}</p>
+                      <p className="text-[10px] text-blue-500 font-bold">{item.status}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={() => onOpenOrderDetails(searchResult.orderId)}
+              className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-bold rounded-xl shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            >
+              <Truck size={16} /> View Full Order
+            </button>
+          </div>
+
+          <div className="p-4 bg-slate-50 border-t">
+            <button
+              onClick={clearGlobalSearch}
+              className="w-full py-2.5 bg-gradient-to-r from-slate-800 to-slate-900 text-white text-sm font-bold rounded-xl hover:from-slate-700 hover:to-slate-800 transition-all shadow-lg active:scale-[0.98]"
+            >
+              Close Details
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
