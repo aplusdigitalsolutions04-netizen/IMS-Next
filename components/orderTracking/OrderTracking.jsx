@@ -107,6 +107,17 @@ export default function OrderTracking({
     if (onRefresh) await onRefresh();
     showToast("Order confirmed and moved to active orders.", "success");
   };
+
+  // Saves the model/serial picks on a still-open Draft WITHOUT confirming it
+  // — lets serials be reserved incrementally across multiple visits instead
+  // of requiring every item to be ready in one sitting (see
+  // ConfirmDraftModal.jsx's "Save" button and
+  // app/api/orders/draft/[orderId]/reservations/route.js).
+  const handleSaveDraftSelections = async (payload) => {
+    const orderGuid = confirmDraftBatch.items[0]?._orderId || confirmDraftBatch.items[0]?.orderId || confirmDraftBatch.id;
+    await ordersService.saveDraftSelections(orderGuid, payload);
+    showToast("Selections saved — order stays in Draft until you confirm.", "success");
+  };
   const [statusFilter, setStatusFilter] = useState("All");
   const [platformOptions, setPlatformOptions] = useState([]);
   useEffect(() => {
@@ -2393,10 +2404,12 @@ export default function OrderTracking({
       {confirmDraftBatch && (
         <ConfirmDraftModal
           batch={confirmDraftBatch}
+          orderId={confirmDraftBatch.items[0]?._orderId || confirmDraftBatch.items[0]?.orderId || confirmDraftBatch.id}
           models={localModels}
           serials={localSerials}
           onClose={() => setConfirmDraftBatch(null)}
           onConfirm={handleConfirmDraft}
+          onSaveSelections={handleSaveDraftSelections}
         />
       )}
     </div>

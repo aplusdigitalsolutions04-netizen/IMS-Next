@@ -881,8 +881,8 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
         {showingCancelled ? "Cancelled Contracts" : "Saved Contracts"} ({visibleContracts.length})
       </h2>
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 mb-4">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             value={searchTerm}

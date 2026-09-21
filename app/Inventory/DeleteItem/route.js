@@ -29,6 +29,21 @@ export const POST = withErrorHandling(async (request) => {
     throw new ApiError(400, `Can't delete — variants under this item appear in ${usage.cnt} order(s)' history. Deleting it would make their Model/Company go blank everywhere. Remove/transfer those variants first if it's genuinely unused.`);
   }
 
+  // A variant left behind under a deleted item becomes just as orphaned as
+  // one with order history (its own Model/Company resolution breaks the
+  // same way) — the difference is this one has no order history to warn
+  // about yet, so it'd fail completely silently instead. Deleting the item
+  // never cascades to its variants (Item Master's own Delete only removes
+  // variants one at a time via DeleteItemVariant), so any that are still
+  // here need to be moved (Transfer Variant) or deleted first.
+  const [[remaining]] = await mysqlPool.query(
+    "SELECT COUNT(*) as cnt FROM inventoryitemvariant WHERE itemId = ? AND companyGuid = ? AND isDeleted = 0",
+    [body.itemId, user.companyId]
+  );
+  if (remaining.cnt > 0) {
+    throw new ApiError(400, `Can't delete — this item still has ${remaining.cnt} variant(s) under it. Transfer or delete them first.`);
+  }
+
   await mysqlPool.execute(
     "UPDATE inventoryitemmaster SET isDeleted = 1, deletedBy = ?, deletedAt = NOW(), deleteRemarks = ? WHERE itemId = ? AND companyGuid = ?",
     [user.username || user.fullName || "Unknown", remarks, body.itemId, user.companyId]

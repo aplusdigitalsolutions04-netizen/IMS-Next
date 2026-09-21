@@ -1,8 +1,9 @@
 "use client";
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, CheckCircle2, Loader2, Search, ChevronDown, Box, Plus, Trash2 } from "lucide-react";
+import { X, CheckCircle2, Loader2, Save, Search, ChevronDown, Box, Plus, Trash2 } from "lucide-react";
 import { inventoryService } from "@/lib/services/inventoryService";
+import { ordersService } from "@/lib/services/ordersService";
 
 // Searchable serial-number picker — a plain text input that filters the
 // available-serials list as you type, with a dropdown to click a match.
@@ -104,7 +105,7 @@ function SerialSearchSelect({ value, options, onChange, disabled }) {
 // catalog's stockQuantity gets decremented instead — no serial ever needed.
 // This modal collects those selections and posts them to
 // /api/orders/draft/:orderId/confirm.
-export default function ConfirmDraftModal({ batch, models, serials, onClose, onConfirm }) {
+export default function ConfirmDraftModal({ batch, orderId, models, serials, onClose, onConfirm, onSaveSelections }) {
   const items = batch?.items || [];
 
   // `models` (from GET /api/models) only ever contains serialized/trackable
@@ -164,7 +165,38 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
     return initial;
   });
   const [submitting, setSubmitting] = useState(false);
+  const [savingSelections, setSavingSelections] = useState(false);
   const [error, setError] = useState("");
+
+  // Picks made on an earlier visit via "Save" (see handleSave below) —
+  // reserved serials sit at serialStatus='Reserved', not 'Available', so
+  // they need to be re-merged into this draft's own picker options (below)
+  // instead of just vanishing because they're no longer technically
+  // "available" to anyone else.
+  const [loadingReservations, setLoadingReservations] = useState(!!orderId);
+  const [reservedSerialGuidsMine, setReservedSerialGuidsMine] = useState(new Set());
+  useEffect(() => {
+    if (!orderId) return;
+    ordersService.getDraftSelections(orderId)
+      .then((byItem) => {
+        const mine = new Set();
+        setSelections((prev) => {
+          const next = { ...prev };
+          Object.entries(byItem).forEach(([draftItemGuid, units]) => {
+            if (!next[draftItemGuid] || units.length === 0) return;
+            const sorted = [...units].sort((a, b) => a.unitIndex - b.unitIndex);
+            next[draftItemGuid] = sorted.map((u) => {
+              if (u.serialGuid) mine.add(String(u.serialGuid));
+              return { modelGuid: u.modelGuid || "", serialGuid: u.serialGuid || "" };
+            });
+          });
+          return next;
+        });
+        setReservedSerialGuidsMine(mine);
+      })
+      .catch((err) => console.error("Failed to load saved selections:", err.message))
+      .finally(() => setLoadingReservations(false));
+  }, [orderId]);
 
   // `chosen` excludes serials already picked by OTHER unit slots (so the
   // same serial can't be double-assigned) — but a slot's *own* already-
@@ -180,9 +212,13 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
       const serialModelId = s.modelId || s.modelGuid || s.itemVariantId;
       const sId = String(s.id || s.guid);
       const isOwn = ownSerialGuid && sId === String(ownSerialGuid);
-      return String(serialModelId) === String(modelGuid) && status === "available" && (isOwn || !chosen.has(sId));
+      // A serial this same draft already reserved via a previous "Save" sits
+      // at status 'Reserved' (not 'Available') everywhere else in the app —
+      // still pickable here, since it's this draft's own reservation.
+      const isAvailableToMe = status === "available" || (status === "reserved" && reservedSerialGuidsMine.has(sId));
+      return String(serialModelId) === String(modelGuid) && isAvailableToMe && (isOwn || !chosen.has(sId));
     });
-  }, [serials, selections]);
+  }, [serials, selections, reservedSerialGuidsMine]);
 
   const updateUnit = (itemKey, index, field, value) => {
     setSelections((prev) => {
@@ -279,6 +315,54 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
     }
   };
 
+  // Persists whatever's picked so far without confirming — unlike Confirm,
+  // this is allowed to be partial (no isComplete gate): a serialized item
+  // only reserves the unit slots that already have both a model AND a
+  // serial picked, so a still-empty slot just doesn't get saved instead of
+  // blocking the save for every other item that IS ready.
+  const handleSave = async () => {
+    setError("");
+    // Every item is sent, even ones with no picks yet — the backend releases
+    // whatever a draft item had reserved before re-saving its (possibly now
+    // empty) picks, so a cleared-out item's old reservation actually gets
+    // freed instead of lingering forever because it got filtered out here.
+    const payload = items.map((item) => {
+      const itemKey = item.id || item.guid;
+      const units = selections[itemKey] || [];
+      const modelGuid = units[0]?.modelGuid;
+      const nonSerialized = modelGuid && isNonSerializedModel(modelGuid);
+      return {
+        draftItemGuid: itemKey,
+        units: nonSerialized
+          ? (modelGuid ? [{ modelGuid, quantity: units.length }] : [])
+          : units.filter((u) => u.modelGuid && u.serialGuid).map((u) => ({ modelGuid: u.modelGuid, serialGuid: u.serialGuid })),
+      };
+    });
+
+    const hasAnyPick = payload.some((entry) => entry.units.length > 0);
+    if (!hasAnyPick && reservedSerialGuidsMine.size === 0) {
+      setError("Pick at least one model (and serial number, for serialized models) before saving.");
+      return;
+    }
+
+    setSavingSelections(true);
+    try {
+      await onSaveSelections(payload);
+      // Reflect the save immediately, replacing the previously-loaded set —
+      // these picked serials are this draft's own reservation now (status
+      // 'Reserved' server-side) and must stay selectable here even if a
+      // background data refresh lands before this saves and shows them as
+      // just 'Reserved' with no way to tell they're this draft's own.
+      const freshlyReserved = new Set();
+      payload.forEach((entry) => entry.units.forEach((u) => u.serialGuid && freshlyReserved.add(String(u.serialGuid))));
+      setReservedSerialGuidsMine(freshlyReserved);
+    } catch (err) {
+      setError(err?.response?.data?.message || err.message || "Failed to save selections.");
+    } finally {
+      setSavingSelections(false);
+    }
+  };
+
   if (!batch) return null;
 
   return (
@@ -295,10 +379,10 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
           <p className="text-sm text-slate-500">
-            Confirm the model for each item. Serialized models need a serial number picked per unit; non-serialized models (stationery/consumables) just need the model confirmed — stock is deducted automatically. This order will move to Active once confirmed.
+            Pick a model (and serial number, for serialized items) per unit. Not ready to confirm yet? Use <span className="font-semibold text-indigo-600">Save (Keep as Draft)</span> — your picks are kept and the serials reserved, but the order stays in Draft until you hit Confirm.
           </p>
 
-          {catalogLoading ? (
+          {catalogLoading || loadingReservations ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
               <Loader2 size={16} className="animate-spin" /> Loading item catalog…
             </div>
@@ -350,9 +434,9 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
                 ) : (
                   <div className="space-y-3">
                     {units.map((unit, idx) => (
-                      <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-3">
+                      <div key={idx} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3">
                         <select
-                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                           value={unit.modelGuid}
                           onChange={(e) => updateUnit(itemKey, idx, "modelGuid", e.target.value)}
                         >
@@ -398,9 +482,20 @@ export default function ConfirmDraftModal({ batch, models, serials, onClose, onC
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100">
             Cancel
           </button>
+          {onSaveSelections && (
+            <button
+              onClick={handleSave}
+              disabled={submitting || savingSelections || catalogLoading || loadingReservations}
+              title="Save these picks without confirming — the order stays in Draft, and picked serials are reserved so no other order can take them"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border border-indigo-200 text-indigo-600 hover:bg-indigo-50 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {savingSelections ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {savingSelections ? "Saving..." : "Save (Keep as Draft)"}
+            </button>
+          )}
           <button
             onClick={handleSubmit}
-            disabled={submitting || catalogLoading || !isComplete}
+            disabled={submitting || savingSelections || catalogLoading || !isComplete}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {submitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}

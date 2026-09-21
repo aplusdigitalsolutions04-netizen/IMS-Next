@@ -5,6 +5,7 @@ import { authenticateRequest, authorizeOrdersRequest, requireCompany, ApiError }
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { consumeNonSerializedBatch } from "@/lib/nonSerializedBatchHelpers";
+import { ensureDraftReservationsTable } from "@/lib/draftReservationMigration";
 
 // Converts a Draft order into a real active order. Each draft order_item
 // (which has no serialNumberGuid/modelGuid yet, just a quantity) is
@@ -40,6 +41,22 @@ export const POST = withErrorHandling(async (request, { params }) => {
     if (!orderRows.length) {
       throw new ApiError(404, "Draft order not found.");
     }
+
+    // Serials this same draft already reserved via "Save" (see
+    // app/api/orders/draft/[orderId]/reservations/route.js) sit at
+    // serialStatus='Reserved', not 'Available' — the per-item check below
+    // needs to recognize those as pickable for THIS confirm (they're this
+    // order's own reservation, not someone else's), while still rejecting
+    // any other Reserved serial that isn't.
+    await ensureDraftReservationsTable();
+    const [ownReservationRows] = await conn.query(
+      `SELECT r.serialGuid FROM order_draft_reservations r
+       JOIN order_items oi ON r.draftItemGuid = oi.guid
+       WHERE oi.orderGuid = ? AND r.companyGuid = ? AND r.serialGuid IS NOT NULL`,
+      [orderId, user.companyId]
+    );
+    const ownReservedSerialGuids = new Set(ownReservationRows.map((r) => String(r.serialGuid)));
+    const confirmedSerialGuids = new Set();
 
     for (const item of items) {
       const { draftItemGuid, modelGuid, serialGuids, nonSerialized, quantity: requestedQuantity } = item;
@@ -125,12 +142,16 @@ export const POST = withErrorHandling(async (request, { params }) => {
           [serialGuid, user.companyId]
         );
         if (!serialRows.length) throw new ApiError(404, `Serial ${serialGuid} not found.`);
-        if (serialRows[0].status !== "Available") throw new ApiError(400, `Serial ${serialRows[0].value} is not available.`);
+        const isOwnReservation = serialRows[0].status === "Reserved" && ownReservedSerialGuids.has(String(serialGuid));
+        if (serialRows[0].status !== "Available" && !isOwnReservation) {
+          throw new ApiError(400, `Serial ${serialRows[0].value} is not available.`);
+        }
         if (String(serialRows[0].itemVariantId) !== String(resolvedItemVariantId)) {
           throw new ApiError(400, `Serial ${serialRows[0].value} does not belong to the selected model.`);
         }
 
         await conn.query("UPDATE inventorystockinserial SET serialStatus = 'Dispatched' WHERE guid = ? AND companyGuid = ?", [serialGuid, user.companyId]);
+        confirmedSerialGuids.add(String(serialGuid));
 
         const newItemGuid = randomUUID();
         await conn.query(
@@ -149,6 +170,27 @@ export const POST = withErrorHandling(async (request, { params }) => {
       }
 
       await conn.query("DELETE FROM order_items WHERE guid = ? AND companyGuid = ?", [draftItemGuid, user.companyId]);
+    }
+
+    // Any of this draft's own reservations that didn't end up part of this
+    // confirm (a unit removed, or swapped for a different serial, since the
+    // last "Save") are still sitting at serialStatus='Reserved' — release
+    // those back to Available rather than leaving them stuck forever, then
+    // drop the now-irrelevant reservation rows (their draftItemGuid rows
+    // were just deleted above anyway).
+    for (const serialGuid of ownReservedSerialGuids) {
+      if (confirmedSerialGuids.has(serialGuid)) continue;
+      await conn.query(
+        "UPDATE inventorystockinserial SET serialStatus = 'Available' WHERE guid = ? AND companyGuid = ? AND serialStatus = 'Reserved'",
+        [serialGuid, user.companyId]
+      );
+    }
+    const draftItemGuids = items.map((i) => i.draftItemGuid).filter(Boolean);
+    if (draftItemGuids.length > 0) {
+      await conn.query(
+        `DELETE FROM order_draft_reservations WHERE companyGuid = ? AND draftItemGuid IN (${draftItemGuids.map(() => "?").join(",")})`,
+        [user.companyId, ...draftItemGuids]
+      );
     }
 
     // 'Order Confirmed' — not 'Pending' — is the status every other order
