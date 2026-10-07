@@ -21,8 +21,12 @@ export const POST = withErrorHandling(async (request) => {
   try {
     await connection.beginTransaction();
     if (detailRows.length > 0) {
+      // A stock-in can only be deleted once it is NOT finalized, so none of its serials may be live stock any more.
+      // Serials staged by a revert have no status/guid; serials left over from OLDER reverts (before revert cleared
+      // them) are still marked 'Available' — those kept counting in Current Stock after the stock-in was deleted,
+      // with no stock-in left to show their serial numbers. Delete those too (never ones already sold/dispatched).
       await connection.query(
-        "UPDATE inventorystockinserial SET isDeleted = 1, deletedBy = ?, deletedAt = NOW() WHERE stockInDetailId IN (?) AND isDeleted = 0 AND (serialStatus IS NULL OR guid IS NULL)",
+        "UPDATE inventorystockinserial SET isDeleted = 1, deletedBy = ?, deletedAt = NOW() WHERE stockInDetailId IN (?) AND isDeleted = 0 AND (serialStatus IS NULL OR guid IS NULL OR serialStatus = 'Available')",
         [user.username || user.fullName || "Unknown", detailRows.map((d) => d.stockInDetailId)]
       );
     }

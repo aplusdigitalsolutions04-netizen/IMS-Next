@@ -51,6 +51,15 @@ export const GET = withErrorHandling(async (request, { params }) => {
   order.allSerials = allSerialRows.map((r) => r.serialNumber).join(", ");
   order.serialCount = allSerialRows.length || order.quantity || 1;
 
+  // {{AMOUNT}} is the WHOLE order's amount. sellingPrice is a per-unit price, so every line is price x quantity
+  // (plus a flat Care Pack upgrade, if any) — same rule as the "Order Value" shown in Order Processing. The query
+  // above only returns the first item, which used to make {{AMOUNT}} the single-unit price.
+  const [[orderSum]] = await mysqlPool.query(
+    "SELECT SUM(COALESCE(sellingPrice, 0) * COALESCE(NULLIF(quantity, 0), 1) + COALESCE(carePackUpgradePrice, 0)) AS total FROM order_items WHERE orderGuid = ? AND companyGuid = ?",
+    [orderGuid, user.companyId]
+  );
+  order.orderTotal = orderSum?.total ?? null;
+
   const [tplRows] = await mysqlPool.query("SELECT * FROM warranty_template WHERE companyGuid=? LIMIT 1", [user.companyId]);
   const defaultTemplate = tplRows[0] || {};
 
@@ -127,7 +136,9 @@ export const GET = withErrorHandling(async (request, { params }) => {
     // different name so those templates fill in too, not just warranty ones.
     "{{ORDER_ID}}": String(order.orderNumber || ""),
     "{{PRODUCT_NAME}}": order.modelName || "",
-    "{{AMOUNT}}": order.sellingPrice != null ? Number(order.sellingPrice).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "",
+    "{{AMOUNT}}": (order.orderTotal ?? order.sellingPrice) != null ? Number(order.orderTotal ?? order.sellingPrice).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "",
+    // price of ONE unit (the old meaning of {{AMOUNT}})
+    "{{UNIT_PRICE}}": order.sellingPrice != null ? Number(order.sellingPrice).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "",
 
     // The rest of what the order's own detail view shows, not just the
     // warranty-certificate subset above — requested so any template can
