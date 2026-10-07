@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest, requireAuth } from "@/lib/auth";
+import { authenticateRequest, requireShippingAccess } from "@/lib/auth";
 import { getConfig, delhiveryRequest } from "@/lib/delhivery";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 // Expects: { pickupDate: 'YYYY-MM-DD', pickupTime: 'HH:mm:ss', packageCount, expectedPackageCount? }
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireAuth(user);
+  requireShippingAccess(user);
 
   const config = getConfig();
   if (!config.pickupLocation) {

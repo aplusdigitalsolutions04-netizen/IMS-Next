@@ -238,7 +238,7 @@ export default function GoogleDriveSettings() {
                 <p className="text-red-600 font-medium">{reorgResult.error}</p>
               ) : (
                 <>
-                  <p className="text-emerald-700 font-bold">Moved into "{reorgResult.companyName}":</p>
+                  <p className="text-emerald-700 font-bold">Moved into &quot;{reorgResult.companyName}&quot;:</p>
                   <ul className="mt-1 space-y-0.5">
                     {reorgResult.results?.map((r) => (
                       <li key={r.folder} className="text-emerald-600">

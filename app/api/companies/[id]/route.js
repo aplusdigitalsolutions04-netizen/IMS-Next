@@ -4,14 +4,16 @@ import { authenticateRequest, authorizeMasterWrite, authorizeMasterDelete, ApiEr
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { ensureCompanyAdditionalGstColumn } from "@/lib/companiesMigration";
 import { normGstin } from "@/lib/companyMatch";
+import { ensureCompanyDueBillColumn } from "@/lib/stockInDueMigration";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   authorizeMasterWrite(user, "companyMaster", { isCreate: false, denyMessage: "You do not have permission to edit companies." });
   await ensureCompanyAdditionalGstColumn();
+  await ensureCompanyDueBillColumn();
 
   const { id } = await params;
-  const { name, gstNumber, allowedPlatforms, additionalGstNumbers, isActive } = await parseJsonBody(request);
+  const { name, gstNumber, allowedPlatforms, additionalGstNumbers, isActive, dueBillEnabled } = await parseJsonBody(request);
   if (!name) throw new ApiError(400, "Company name is required.");
 
   const platformsJson = allowedPlatforms && allowedPlatforms.length > 0 ? JSON.stringify(allowedPlatforms) : null;
@@ -21,8 +23,8 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   const extraGstJson = extraGst.length > 0 ? JSON.stringify(extraGst) : null;
 
   await mysqlPool.query(
-    "UPDATE companies SET name = ?, gstNumber = ?, allowedPlatforms = ?, additionalGstNumbers = ?, isActive = ? WHERE guid = ?",
-    [name, gstNumber || null, platformsJson, extraGstJson, isActive === false ? 0 : 1, id]
+    "UPDATE companies SET name = ?, gstNumber = ?, allowedPlatforms = ?, additionalGstNumbers = ?, isActive = ?, dueBillEnabled = ? WHERE guid = ?",
+    [name, gstNumber || null, platformsJson, extraGstJson, isActive === false ? 0 : 1, dueBillEnabled ? 1 : 0, id]
   );
   invalidateCompanyActiveCache(id);
   return NextResponse.json({ message: "Company updated successfully." });

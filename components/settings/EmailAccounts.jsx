@@ -154,12 +154,19 @@ export default function EmailAccounts() {
     setSaving(true);
     try {
       const payload = { ...form, companyGuid: form.companyGuid || null };
+      let notice = "Saved";
       if (form.guid) {
         await api.put(`/email-accounts/${form.guid}`, payload);
       } else {
-        await api.post("/email-accounts", payload);
+        const res = await api.post("/email-accounts", payload);
+        // The same mailbox already exists: nothing new was created, it was shared with this user instead.
+        if (res.data?.merged) notice = res.data.message;
       }
-      Swal.fire({ toast: true, position: "top-end", icon: "success", title: "Saved", timer: 1500, showConfirmButton: false });
+      if (notice === "Saved") {
+        Swal.fire({ toast: true, position: "top-end", icon: "success", title: "Saved", timer: 1500, showConfirmButton: false });
+      } else {
+        Swal.fire("Account already exists", notice, "info");
+      }
       setShowForm(false);
       await load();
     } catch (err) {

@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
+import { runTaskReminders } from "@/lib/taskReminders";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireAuth(user);
+  await runTaskReminders(user);
 
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get("limit")) || 50;

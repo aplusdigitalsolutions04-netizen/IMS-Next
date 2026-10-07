@@ -35,6 +35,7 @@ export const STATUS_CONFIG = {
   Returned: { label: "Returned", bgClass: "bg-red-100 border-red-300 text-red-700", dotClass: "bg-red-500", icon: AlertCircle, step: -1 },
   "Partially Returned": { label: "Partially Returned", bgClass: "bg-orange-100 border-orange-300 text-orange-800", dotClass: "bg-orange-500", icon: RotateCcw, step: -1 },
   "Order Cancelled": { label: "Cancelled", bgClass: "bg-red-50 border-red-200 text-red-700", dotClass: "bg-red-500", icon: Ban, step: -1 },
+  "Packing in Process": { label: "Packing in Process", bgClass: "bg-indigo-100 border-indigo-300 text-indigo-700", dotClass: "bg-indigo-500", icon: Receipt, step: 1.5 },
 };
 
 export const UPDATE_STATUS_OPTIONS = [
@@ -214,6 +215,10 @@ export function isHoldStatus(status) {
 
 export function resolveDisplayStatus(status) {
   if (status === "Order Not Confirmed") return "Order On Hold";
+  // "Billed" is an internal status set once billing is done — shown to
+  // users as "Packing in Process" everywhere (matches Dispatch.jsx's own
+  // getEffectiveDispatchStatus, which already did this locally).
+  if (status === "Billed") return "Packing in Process";
   return status;
 }
 

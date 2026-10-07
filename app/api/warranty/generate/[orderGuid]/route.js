@@ -28,11 +28,11 @@ export const GET = withErrorHandling(async (request, { params }) => {
     FROM orders o
     LEFT JOIN order_items oi ON oi.orderGuid = o.guid AND oi.companyGuid = o.companyGuid
     LEFT JOIN inventorystockinserial s ON oi.serialNumberGuid = s.guid AND s.companyGuid = o.companyGuid
-    LEFT JOIN inventoryitemvariant fbiv ON s.itemVariantId = fbiv.itemVariantId AND fbiv.companyGuid = o.companyGuid
+    LEFT JOIN inventoryitemvariant fbiv ON COALESCE(s.itemVariantId, oi.itemVariantId) = fbiv.itemVariantId AND fbiv.companyGuid = o.companyGuid
     LEFT JOIN inventoryitemmaster fbim ON fbiv.itemId = fbim.itemId AND fbim.companyGuid = o.companyGuid
     LEFT JOIN inventorybrandmaster fbbm ON fbim.brandId = fbbm.brandId AND fbbm.companyGuid = o.companyGuid
     WHERE o.guid = ? AND o.companyGuid = ?
-    LIMIT 1
+    ORDER BY (s.guid IS NULL) ASC, oi.guid ASC LIMIT 1
   `, [orderGuid, user.companyId]);
 
   if (!orderRows.length) throw new ApiError(404, "Order not found");

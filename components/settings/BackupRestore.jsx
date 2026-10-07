@@ -96,7 +96,7 @@ export default function BackupRestore() {
           <div>
             <h3 className="text-sm font-black text-slate-700 uppercase tracking-wide mb-1">Create Backup</h3>
             <p className="text-sm text-slate-500 max-w-xl">
-              Downloads a single ZIP file containing every table in the database (all companies) plus every uploaded file (contracts, invoices, logos, etc.). Keep it somewhere safe — it's the only way to restore this data later.
+              Downloads a single ZIP file containing every table in the database (all companies) plus every uploaded file (contracts, invoices, logos, etc.). Keep it somewhere safe — it&apos;s the only way to restore this data later.
             </p>
           </div>
           <button
@@ -117,7 +117,7 @@ export default function BackupRestore() {
           <div>
             <h3 className="text-sm font-black text-red-700 uppercase tracking-wide mb-1">Restore from Backup</h3>
             <p className="text-sm text-red-600 max-w-xl">
-              This overwrites the entire database with the contents of the backup file — for every company, not just yours. Anything created since that backup was taken will be permanently lost. Only do this if you're certain.
+              This overwrites the entire database with the contents of the backup file — for every company, not just yours. Anything created since that backup was taken will be permanently lost. Only do this if you&apos;re certain.
             </p>
           </div>
         </div>

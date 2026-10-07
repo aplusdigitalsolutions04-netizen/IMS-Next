@@ -5,6 +5,7 @@ import { authenticateRequest, authorizeReadWrite, requireCompany, requirePermiss
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
 import { createNotification } from "@/lib/notifications";
+import { cleanContactNumber } from "@/lib/aiParse";
 
 // Was gated on "orders" (copy-pasted from an Order Processing route) —
 // "orders" is a PROTECTED_EDIT_PERMISSIONS tab, so that silently also
@@ -51,7 +52,27 @@ export const GET = withErrorHandling(async (request) => {
     driveFilenames = new Set(driveRows.map((r) => r.filename));
   }
 
-  return NextResponse.json(rows.map((r) => ({ ...r, hasDrivePdf: driveFilenames.has(r.pdfFilename) })));
+  // The contract row's own `status` column only ever holds "Cancelled" (set
+  // by the cancel flow) or nothing — everywhere it read as "Active" it was
+  // just that column being empty, never a real "still active" check against
+  // the order it created. Contracts link to their order by orderid ==
+  // contractNumber (see the POST handler above), so look that order's real
+  // status up and let the frontend show it instead of a hardcoded "Active".
+  let orderStatusByContractNumber = new Map();
+  const contractNumbers = [...new Set(rows.map((r) => r.contractNumber).filter(Boolean))];
+  if (contractNumbers.length > 0) {
+    const [orderRows] = await mysqlPool.query(
+      `SELECT orderid, status FROM orders WHERE orderid IN (?) AND isDeleted = 0 ${clause}`,
+      companyGuid ? [contractNumbers, companyGuid] : [contractNumbers]
+    );
+    orderStatusByContractNumber = new Map(orderRows.map((o) => [o.orderid, o.status]));
+  }
+
+  return NextResponse.json(rows.map((r) => ({
+    ...r,
+    hasDrivePdf: driveFilenames.has(r.pdfFilename),
+    orderStatus: orderStatusByContractNumber.get(r.contractNumber) || null,
+  })));
 });
 
 export const POST = withErrorHandling(async (request) => {
@@ -103,7 +124,7 @@ export const POST = withErrorHandling(async (request) => {
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`,
       [
         guid, user.companyId, bidNumber || null, contractNumber.trim(), generatedDate || null,
-        buyerContact || null, products || null, buyerEmail || null, buyerGstin || null,
+        cleanContactNumber(buyerContact) || null, products || null, buyerEmail || null, buyerGstin || null,
         buyerAddress || null, deliveryStartAfter || null, deliveryCompletedBy || null, deliveryInstructions || null,
         ministry || null, department || null, organisation || null, officeZone || null,
         sellerCompany || null, sellerContact || null, sellerGstin || null, consigneeDesignation || null,

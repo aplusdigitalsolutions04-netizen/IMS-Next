@@ -1,3 +1,4 @@
+import { getOrderEmailDocuments } from "@/lib/orderEmailDocuments";
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany, ApiError } from "@/lib/auth";
@@ -32,11 +33,11 @@ export const GET = withErrorHandling(async (request, { params }) => {
     LEFT JOIN order_items oi ON oi.orderGuid = o.guid AND oi.companyGuid = o.companyGuid
     LEFT JOIN order_logistics ol ON ol.orderGuid = o.guid AND ol.companyGuid = o.companyGuid
     LEFT JOIN inventorystockinserial s ON oi.serialNumberGuid = s.guid AND s.companyGuid = o.companyGuid
-    LEFT JOIN inventoryitemvariant fbiv ON s.itemVariantId = fbiv.itemVariantId AND fbiv.companyGuid = o.companyGuid
+    LEFT JOIN inventoryitemvariant fbiv ON COALESCE(s.itemVariantId, oi.itemVariantId) = fbiv.itemVariantId AND fbiv.companyGuid = o.companyGuid
     LEFT JOIN inventoryitemmaster fbim ON fbiv.itemId = fbim.itemId AND fbim.companyGuid = o.companyGuid
     LEFT JOIN inventorybrandmaster fbbm ON fbim.brandId = fbbm.brandId AND fbbm.companyGuid = o.companyGuid
     WHERE o.guid = ? AND o.companyGuid = ?
-    LIMIT 1
+    ORDER BY (s.guid IS NULL) ASC, oi.guid ASC LIMIT 1
   `, [orderGuid, user.companyId]);
 
   if (!orderRows.length) throw new ApiError(404, "Order not found");
@@ -112,6 +113,10 @@ export const GET = withErrorHandling(async (request, { params }) => {
     "{{SERIAL_NUMBERS}}": order.allSerials || order.serialValue || "",
     "{{QUANTITY}}": String(order.serialCount || order.quantity || ""),
     "{{PURCHASE_DATE}}": fmt(order.orderDate),
+    // Friendly names people actually type for these (same values as above).
+    "{{ORDER_DATE}}": fmt(order.orderDate),
+    "{{INVOICE_NO}}": order.invoiceNumber || "",
+    "{{ORDER_NO}}": String(order.orderNumber || ""),
     "{{DISPATCH_DATE}}": fmt(order.dispatchDate) || fmt(order.orderDate),
     "{{WARRANTY_PERIOD}}": wp,
     "{{WARRANTY_EXPIRY}}": expiry,
@@ -131,6 +136,8 @@ export const GET = withErrorHandling(async (request, { params }) => {
     "{{PLATFORM}}": order.platform || "",
     "{{ORDER_STATUS}}": order.status || "",
     "{{GEM_ORDER_TYPE}}": order.gemOrderType || "",
+    // Kept as-is here: the actual image is embedded when the mail is sent (lib/mailer.js).
+    "{{COMPANY_LOGO}}": "{{COMPANY_LOGO}}",
     "{{BUYER_EMAIL}}": order.buyerEmail || "",
     "{{CONSIGNEE_EMAIL}}": order.consigneeEmail || "",
     "{{PAYMENT_AUTHORITY_EMAIL}}": order.paymentAuthorityEmail || "",
@@ -166,6 +173,22 @@ export const GET = withErrorHandling(async (request, { params }) => {
     ? (order.paymentAuthorityEmail || order.consigneeEmail || order.buyerEmail || template.emailTo || "")
     : (order.consigneeEmail || order.buyerEmail || template.emailTo || "");
 
+  // Every address this order carries, so the compose window can let the
+  // sender pick which one(s) go in "To" (and skip the picker when there's
+  // only one). One field can itself hold several addresses.
+  const recipientOptions = [];
+  const addRecipients = (raw, label) => {
+    for (const email of String(raw || "").split(/[,;\s]+/).map((e) => e.trim()).filter((e) => e.includes("@"))) {
+      const existing = recipientOptions.find((r) => r.email.toLowerCase() === email.toLowerCase());
+      if (existing) { if (!existing.label.split(" / ").includes(label)) existing.label += ` / ${label}`; }
+      else recipientOptions.push({ email, label });
+    }
+  };
+  addRecipients(order.consigneeEmail, "Consignee");
+  addRecipients(order.buyerEmail, "Buyer");
+  addRecipients(order.paymentAuthorityEmail, "Payment Authority");
+  addRecipients(template.emailTo, "Template default");
+
   const subject = fillText(template.emailSubject || "");
   const body = fillText(template.emailBody || "");
 
@@ -175,10 +198,16 @@ export const GET = withErrorHandling(async (request, { params }) => {
   // value. This is also how a template author gets a brand-new variable:
   // just write {{ANYTHING}} in the template — no separate place to
   // "register" it first.
-  const unresolvedVariables = [...new Set([...subject.matchAll(/\{\{([A-Z0-9_]+)\}\}/g), ...body.matchAll(/\{\{([A-Z0-9_]+)\}\}/g)].map((m) => m[1]))];
+  const unresolvedVariables = [...new Set([...subject.matchAll(/\{\{([A-Z0-9_]+)\}\}/g), ...body.matchAll(/\{\{([A-Z0-9_]+)\}\}/g)].map((m) => m[1]))].filter((v) => v !== "COMPANY_LOGO");
+
+  // The order's stored documents, attached automatically (the user can remove
+  // any of them or add more in the compose window). No Gate Pass.
+  const documents = await getOrderEmailDocuments(orderGuid, user.companyId);
 
   return NextResponse.json({
     to,
+    recipientOptions,
+    documents,
     cc: template.emailCc || "",
     bcc: template.emailBcc || "",
     subject,

@@ -107,7 +107,9 @@ export const GET = withErrorHandling(async (request) => {
     return NextResponse.json({ data: result });
   }
 
-  const [bulkOrders] = await mysqlPool.query(`
+  // The legacy bulk-order tables don't exist on every database; a missing table
+  // just means "no bulk match", not a server error.
+  const bulkOrders = await mysqlPool.query(`
     SELECT
         bo.guid as bulkOrderId, bo.customerName, bo.firmName, bo.createdAt,
         bod.trackingId, boi.invoiceNumber, boi.ewayBillNumber
@@ -115,7 +117,10 @@ export const GET = withErrorHandling(async (request) => {
     LEFT JOIN bulkorderdispatches bod ON bo.guid = bod.orderGuid
     LEFT JOIN bulkorderinvoices boi ON bo.guid = boi.orderGuid
     WHERE bod.trackingId = ? OR boi.invoiceNumber = ? OR boi.ewayBillNumber = ? OR bo.guid = ?
-  `, [decodedQuery, decodedQuery, decodedQuery, decodedQuery]);
+  `, [decodedQuery, decodedQuery, decodedQuery, decodedQuery]).then(([rows]) => rows).catch((err) => {
+    if (err.code === "ER_NO_SUCH_TABLE") return [];
+    throw err;
+  });
 
   if (bulkOrders.length > 0) {
     const [bulkItems] = await mysqlPool.query(`

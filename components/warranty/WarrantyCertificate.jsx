@@ -5,7 +5,7 @@ import Swal from "sweetalert2";
 import {
   FileText, Settings, Save, Search, Eye,
   Trash2, CheckCircle2, Clock, Edit3, ArrowLeft,
-  Printer, ShieldCheck, Image, Upload, Code2, Paperclip,
+  Printer, ShieldCheck, Image as ImageIcon, Upload, Code2, Paperclip,
   Loader2, Plus, RefreshCw, X, Copy, ChevronLeft, ChevronRight
 } from "lucide-react";
 import { hasPermission } from "@/lib/client/rbac";
@@ -252,12 +252,11 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
     }
   };
 
-  // ── Filtered orders (GEM only) ──────────────────────────────────────────────
+  // ── Filtered orders ─────────────────────────────────────────────────────────
+  // The server already returns only platforms with Warranty switched on
+  // (Settings → Platform Master), serialized or not.
   const filteredOrders = useMemo(() => {
-    const gemOnly = orders.filter(o =>
-      (o.platform || "").toUpperCase() === "GEM" ||
-      (o.platform || "").toLowerCase().includes("gem")
-    );
+    const gemOnly = orders;
     const q = orderSearch.trim().toLowerCase();
     if (!q) return gemOnly;
     return gemOnly.filter(o =>
@@ -265,6 +264,8 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
       (o.customer || "").toLowerCase().includes(q) ||
       (o.modelName || "").toLowerCase().includes(q) ||
       (o.serialValue || "").toLowerCase().includes(q) ||
+      (o.allSerials || "").toLowerCase().includes(q) ||
+      (o.allModels || "").toLowerCase().includes(q) ||
       (o.gemOrderType || "").toLowerCase().includes(q)
     );
   }, [orders, orderSearch]);
@@ -446,7 +447,7 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-6 pt-5 pb-3 border-b border-slate-100">
               <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                <Image size={15} className="text-indigo-500" />Certificate Header Image
+                <ImageIcon size={15} className="text-indigo-500" />Certificate Header Image
                 <span className="text-xs text-slate-400 font-normal normal-case ml-1">
                   — appears full-width at the top of every generated certificate
                 </span>
@@ -495,7 +496,7 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-6 pt-5 pb-3 border-b border-slate-100">
               <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                <Image size={15} className="text-indigo-500" />Signature &amp; Stamp Image
+                <ImageIcon size={15} className="text-indigo-500" />Signature &amp; Stamp Image
                 <span className="text-xs text-slate-400 font-normal normal-case ml-1">
                   — pasted automatically wherever you put the <code className="bg-slate-100 px-1 rounded">{"{{SIGNATURE_STAMP}}"}</code> placeholder below, no manual signing after printing
                 </span>
@@ -767,7 +768,7 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-0">
             <div className="px-5 pt-4 pb-3 border-b border-slate-100 flex items-center gap-3 shrink-0">
               <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
-                <FileText size={14} className="text-blue-600" />GEM Orders
+                <FileText size={14} className="text-blue-600" />Orders
               </h2>
               <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{filteredOrders.length}</span>
               <button onClick={loadOrders} disabled={ordersLoading} className="ml-auto text-slate-400 hover:text-slate-600 transition-colors">
@@ -777,7 +778,7 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50 focus:bg-white transition-all"
-                  placeholder="Search order #, customer, model, GEM…"
+                  placeholder="Search order #, customer, model, serial…"
                   value={orderSearch}
                   onChange={e => setOrderSearch(e.target.value)}
                 />
@@ -797,7 +798,7 @@ export default function WarrantyCertificate({ isAdmin, currentUser }) {
             {!ordersLoading && filteredOrders.length === 0 && (
               <div className="py-16 text-center text-slate-400">
                 <FileText size={40} className="mx-auto mb-3 opacity-20" />
-                <p className="text-sm font-medium">{orderSearch ? "No orders match your search" : "No GEM orders found"}</p>
+                <p className="text-sm font-medium">{orderSearch ? "No orders match your search" : "No orders found — turn Warranty on for a platform in Settings → Platform Master"}</p>
               </div>
             )}
             {!ordersLoading && filteredOrders.length > 0 && (

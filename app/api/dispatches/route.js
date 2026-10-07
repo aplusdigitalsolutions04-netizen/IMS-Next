@@ -7,11 +7,13 @@ import { createNotification } from "@/lib/notifications";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
 import { ensureCarePackColumn, ensureOrderItemsCarePackColumns } from "@/lib/carePackMigration";
+import { ensureDeliveredDateColumn } from "@/lib/orderLogisticsMigration";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requireCompany(user);
   authorizeDispatchRequest(user, "GET", null);
+  await ensureDeliveredDateColumn();
   await ensureCarePackColumn();
   await ensureOrderItemsCarePackColumns();
 
@@ -38,11 +40,11 @@ export const GET = withErrorHandling(async (request) => {
         o.invoiceDate, o.warrantyStartDate, o.invoiceFilename, o.ewayBillNumber, o.ewayBillFilename, o.gemBillUploaded, o.freightCharges,
         o.packagingCost, o.commission, o.orderVerified, oi.remarks AS remarks, o.remarks AS orderRemarks, o.cancellationReason as cancelReason,
         o.cancelledBy, o.cancelledAt, o.isDeleted, o.rowColor, o.tags, o.draftSentToBilling,
-        ol.courierPartner, ol.trackingId, ol.logisticsStatus, ol.logisticsDispatchDate, ol.podFilename, ol.lastDeliveryDate,
+        ol.courierPartner, ol.trackingId, ol.logisticsStatus, ol.logisticsDispatchDate, ol.podFilename, ol.lastDeliveryDate, ol.deliveredDate,
         ins.installationRequired, ins.installationStatus, ins.technicianName, ins.technicianContact,
         ins.installationCharges, ins.installationRemarks, ins.scheduledDate, ins.installationDate,
         s.serialNumber as serialValue, s.landingPrice, s.carePack as originalCarePack,
-        fbiv.variantName as modelName, fbbm.brandName as companyName,
+        COALESCE(fbiv.variantName, niv.variantName) as modelName, COALESCE(fbbm.brandName, nbm.brandName) as companyName,
         p.paymentDate as paymentReceivedDate, p.amount as paymentReceivedAmount, p.utrId
     FROM order_items oi
     JOIN orders o ON oi.orderGuid = o.guid ${c("o")}
@@ -53,6 +55,14 @@ export const GET = withErrorHandling(async (request) => {
     LEFT JOIN inventoryitemvariant fbiv ON s.itemVariantId = fbiv.itemVariantId ${c("fbiv")}
     LEFT JOIN inventoryitemmaster fbim ON fbiv.itemId = fbim.itemId ${c("fbim")}
     LEFT JOIN inventorybrandmaster fbbm ON fbim.brandId = fbbm.brandId ${c("fbbm")}
+    -- A non-serialized item (oi.serialNumberGuid IS NULL, only oi.itemVariantId
+    -- set) never matches the serial-based join chain above (s/fbiv/fbim/fbbm
+    -- all come out NULL for it), so modelName/companyName came back blank —
+    -- e.g. Billing's Order Details showed "-" for it. Resolve it directly off
+    -- oi.itemVariantId as a fallback for that case.
+    LEFT JOIN inventoryitemvariant niv ON niv.itemVariantId = oi.itemVariantId
+    LEFT JOIN inventoryitemmaster nim ON niv.itemId = nim.itemId
+    LEFT JOIN inventorybrandmaster nbm ON nim.brandId = nbm.brandId
     LEFT JOIN (
         SELECT p1.dispatchGuid, p1.paymentDate, p1.amount, p1.utrId
         FROM payments p1

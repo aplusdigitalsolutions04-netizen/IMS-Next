@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   Plus, Pencil, Check, X, Trash2, Loader2, Building2, Search,
   CheckCircle, Globe, ShieldCheck, Ban, Store, Landmark, ShoppingBag, Link2,
@@ -11,36 +12,7 @@ import api from "@/lib/client/apiClient";
 import { useCompany } from "@/lib/client/CompanyContext";
 import { platformsService } from "@/lib/services/platformsService";
 
-// Icons for the 4 built-in platforms are kept distinct for recognizability;
-// any custom platform added later (Settings > Selling Platforms) gets a
-// generic globe icon instead — there's no way to know in advance what icon
-// a brand-new marketplace "should" have.
-const PLATFORM_ICONS = { GeM: Landmark, Flipkart: ShoppingBag, Amazon: Store, Other: Link2 };
-// Matches the colorTheme values selling_platforms rows can have (see
-// app/api/admin/platforms/route.js's COLOR_THEMES) — Tailwind class names
-// can't be built dynamically from a string at runtime, so each theme needs
-// its literal classes listed here.
-const THEME_CLASSES = {
-  red: { color: "text-red-600", bg: "bg-red-50", border: "border-red-200" },
-  orange: { color: "text-orange-600", bg: "bg-orange-50", border: "border-orange-200" },
-  amber: { color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-200" },
-  yellow: { color: "text-yellow-600", bg: "bg-yellow-50", border: "border-yellow-200" },
-  lime: { color: "text-lime-600", bg: "bg-lime-50", border: "border-lime-200" },
-  green: { color: "text-green-600", bg: "bg-green-50", border: "border-green-200" },
-  emerald: { color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200" },
-  teal: { color: "text-teal-600", bg: "bg-teal-50", border: "border-teal-200" },
-  cyan: { color: "text-cyan-600", bg: "bg-cyan-50", border: "border-cyan-200" },
-  sky: { color: "text-sky-600", bg: "bg-sky-50", border: "border-sky-200" },
-  blue: { color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200" },
-  indigo: { color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200" },
-  violet: { color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-200" },
-  purple: { color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-200" },
-  fuchsia: { color: "text-fuchsia-600", bg: "bg-fuchsia-50", border: "border-fuchsia-200" },
-  pink: { color: "text-pink-600", bg: "bg-pink-50", border: "border-pink-200" },
-  rose: { color: "text-rose-600", bg: "bg-rose-50", border: "border-rose-200" },
-  slate: { color: "text-slate-600", bg: "bg-slate-50", border: "border-slate-200" },
-};
-const DEFAULT_THEME = THEME_CLASSES.violet;
+import { PLATFORM_ICONS, THEME_CLASSES, DEFAULT_THEME } from "@/components/companyMaster/platformTheme";
 
 // Deterministic accent color per company name — keeps each card visually distinct.
 const ACCENTS = [
@@ -57,27 +29,18 @@ const accentFor = (name) => {
 };
 
 export default function CompanyMasterPage() {
+  const router = useRouter();
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
-  // null = modal closed; { guid: null } = creating; { guid: "..." } = editing
-  const [modal, setModal] = useState(null);
-  const [form, setForm] = useState({ name: "", gstNumber: "", additionalGstNumbers: [], allowedPlatforms: [], isActive: true });
-  const [newExtraGst, setNewExtraGst] = useState("");
   const [uploadingLogoGuid, setUploadingLogoGuid] = useState(null);
-  const nameInputRef = useRef(null);
   const logoInputRef = useRef(null);
   const logoTargetGuid = useRef(null);
   const { setAvailableCompanies, syncActiveCompany } = useCompany();
   const [platforms, setPlatforms] = useState([]);
 
   useEffect(() => { platformsService.getPlatforms().then(setPlatforms); }, []);
-  // Refetch every time the modal opens too — a platform added via Settings >
-  // Selling Platforms after this page first loaded wouldn't otherwise show
-  // up in the picker until a full page reload.
-  useEffect(() => { if (modal) platformsService.getPlatforms().then(setPlatforms); }, [modal]);
-
   const platformOptions = useMemo(
     () => platforms.map((p) => ({ value: p.name, icon: PLATFORM_ICONS[p.name] || Globe, ...(THEME_CLASSES[p.colorTheme] || DEFAULT_THEME) })),
     [platforms]
@@ -87,8 +50,6 @@ export default function CompanyMasterPage() {
   // order data) that was later deactivated/removed from Platform Master —
   // still render something sensible for it instead of crashing on a lookup miss.
   const platformStyle = (name) => platformStyleMap.get(name) || { icon: Globe, ...DEFAULT_THEME };
-
-  useEffect(() => { if (modal && nameInputRef.current) nameInputRef.current.focus(); }, [modal]);
 
   // `loading` already starts true (see useState above), so this doesn't need
   // to set it again on the initial call — a later refetch (after save/
@@ -129,81 +90,8 @@ export default function CompanyMasterPage() {
     return companies.filter((c) => c.name?.toLowerCase().includes(q));
   }, [companies, search]);
 
-  const openCreate = () => {
-    setForm({ name: "", gstNumber: "", additionalGstNumbers: [], allowedPlatforms: [], isActive: true });
-    setNewExtraGst("");
-    setModal({ guid: null });
-  };
-
-  const openEdit = (c) => {
-    setForm({
-      name: c.name,
-      gstNumber: c.gstNumber || "",
-      additionalGstNumbers: Array.isArray(c.additionalGstNumbers) ? c.additionalGstNumbers : [],
-      allowedPlatforms: Array.isArray(c.allowedPlatforms) ? c.allowedPlatforms : [],
-      isActive: c.isActive === 1 || c.isActive === true,
-    });
-    setNewExtraGst("");
-    setModal({ guid: c.guid });
-  };
-
-  const addExtraGst = () => {
-    // Accepts a single GSTIN or several pasted at once (comma/semicolon/
-    // newline-separated) — splitting here means one paste of a whole list
-    // becomes several clean entries instead of one glued-together string
-    // that could never match anything. A trailing "(B)"/"(R)"/"(G)"-style
-    // branch annotation is stripped too — it's just a note on which office
-    // that GSTIN belongs to, never part of the GSTIN itself, and keeping it
-    // in the stored value is exactly what breaks the contract-match check
-    // (see lib/companyMatch.js's normGstin for the matching side of this).
-    const pieces = newExtraGst
-      .split(/[,;\n]+/)
-      .map((piece) => piece.replace(/\([^)]*\)/g, "").trim().toUpperCase())
-      .filter(Boolean);
-    if (!pieces.length) return;
-    setForm((prev) => {
-      const existing = new Set([...prev.additionalGstNumbers, prev.gstNumber.trim().toUpperCase()]);
-      const toAdd = [...new Set(pieces)].filter((p) => !existing.has(p));
-      return toAdd.length ? { ...prev, additionalGstNumbers: [...prev.additionalGstNumbers, ...toAdd] } : prev;
-    });
-    setNewExtraGst("");
-  };
-
-  const removeExtraGst = (gst) => {
-    setForm((prev) => ({ ...prev, additionalGstNumbers: prev.additionalGstNumbers.filter((g) => g !== gst) }));
-  };
-
-  const togglePlatform = (p) => {
-    setForm((prev) => ({
-      ...prev,
-      allowedPlatforms: prev.allowedPlatforms.includes(p)
-        ? prev.allowedPlatforms.filter((x) => x !== p)
-        : [...prev.allowedPlatforms, p],
-    }));
-  };
-
-  const handleSave = async () => {
-    if (!form.name.trim()) {
-      Swal.fire({ title: "Missing name", text: "Company name is required.", icon: "warning", customClass: { popup: "rounded-2xl", confirmButton: "rounded-xl font-semibold" } });
-      return;
-    }
-    setSaving(true);
-    try {
-      const payload = { ...form, allowedPlatforms: form.allowedPlatforms.length > 0 ? form.allowedPlatforms : null };
-      if (modal.guid) {
-        await api.put(`/companies/${modal.guid}`, payload);
-      } else {
-        await api.post("/companies", payload);
-      }
-      setModal(null);
-      await fetchCompanies();
-      Swal.fire({ title: "Saved!", text: `"${form.name}" ${modal.guid ? "updated" : "created"} successfully.`, icon: "success", timer: 1400, showConfirmButton: false, customClass: { popup: "rounded-2xl" } });
-    } catch (err) {
-      Swal.fire({ title: "Couldn't save company", text: err.response?.data?.message || err.message, icon: "error", customClass: { popup: "rounded-2xl", confirmButton: "rounded-xl font-semibold" } });
-    } finally {
-      setSaving(false);
-    }
-  };
+  const openCreate = () => router.push("/companyMaster/new");
+  const openEdit = (c) => router.push(`/companyMaster/${c.guid}`);
 
   const openLogoPicker = (company) => {
     logoTargetGuid.current = company.guid;
@@ -452,195 +340,6 @@ export default function CompanyMasterPage() {
           </div>
         )}
       </div>
-
-      {/* ── Create / Edit modal ── */}
-      {modal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl overflow-hidden border border-slate-100">
-
-            {/* Modal header */}
-            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 px-6 py-5 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3 pointer-events-none" />
-              <div className="relative flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center">
-                    <Building2 size={18} className="text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-extrabold text-white leading-tight">
-                      {modal.guid ? "Edit Company" : "New Company"}
-                    </h3>
-                    <p className="text-xs text-slate-400 font-medium">
-                      {modal.guid ? "Update details & platform access" : "Add a sister concern company"}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setModal(null)}
-                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* Modal body */}
-            <div className="p-6 space-y-5">
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block">Company Name *</label>
-                <div className="relative">
-                  <Building2 size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    ref={nameInputRef}
-                    type="text"
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
-                    className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                    placeholder="e.g. A Plus Digital Solutions"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block">GST Number</label>
-                <p className="text-xs text-slate-400 mb-1.5">Used to auto-check that an uploaded contract&apos;s seller GST matches this company.</p>
-                <input
-                  type="text"
-                  value={form.gstNumber}
-                  onChange={(e) => setForm({ ...form, gstNumber: e.target.value.toUpperCase() })}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                  placeholder="e.g. 27ABCDE1234F1Z5"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block">Additional GST Numbers</label>
-                <p className="text-xs text-slate-400 mb-2">
-                  For companies registered under more than one GSTIN (e.g. separate state registrations) — an uploaded contract naming any of these also counts as a match.
-                </p>
-                {form.additionalGstNumbers.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {form.additionalGstNumbers.map((gst) => (
-                      <span key={gst} className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold">
-                        {gst}
-                        <button type="button" onClick={() => removeExtraGst(gst)} className="p-0.5 hover:bg-indigo-100 rounded">
-                          <X size={11} />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newExtraGst}
-                    onChange={(e) => setNewExtraGst(e.target.value.toUpperCase())}
-                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExtraGst(); } }}
-                    className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                    placeholder="e.g. 07ABCDE1234F1Z5 — paste several separated by commas"
-                  />
-                  <button
-                    type="button"
-                    onClick={addExtraGst}
-                    disabled={!newExtraGst.trim()}
-                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 text-sm font-bold transition-all shrink-0"
-                  >
-                    Add
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block">Selling Platforms</label>
-                <p className="text-xs text-slate-400 mb-2.5">Leave all unselected to allow every platform.</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {platformOptions.map((p) => {
-                    const checked = form.allowedPlatforms.includes(p.value);
-                    const Icon = p.icon;
-                    return (
-                      <button
-                        key={p.value}
-                        type="button"
-                        onClick={() => togglePlatform(p.value)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-xs font-bold transition-all text-left ${
-                          checked
-                            ? `${p.bg} ${p.border} ${p.color} shadow-sm`
-                            : "border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50 bg-white"
-                        }`}
-                      >
-                        <Icon size={13} className="shrink-0" />
-                        <span className="flex-1 truncate">{p.value}</span>
-                        {checked && <CheckCircle size={13} className="shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-                {/* Values already saved on this company that don't match any
-                    current Selling Platform (renamed/deleted there, or a
-                    stray/mistyped entry like "Gem" vs "GeM") — the grid above
-                    can't surface these since it's built from the live
-                    Selling Platforms list, so without this there'd be no way
-                    to ever uncheck one. */}
-                {form.allowedPlatforms.filter((p) => !platformOptions.some((opt) => opt.value === p)).length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-[11px] text-amber-600 font-semibold mb-1.5">
-                      Not in Selling Platforms — click to remove:
-                    </p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {form.allowedPlatforms.filter((p) => !platformOptions.some((opt) => opt.value === p)).map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => togglePlatform(p)}
-                          className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-700 text-xs font-bold transition-all text-left hover:bg-amber-100"
-                        >
-                          <Globe size={13} className="shrink-0" />
-                          <span className="flex-1 truncate">{p}</span>
-                          <X size={13} className="shrink-0" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between gap-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                <div>
-                  <p className="text-sm font-bold text-slate-800">Active</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Inactive companies can&apos;t be logged into.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setForm((prev) => ({ ...prev, isActive: !prev.isActive }))}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 transition-colors duration-200 focus:outline-none ${form.isActive ? "bg-emerald-500 border-emerald-500" : "bg-slate-200 border-slate-200"}`}
-                >
-                  <span className={`inline-block h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${form.isActive ? "translate-x-5" : "translate-x-0"}`} />
-                </button>
-              </div>
-            </div>
-
-            {/* Modal footer */}
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-3">
-              <button
-                onClick={() => setModal(null)}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-100 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 disabled:opacity-70 transition-all shadow-lg shadow-slate-900/20"
-              >
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
-                {modal.guid ? "Save Changes" : "Create Company"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 // Order detail modal extracted from OrderTracking.jsx — markup and behavior unchanged.
 import React from "react";
 import {
-  AlertCircle, Ban, Box, Building, Calendar, Check, CheckCircle, CheckSquare,
+  AlertCircle, ArrowLeft, Ban, Box, Building, Calendar, Check, CheckCircle, CheckSquare,
   ClipboardList, Edit3, ExternalLink, Eye, FileText, Hash, Loader2, Mail, Package, PauseCircle, Phone, Plus, RefreshCw,
   RotateCcw, Save, Send, Trash2, Truck, UploadCloud, User, Wrench, X, Zap,
 } from "lucide-react";
@@ -159,6 +159,10 @@ export default function OrderDetailModal({
   isAddingSerial, setIsAddingSerial, newSerialToAdd, setNewSerialToAdd,
   newItemSellingPrice, setNewItemSellingPrice, handleAddSerial,
 }) {
+  // Full-page view: start at the top whenever an order is opened.
+  const pageTopRef = React.useRef(null);
+  React.useEffect(() => { pageTopRef.current?.scrollIntoView({ block: "start" }); }, []);
+
   const [serialScanInput, setSerialScanInput] = React.useState("");
   const [scanMatchedModel, setScanMatchedModel] = React.useState("");
   const [scanError, setScanError] = React.useState("");
@@ -362,8 +366,13 @@ export default function OrderDetailModal({
 
   return (
     <>
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm p-3 overflow-y-auto" onClick={closeModal}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-4" onClick={(e) => e.stopPropagation()}>
+        <div ref={pageTopRef} className="w-full">
+          <div className="w-full mb-2 flex items-center">
+            <button onClick={closeModal} className="flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors">
+              <ArrowLeft size={16} /> Back to Orders
+            </button>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm w-full mb-6 overflow-hidden">
 
             {/* Modal Header */}
             {(() => {
@@ -430,7 +439,7 @@ export default function OrderDetailModal({
 
               return (
                 <>
-                  <div className={`p-4 rounded-t-2xl ${isEditMode
+                  <div className={`px-4 py-3 md:px-5 ${isEditMode
                       ? "bg-gradient-to-r from-amber-600 to-orange-700"
                       : isCancelledOrder
                         ? "bg-gradient-to-r from-red-700 to-red-900"
@@ -449,12 +458,30 @@ export default function OrderDetailModal({
                                 <Package className="text-white" size={18} />}
                         </div>
                         <div>
-                          <h2 className="text-base font-bold text-white flex items-center gap-2">
+                          <h2 className="text-sm font-bold text-white/90 flex items-center gap-2">
                             {isEditMode ? "Edit Order" :
                               isCancelledOrder ? "Cancelled Order" :
                                 "Order Details"}
                             {selectedBatch.items.length > 1 && <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full">{selectedBatch.displayItems.length} of {selectedBatch.items.length} Items</span>}
                           </h2>
+                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                            {(selectedBatch.customerName || selectedBatch.customer) && (
+                              <p className="text-white font-mono text-base font-bold tracking-tight break-all">{selectedBatch.customerName || selectedBatch.customer}</p>
+                            )}
+                          <StatusBadge status={modalDisplayStatus} size="default" />
+                          {f.returnedCount > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-200 border border-red-400/30">
+                              <RotateCcw size={9} />
+                              {f.returnedCount} Returned
+                            </span>
+                          ) : null}
+                          {f.replacedCount > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">
+                              <RefreshCw size={9} />
+                              {f.replacedCount} Replaced
+                            </span>
+                          ) : null}
+                          </div>
                           <p className="text-white/70 text-xs flex items-center gap-1.5 mt-0.5">
                             <Calendar size={10} />
                             {safeFormatDate(selectedBatch.dispatchDate) || "N/A"}
@@ -494,38 +521,19 @@ export default function OrderDetailModal({
                             <span className="hidden sm:inline">{savingContract ? "Saving" : "Save as Contract"}</span>
                           </button>
                         )}
-                        <button onClick={closeModal} className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg">
-                          <X size={16} />
-                        </button>
                       </div>
-                    </div>
-
-                    <div className="mt-3 flex items-center gap-2 flex-wrap">
-                      <StatusBadge status={modalDisplayStatus} size="default" />
-                      {f.returnedCount > 0 ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-200 border border-red-400/30">
-                          <RotateCcw size={9} />
-                          {f.returnedCount} Returned
-                        </span>
-                      ) : null}
-                      {f.replacedCount > 0 ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">
-                          <RefreshCw size={9} />
-                          {f.replacedCount} Replaced
-                        </span>
-                      ) : null}
                     </div>
                   </div>
 
                   {/* Modal Body */}
-                  <div className="p-4 space-y-3 max-h-[72vh] overflow-y-auto">
+                  <div className="p-4 md:px-5 md:py-4 space-y-3">
                     {isEditMode ? (
                       <div className="space-y-4">
                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                           <h3 className="text-xs font-bold text-amber-700 mb-3 flex items-center gap-1.5">
                             <Edit3 size={13} /> Edit Order Details
                           </h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                             <div>
                               <label className="text-[10px] font-semibold text-slate-600 block mb-1">Order ID</label>
                               <input className="w-full border border-slate-200 bg-white p-2 rounded-lg text-xs focus:ring-2 focus:ring-amber-500 outline-none"
@@ -832,6 +840,7 @@ export default function OrderDetailModal({
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Serial No. / Qty</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Care Pack</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase text-right">Price (₹)</th>
+                                  <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase">Remarks</th>
                                   <th className="px-3 py-2 text-[10px] text-slate-500 font-bold uppercase text-center">Action</th>
                                 </tr>
                               </thead>
@@ -930,6 +939,18 @@ export default function OrderDetailModal({
                                         }}
                                       />
                                     </td>
+                                    <td className="px-3 py-2">
+                                      <input
+                                        className="w-32 border border-slate-200 bg-slate-50 p-1.5 rounded text-xs focus:ring-2 focus:ring-amber-400 outline-none"
+                                        placeholder="Any note..."
+                                        value={item.remarks || ""}
+                                        onChange={(e) => {
+                                          const u = [...editItems];
+                                          u[idx] = { ...u[idx], remarks: e.target.value };
+                                          setEditItems(u);
+                                        }}
+                                      />
+                                    </td>
                                     <td className="px-3 py-2 text-center">
                                       {(isAdmin || currentUser?.allow_edit_dispatch) && (
                                         <button
@@ -949,7 +970,7 @@ export default function OrderDetailModal({
                           </div>
                         </div>
 
-                        <div className="flex justify-end gap-2 pt-1">
+                        <div className="sticky bottom-0 z-10 -mx-4 md:-mx-5 -mb-4 px-4 md:px-5 py-3 bg-white/95 backdrop-blur border-t border-slate-200 flex justify-end gap-2">
                           <button
                             onClick={() => { setIsEditMode(false); setContractFile(null); setInvoiceFile(null); }}
                             className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-semibold text-xs"
@@ -1043,7 +1064,7 @@ export default function OrderDetailModal({
                         })()}
 
                         {/* ── MODAL TABS ── */}
-                        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl w-fit">
+                        <div className="flex items-center gap-6 border-b border-slate-200 -mx-4 md:-mx-5 px-4 md:px-5">
                           {[
                             { id: "details", label: "Details", Icon: ClipboardList },
                             { id: "documents", label: "Documents", Icon: FileText },
@@ -1053,10 +1074,7 @@ export default function OrderDetailModal({
                             <button
                               key={tab.id}
                               onClick={() => setModalDetailTab(tab.id)}
-                              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${modalDetailTab === tab.id
-                                ? "bg-white text-indigo-600 shadow-sm"
-                                : "text-slate-500 hover:text-slate-700"
-                              }`}
+                              className={`px-1 py-3 text-sm font-bold transition-all flex items-center gap-2 border-b-2 -mb-px ${modalDetailTab === tab.id ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-800"}`}
                             >
                               <tab.Icon size={14} /> {tab.label}
                             </button>
@@ -1064,72 +1082,8 @@ export default function OrderDetailModal({
                         </div>
 
                         {/* ── DETAILS TAB ── */}
-                        {modalDetailTab === "details" && <div className="space-y-3">
-
-                        {/* Payment Info (Completed orders) */}
-                        {selectedBatch.status === "Completed" && (() => {
-                          const totalPaidAmount = selectedBatch.items.reduce((sum, item) => sum + Number(item.paymentReceivedAmount || 0), 0);
-                          const fallbackAmount = selectedBatch.items.reduce((s, i) => s + Number(i.sellingPrice || 0), 0);
-                          const displayAmount = totalPaidAmount > 0 ? totalPaidAmount : fallbackAmount;
-                          return (
-                            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                              <div className="flex items-center justify-between mb-2">
-                                <h3 className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
-                                  <CheckSquare size={13} /> Payment Information
-                                </h3>
-                                {!isEditingPayment && canEditPayment && (
-                                  <button
-                                    onClick={() => {
-                                      const defaultDate = selectedBatch.paymentReceivedDate
-                                        ? toLocalDateStr(selectedBatch.paymentReceivedDate)
-                                        : toLocalDateStr(new Date());
-                                      setPaymentEditForm({ paymentDate: defaultDate, amount: displayAmount, utrId: selectedBatch.utrId || "" });
-                                      setIsEditingPayment(true);
-                                    }}
-                                    className="px-2 py-1 text-[10px] font-bold bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition"
-                                  >
-                                    Edit Payment
-                                  </button>
-                                )}
-                              </div>
-                              {isEditingPayment ? (
-                                <div className="space-y-2 mt-2 border-t border-emerald-200 pt-2">
-                                  <div>
-                                    <label className="text-[10px] font-semibold text-emerald-700 block mb-1">Payment Date</label>
-                                    <input type="date" className="w-full border border-emerald-200 p-1.5 rounded text-xs outline-none focus:ring-1 focus:ring-emerald-500" value={paymentEditForm.paymentDate} onChange={e => setPaymentEditForm({ ...paymentEditForm, paymentDate: e.target.value })} />
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] font-semibold text-emerald-700 block mb-1">Total Amount (₹)</label>
-                                    <input type="number" className="w-full border border-emerald-200 p-1.5 rounded text-xs outline-none focus:ring-1 focus:ring-emerald-500" value={paymentEditForm.amount} onChange={e => setPaymentEditForm({ ...paymentEditForm, amount: e.target.value })} />
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] font-semibold text-emerald-700 block mb-1">UTR ID</label>
-                                    <input type="text" className="w-full border border-emerald-200 p-1.5 rounded text-xs outline-none focus:ring-1 focus:ring-emerald-500 font-mono uppercase" value={paymentEditForm.utrId} onChange={e => setPaymentEditForm({ ...paymentEditForm, utrId: e.target.value })} />
-                                  </div>
-                                  <div className="flex justify-end gap-2 pt-2">
-                                    <button onClick={() => setIsEditingPayment(false)} className="px-3 py-1.5 bg-white border border-emerald-200 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Cancel</button>
-                                    <button onClick={handleSavePaymentEdit} disabled={isUpdating} className="px-3 py-1.5 bg-emerald-600 text-white rounded text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1">
-                                      {isUpdating ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="space-y-2">
-                                  {[
-                                    { label: "Date Received", value: safeFormatDate(selectedBatch.paymentReceivedDate) || "—" },
-                                    { label: "Total Amount", value: `₹${displayAmount.toLocaleString('en-IN')}` },
-                                    { label: "UTR ID", value: selectedBatch.utrId || "N/A", mono: true },
-                                  ].map((item, i) => (
-                                    <div key={i} className={`flex justify-between ${i < 2 ? "border-b border-emerald-200 pb-1.5" : ""}`}>
-                                      <span className="text-[10px] text-emerald-600 font-medium">{item.label}</span>
-                                      <span className={`text-xs font-bold text-emerald-800 ${item.mono ? "font-mono uppercase" : ""}`}>{item.value}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
+                        {modalDetailTab === "details" && <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto] gap-4 items-start">
+                        <div className="space-y-4 min-w-0">
 
                         {/* Shipment Details */}
                         {(() => {
@@ -1139,7 +1093,7 @@ export default function OrderDetailModal({
                               <h3 className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1.5">
                                 <User size={13} /> Shipment Details
                               </h3>
-                              <div className={!isMarketplace ? "grid gap-2 grid-cols-2" : "grid gap-2 grid-cols-2 sm:grid-cols-3"}>
+                              <div className="grid gap-2 grid-cols-2 lg:grid-cols-3">
                                 {[
                                   { label: "Platform", value: selectedBatch.firmName || "N/A" },
                                   { label: "Order ID", value: selectedBatch.customerName || "N/A" },
@@ -1178,87 +1132,6 @@ export default function OrderDetailModal({
                             </div>
                           );
                         })()}
-
-                        {/* GeM Details */}
-                        {selectedBatch.firmName === "GeM" && (
-                          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                            <h3 className="text-xs font-bold text-orange-700 mb-2 flex items-center gap-1.5">
-                              <Building size={13} /> GeM Details
-                            </h3>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                              {[
-                                { label: "Bid No", value: selectedBatch.bidNumber },
-                                { label: "Order Type", value: selectedBatch.gemOrderType },
-                                { label: "GST", value: selectedBatch.gstNumber },
-                                { label: "Contact", value: selectedBatch.contactNumber },
-                                { label: "Buyer Email", value: selectedBatch.buyerEmail, small: true },
-                                { label: "Payment Auth Email", value: selectedBatch.paymentAuthorityEmail, small: true },
-                                { label: "Consignee Name", value: selectedBatch.consigneeName },
-                                { label: "Consignee Email", value: selectedBatch.consigneeEmail, small: true },
-                                { label: "Order Date", value: safeFormatDate(selectedBatch.orderDate) || "—" },
-                                { label: "Last Delivery", value: safeFormatDate(selectedBatch.lastDeliveryDate) || "—" },
-                              ].map((item, i) => (
-                                <div key={i} className="flex justify-between text-xs">
-                                  <span className="text-orange-600">{item.label}</span>
-                                  <span className={`font-bold text-slate-800 ${item.small ? "text-[10px]" : ""}`}>{item.value || "N/A"}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Contact */}
-                        {(selectedBatch.contactNumber || selectedBatch.buyerEmail) && selectedBatch.firmName !== "GeM" && (
-                          <div className="bg-white border border-slate-200 rounded-lg p-3">
-                            <h3 className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1.5">
-                              <Phone size={13} /> Contact
-                            </h3>
-                            <div className="space-y-1.5">
-                              {selectedBatch.contactNumber && (
-                                <div className="flex items-center gap-1.5 bg-slate-50 rounded p-2">
-                                  <Phone size={11} className="text-slate-400" />
-                                  <span className="text-xs font-medium text-slate-700">{selectedBatch.contactNumber}</span>
-                                </div>
-                              )}
-                              {selectedBatch.buyerEmail && (
-                                <div className="flex items-center gap-1.5 bg-slate-50 rounded p-2">
-                                  <span className="text-xs font-medium text-slate-700">{selectedBatch.buyerEmail}</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Installation Toggle */}
-                        {!isCancelledOrder && (
-                          <div className={`flex items-center justify-between p-3 rounded-lg border ${isInstallationRequired(selectedBatch.installationRequired) ? "bg-indigo-50 border-indigo-200" : "bg-slate-50 border-slate-200"}`}>
-                            <div className="flex items-center gap-2.5">
-                              <div className={`p-2 rounded-lg ${isInstallationRequired(selectedBatch.installationRequired) ? "bg-indigo-100 text-indigo-600" : "bg-slate-200 text-slate-500"}`}>
-                                <Wrench size={16} />
-                              </div>
-                              <div>
-                                <div className="font-bold text-slate-700 text-xs">Installation Required?</div>
-                                <div className="text-[10px] text-slate-500">
-                                  {isInstallationRequired(selectedBatch.installationRequired)
-                                    ? "Yes — Will appear in Installation tab"
-                                    : "No — Default. Toggle to enable"}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex bg-white rounded-md border border-slate-300 p-0.5">
-                              <button
-                                onClick={() => handleToggleInstallation(false)}
-                                disabled={isUpdating}
-                                className={`px-3 py-1 rounded text-[10px] font-bold transition ${!isInstallationRequired(selectedBatch.installationRequired) ? "bg-slate-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-                              >No</button>
-                              <button
-                                onClick={() => onRequestInstallation()}
-                                disabled={isUpdating}
-                                className={`px-3 py-1 rounded text-[10px] font-bold transition ${isInstallationRequired(selectedBatch.installationRequired) ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-                              >Yes</button>
-                            </div>
-                          </div>
-                        )}
 
                         {/* Ordered Items (per Contract) — reference only, never
                             blocks/warns if what's actually dispatched below
@@ -1363,6 +1236,9 @@ export default function OrderDetailModal({
                                         <span className={`font-medium ${returned ? "text-red-700" : "text-slate-700"}`}>
                                           {item.modelName || "Unknown"}
                                         </span>
+                                        {item.remarks && (
+                                          <p className="text-[9px] text-slate-400 mt-0.5 italic break-words max-w-[160px]">{item.remarks}</p>
+                                        )}
                                       </td>
                                       <td className="px-3 py-2.5 text-center font-bold text-slate-600">{item.quantity || 1}</td>
                                       <td className="px-3 py-2.5">
@@ -1434,13 +1310,23 @@ export default function OrderDetailModal({
                                         )}
                                       </td>
                                       <td className={`px-3 py-2.5 text-right font-bold ${returned || isCancelledOrder ? "text-red-400 line-through" : "text-slate-700"}`}>
-                                        ₹{Number(item.sellingPrice || 0).toLocaleString()}
+                                        {/* Line total, not the bare unit price — sellingPrice is per unit (see
+                                            calculateBatchFinancials in helpers.js), so a qty > 1 row must be
+                                            multiplied here too or this cell disagrees with the footer's sum. */}
+                                        ₹{(Number(item.sellingPrice || 0) * (Number(item.quantity) || 1) + Number(item.carePackUpgradePrice || 0)).toLocaleString()}
+                                        {Number(item.quantity) > 1 && (
+                                          <div className="text-[9px] font-normal text-slate-400">₹{Number(item.sellingPrice || 0).toLocaleString()} / unit</div>
+                                        )}
                                       </td>
                                     </tr>
                                   );
                                 })}
                               </tbody>
                               <tfoot>
+                                {/* Subtotal row only when it actually differs from the final value below
+                                    (a return dragged it down) — otherwise the two rows show the identical
+                                    number and just sit there duplicated in the middle of the table. */}
+                                {f.totalValue !== f.netValue && (
                                 <tr className="bg-slate-50 border-t border-slate-200">
                                   <td colSpan="5" className="px-3 py-2 text-right text-slate-500 font-medium text-[10px] uppercase">
                                     Total Batch Value ({f.totalCount} items)
@@ -1449,6 +1335,7 @@ export default function OrderDetailModal({
                                     ₹{f.totalValue.toLocaleString()}
                                   </td>
                                 </tr>
+                                )}
                                 {f.returnedValue > 0 && !isCancelledOrder && activeTab === "active" && (
                                   <tr className="bg-red-50 border-t border-red-100">
                                     <td colSpan="5" className="px-3 py-2 text-right text-red-600 font-medium text-[10px] uppercase flex items-center justify-end gap-1">
@@ -1554,6 +1441,182 @@ export default function OrderDetailModal({
                             </div>
                           </div>
                         )}
+
+                        </div>
+
+                        <div className="space-y-4 xl:w-[380px] empty:hidden">
+
+                        {/* Order Summary — always-visible at-a-glance card in the sidebar */}
+                        <div className="bg-gradient-to-br from-indigo-50 via-white to-white border border-indigo-100 rounded-xl p-4">
+                          <h3 className="text-xs font-bold text-indigo-700 mb-3 flex items-center gap-1.5">
+                            <Package size={13} /> Order Summary
+                          </h3>
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Final Billing Value</div>
+                          <div className="text-2xl font-black text-slate-900 tracking-tight mb-3">
+                            ₹{Number(f.netValue ?? f.totalValue ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { label: "Items", value: selectedBatch.items.length },
+                              { label: "Total Qty", value: selectedBatch.items.reduce((sum, i) => sum + (Number(i.quantity) || 1), 0) },
+                              { label: "Platform", value: selectedBatch.firmName || "N/A" },
+                              { label: "Order Date", value: safeFormatDate(selectedBatch.orderDate) || "—" },
+                            ].map((x) => (
+                              <div key={x.label} className="bg-white border border-slate-100 rounded-lg px-2.5 py-2">
+                                <div className="text-[10px] text-slate-400 font-medium">{x.label}</div>
+                                <div className="text-xs font-bold text-slate-800 truncate">{x.value}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Payment Info (Completed orders) */}
+                        {selectedBatch.status === "Completed" && (() => {
+                          const totalPaidAmount = selectedBatch.items.reduce((sum, item) => sum + Number(item.paymentReceivedAmount || 0), 0);
+                          const fallbackAmount = selectedBatch.items.reduce((s, i) => s + Number(i.sellingPrice || 0), 0);
+                          const displayAmount = totalPaidAmount > 0 ? totalPaidAmount : fallbackAmount;
+                          return (
+                            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <h3 className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+                                  <CheckSquare size={13} /> Payment Information
+                                </h3>
+                                {!isEditingPayment && canEditPayment && (
+                                  <button
+                                    onClick={() => {
+                                      const defaultDate = selectedBatch.paymentReceivedDate
+                                        ? toLocalDateStr(selectedBatch.paymentReceivedDate)
+                                        : toLocalDateStr(new Date());
+                                      setPaymentEditForm({ paymentDate: defaultDate, amount: displayAmount, utrId: selectedBatch.utrId || "" });
+                                      setIsEditingPayment(true);
+                                    }}
+                                    className="px-2 py-1 text-[10px] font-bold bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 transition"
+                                  >
+                                    Edit Payment
+                                  </button>
+                                )}
+                              </div>
+                              {isEditingPayment ? (
+                                <div className="space-y-2 mt-2 border-t border-emerald-200 pt-2">
+                                  <div>
+                                    <label className="text-[10px] font-semibold text-emerald-700 block mb-1">Payment Date</label>
+                                    <input type="date" className="w-full border border-emerald-200 p-1.5 rounded text-xs outline-none focus:ring-1 focus:ring-emerald-500" value={paymentEditForm.paymentDate} onChange={e => setPaymentEditForm({ ...paymentEditForm, paymentDate: e.target.value })} />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] font-semibold text-emerald-700 block mb-1">Total Amount (₹)</label>
+                                    <input type="number" className="w-full border border-emerald-200 p-1.5 rounded text-xs outline-none focus:ring-1 focus:ring-emerald-500" value={paymentEditForm.amount} onChange={e => setPaymentEditForm({ ...paymentEditForm, amount: e.target.value })} />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] font-semibold text-emerald-700 block mb-1">UTR ID</label>
+                                    <input type="text" className="w-full border border-emerald-200 p-1.5 rounded text-xs outline-none focus:ring-1 focus:ring-emerald-500 font-mono uppercase" value={paymentEditForm.utrId} onChange={e => setPaymentEditForm({ ...paymentEditForm, utrId: e.target.value })} />
+                                  </div>
+                                  <div className="flex justify-end gap-2 pt-2">
+                                    <button onClick={() => setIsEditingPayment(false)} className="px-3 py-1.5 bg-white border border-emerald-200 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Cancel</button>
+                                    <button onClick={handleSavePaymentEdit} disabled={isUpdating} className="px-3 py-1.5 bg-emerald-600 text-white rounded text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1">
+                                      {isUpdating ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  {[
+                                    { label: "Date Received", value: safeFormatDate(selectedBatch.paymentReceivedDate) || "—" },
+                                    { label: "Total Amount", value: `₹${displayAmount.toLocaleString('en-IN')}` },
+                                    { label: "UTR ID", value: selectedBatch.utrId || "N/A", mono: true },
+                                  ].map((item, i) => (
+                                    <div key={i} className={`flex justify-between ${i < 2 ? "border-b border-emerald-200 pb-1.5" : ""}`}>
+                                      <span className="text-[10px] text-emerald-600 font-medium">{item.label}</span>
+                                      <span className={`text-xs font-bold text-emerald-800 ${item.mono ? "font-mono uppercase" : ""}`}>{item.value}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* GeM Details */}
+                        {selectedBatch.firmName === "GeM" && (
+                          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                            <h3 className="text-xs font-bold text-orange-700 mb-2 flex items-center gap-1.5">
+                              <Building size={13} /> GeM Details
+                            </h3>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                              {[
+                                { label: "Bid No", value: selectedBatch.bidNumber },
+                                { label: "Order Type", value: selectedBatch.gemOrderType },
+                                { label: "GST", value: selectedBatch.gstNumber },
+                                { label: "Contact", value: selectedBatch.contactNumber },
+                                { label: "Buyer Email", value: selectedBatch.buyerEmail, small: true },
+                                { label: "Payment Auth Email", value: selectedBatch.paymentAuthorityEmail, small: true },
+                                { label: "Consignee Name", value: selectedBatch.consigneeName },
+                                { label: "Consignee Email", value: selectedBatch.consigneeEmail, small: true },
+                                { label: "Order Date", value: safeFormatDate(selectedBatch.orderDate) || "—" },
+                                { label: "Last Delivery", value: safeFormatDate(selectedBatch.lastDeliveryDate) || "—" },
+                              ].map((item, i) => (
+                                <div key={i} className="flex justify-between text-xs">
+                                  <span className="text-orange-600">{item.label}</span>
+                                  <span className={`font-bold text-slate-800 ${item.small ? "text-[10px]" : ""}`}>{item.value || "N/A"}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Contact */}
+                        {(selectedBatch.contactNumber || selectedBatch.buyerEmail) && selectedBatch.firmName !== "GeM" && (
+                          <div className="bg-white border border-slate-200 rounded-lg p-3">
+                            <h3 className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1.5">
+                              <Phone size={13} /> Contact
+                            </h3>
+                            <div className="space-y-1.5">
+                              {selectedBatch.contactNumber && (
+                                <div className="flex items-center gap-1.5 bg-slate-50 rounded p-2">
+                                  <Phone size={11} className="text-slate-400" />
+                                  <span className="text-xs font-medium text-slate-700">{selectedBatch.contactNumber}</span>
+                                </div>
+                              )}
+                              {selectedBatch.buyerEmail && (
+                                <div className="flex items-center gap-1.5 bg-slate-50 rounded p-2">
+                                  <span className="text-xs font-medium text-slate-700">{selectedBatch.buyerEmail}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Installation Toggle */}
+                        {!isCancelledOrder && (
+                          <div className={`flex items-center justify-between p-3 rounded-lg border ${isInstallationRequired(selectedBatch.installationRequired) ? "bg-indigo-50 border-indigo-200" : "bg-slate-50 border-slate-200"}`}>
+                            <div className="flex items-center gap-2.5">
+                              <div className={`p-2 rounded-lg ${isInstallationRequired(selectedBatch.installationRequired) ? "bg-indigo-100 text-indigo-600" : "bg-slate-200 text-slate-500"}`}>
+                                <Wrench size={16} />
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-700 text-xs">Installation Required?</div>
+                                <div className="text-[10px] text-slate-500">
+                                  {isInstallationRequired(selectedBatch.installationRequired)
+                                    ? "Yes — Will appear in Installation tab"
+                                    : "No — Default. Toggle to enable"}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex bg-white rounded-md border border-slate-300 p-0.5">
+                              <button
+                                onClick={() => handleToggleInstallation(false)}
+                                disabled={isUpdating}
+                                className={`px-3 py-1 rounded text-[10px] font-bold transition ${!isInstallationRequired(selectedBatch.installationRequired) ? "bg-slate-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                              >No</button>
+                              <button
+                                onClick={() => onRequestInstallation()}
+                                disabled={isUpdating}
+                                className={`px-3 py-1 rounded text-[10px] font-bold transition ${isInstallationRequired(selectedBatch.installationRequired) ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                              >Yes</button>
+                            </div>
+                          </div>
+                        )}
+
+                        </div>
 
                         </div>}
 
@@ -2636,6 +2699,9 @@ export default function OrderDetailModal({
                                         <span className={`font-medium ${returned ? "text-red-700" : "text-slate-700"}`}>
                                           {item.modelName || "Unknown"}
                                         </span>
+                                        {item.remarks && (
+                                          <p className="text-[9px] text-slate-400 mt-0.5 italic break-words max-w-[160px]">{item.remarks}</p>
+                                        )}
                                       </td>
                                       <td className="px-3 py-2.5 text-center font-bold text-slate-600">{item.quantity || 1}</td>
                                       <td className="px-3 py-2.5">
@@ -2707,13 +2773,20 @@ export default function OrderDetailModal({
                                         )}
                                       </td>
                                       <td className={`px-3 py-2.5 text-right font-bold ${returned || isCancelledOrder ? "text-red-400 line-through" : "text-slate-700"}`}>
-                                        ₹{Number(item.sellingPrice || 0).toLocaleString()}
+                                        {/* Line total, not the bare unit price — sellingPrice is per unit (see
+                                            calculateBatchFinancials in helpers.js), so a qty > 1 row must be
+                                            multiplied here too or this cell disagrees with the footer's sum. */}
+                                        ₹{(Number(item.sellingPrice || 0) * (Number(item.quantity) || 1) + Number(item.carePackUpgradePrice || 0)).toLocaleString()}
+                                        {Number(item.quantity) > 1 && (
+                                          <div className="text-[9px] font-normal text-slate-400">₹{Number(item.sellingPrice || 0).toLocaleString()} / unit</div>
+                                        )}
                                       </td>
                                     </tr>
                                   );
                                 })}
                               </tbody>
                               <tfoot>
+                                {f.totalValue !== f.netValue && (
                                 <tr className="bg-slate-50 border-t border-slate-200">
                                   <td colSpan="5" className="px-3 py-2 text-right text-slate-500 font-medium text-[10px] uppercase">
                                     Total Batch Value ({f.totalCount} items)
@@ -2722,6 +2795,7 @@ export default function OrderDetailModal({
                                     ₹{f.totalValue.toLocaleString()}
                                   </td>
                                 </tr>
+                                )}
 
                                 {f.returnedValue > 0 && !isCancelledOrder && activeTab === "active" && (
                                   <tr className="bg-red-50 border-t border-red-100">
@@ -2851,9 +2925,9 @@ export default function OrderDetailModal({
             })()}
 
             {/* Modal Footer */}
-            <div className="bg-slate-50 border-t border-slate-200 p-3 rounded-b-xl flex justify-end">
-              <button onClick={closeModal} className="px-4 py-1.5 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 font-semibold text-xs">
-                Close
+            <div className="bg-slate-50 border-t border-slate-200 px-3 py-2 flex justify-end">
+              <button onClick={closeModal} className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 font-semibold text-xs">
+                <ArrowLeft size={13} /> Back to Orders
               </button>
             </div>
           </div>

@@ -5,6 +5,7 @@ import { authenticateRequest, authorizeMasterWrite, hasAllCompaniesAccess, isSup
 import { normalizeRole, parseAllowedPlatforms, parseJsonArray } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { ensureCompanyAdditionalGstColumn } from "@/lib/companiesMigration";
+import { ensureCompanyDueBillColumn } from "@/lib/stockInDueMigration";
 import { normGstin } from "@/lib/companyMatch";
 
 export const GET = withErrorHandling(async (request) => {
@@ -15,6 +16,7 @@ export const GET = withErrorHandling(async (request) => {
   // in the system — only Admin/allCompaniesAccess users see all of them.
   const user = await authenticateRequest(request);
   await ensureCompanyAdditionalGstColumn();
+  await ensureCompanyDueBillColumn();
 
   const [rows] = hasAllCompaniesAccess(user)
     ? await mysqlPool.query("SELECT * FROM companies ORDER BY name ASC")
@@ -36,8 +38,9 @@ export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   authorizeMasterWrite(user, "companyMaster", { isCreate: true, denyMessage: "You do not have permission to add companies." });
   await ensureCompanyAdditionalGstColumn();
+  await ensureCompanyDueBillColumn();
 
-  const { name, gstNumber, allowedPlatforms, additionalGstNumbers, isActive } = await parseJsonBody(request);
+  const { name, gstNumber, allowedPlatforms, additionalGstNumbers, isActive, dueBillEnabled } = await parseJsonBody(request);
   if (!name) throw new ApiError(400, "Company name is required.");
 
   const platformsJson = allowedPlatforms && allowedPlatforms.length > 0 ? JSON.stringify(allowedPlatforms) : null;
@@ -51,8 +54,8 @@ export const POST = withErrorHandling(async (request) => {
 
   const guid = randomUUID();
   await mysqlPool.query(
-    "INSERT INTO companies (guid, name, gstNumber, allowedPlatforms, additionalGstNumbers, isActive) VALUES (?, ?, ?, ?, ?, ?)",
-    [guid, name, gstNumber || null, platformsJson, extraGstJson, isActive === false ? 0 : 1]
+    "INSERT INTO companies (guid, name, gstNumber, allowedPlatforms, additionalGstNumbers, isActive, dueBillEnabled) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [guid, name, gstNumber || null, platformsJson, extraGstJson, isActive === false ? 0 : 1, dueBillEnabled ? 1 : 0]
   );
 
   // Non-Admin users (Admin/allCompaniesAccess already sees every company via

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth } from "@/lib/auth";
+import { authenticateRequest, requireAuth, ApiError } from "@/lib/auth";
+import { ensureDeletedByColumns } from "@/lib/deletedItemsMigration";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
@@ -11,9 +12,20 @@ export const POST = withErrorHandling(async (request) => {
   requireAuth(user);
 
   const { stockInId } = body;
+  await ensureDeletedByColumns();
+  const [[si]] = await mysqlPool.query("SELECT status FROM inventorystockin WHERE stockInId = ?", [stockInId]);
+  if (si && si.status === 1) throw new ApiError(400, "This stock-in is finalized — revert it first, then delete.");
+  const [detailRows] = await mysqlPool.query("SELECT stockInDetailId FROM inventorystockindetail WHERE stockInId = ?", [stockInId]);
+
   const connection = await mysqlPool.getConnection();
   try {
     await connection.beginTransaction();
+    if (detailRows.length > 0) {
+      await connection.query(
+        "UPDATE inventorystockinserial SET isDeleted = 1, deletedBy = ?, deletedAt = NOW() WHERE stockInDetailId IN (?) AND isDeleted = 0 AND (serialStatus IS NULL OR guid IS NULL)",
+        [user.username || user.fullName || "Unknown", detailRows.map((d) => d.stockInDetailId)]
+      );
+    }
     await connection.execute("UPDATE inventorystockin SET isDeleted = 1 WHERE stockInId = ?", [stockInId]);
     await connection.execute("UPDATE inventorystockindetail SET isDeleted = 1 WHERE stockInId = ?", [stockInId]);
     await connection.commit();

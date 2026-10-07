@@ -8,6 +8,7 @@ import { useCompany } from "@/lib/client/CompanyContext";
 import { useAppData } from "@/lib/client/AppDataContext";
 import AddProductWizard from "./AddProductWizard";
 import { promptDeleteRemarks } from "@/lib/client/promptRemarks";
+import { resolveDisplayStatus } from "@/components/orderTracking/helpers";
 
 const parseProducts = (val) => {
   if (!val) return [];
@@ -733,14 +734,16 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
     for (const r of results) {
       if (r.exists && r.matchedBy === "name") continue;
 
-      if (r.exists && r.matchedBy === "model") {
+      if (r.exists && (r.matchedBy === "model" || r.matchedBy === "ai")) {
         const choice = await Swal.fire({
-          title: "Model already in inventory",
-          text: `The model for "${r.productName}" matches an existing item ("${r.matchedName}") in your inventory. Use it, or create a separate new item?`,
+          title: r.matchedBy === "ai" ? "Similar product in inventory" : "Model already in inventory",
+          text: r.matchedBy === "ai"
+            ? `AI thinks "${r.productName}" is the same product as the existing item "${r.matchedName}" in your inventory. Use it, or create a separate new item?`
+            : `The model for "${r.productName}" matches an existing item ("${r.matchedName}") in your inventory. Use it, or create a separate new item?`,
           icon: "question",
           showDenyButton: true,
           showCancelButton: true,
-          confirmButtonText: "Use Existing Model",
+          confirmButtonText: r.matchedBy === "ai" ? "Use Existing Item" : "Use Existing Model",
           denyButtonText: "Create New",
           cancelButtonText: "Cancel",
         });
@@ -824,8 +827,13 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
     .filter((c) => {
       const q = searchTerm.trim().toLowerCase();
       if (!q) return true;
-      return [c.bidNumber, c.contractNumber, c.buyerContact, c.buyerEmail, c.organisation, c.ministry, c.department, c.sellerCompany]
+      const matchesText = [c.bidNumber, c.contractNumber, c.buyerContact, c.buyerEmail, c.organisation, c.ministry, c.department, c.sellerCompany, c.buyerGstin, c.sellerGstin]
         .some((field) => String(field || "").toLowerCase().includes(q));
+      if (matchesText) return true;
+      // GSTINs are often stored with spaces/brackets (e.g. "06ABC... (R)") —
+      // compare them with punctuation stripped so a pasted GSTIN still hits.
+      const qAlnum = q.replace(/[^a-z0-9]/g, "");
+      return qAlnum.length >= 4 && [c.buyerGstin, c.sellerGstin].some((g) => String(g || "").toLowerCase().replace(/[^a-z0-9]/g, "").includes(qAlnum));
     })
     .sort((a, b) => {
       const dateA = new Date(a.generatedDate).getTime() || 0;
@@ -887,7 +895,7 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
           <input
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by Bid No, Contract No, Buyer, Ministry..."
+            placeholder="Search by Bid No, Contract No, Buyer, GSTIN, Ministry..."
             className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-100"
           />
         </div>
@@ -987,6 +995,19 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
             ) : (
               paginatedContracts.map((c, idx) => {
                 const isCancelled = c.status === "Cancelled";
+                // The contract's own status column is only ever "Cancelled" or
+                // empty — the actual state (Draft / Payment Pending / Completed /
+                // Order Cancelled / no order yet) comes from the order it created.
+                const displayStatus = isCancelled ? "Cancelled" : (c.orderStatus ? resolveDisplayStatus(c.orderStatus) : "No Order Yet");
+                const statusStyle = isCancelled
+                  ? "bg-rose-100 text-rose-700"
+                  : displayStatus === "Completed"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : displayStatus === "Order Cancelled"
+                  ? "bg-rose-100 text-rose-700"
+                  : displayStatus === "No Order Yet"
+                  ? "bg-slate-100 text-slate-600"
+                  : "bg-amber-100 text-amber-700";
                 const orderAlreadyExists = contractNumbersWithOrder.has(String(c.contractNumber || "").trim());
                 return (
                   <React.Fragment key={c.guid}>
@@ -1048,10 +1069,8 @@ export default function ContractsList({ statusFilter = "Active", currentUser }) 
                     </td>
                     {visibleCols.has("status") && (
                       <td className="p-3 whitespace-nowrap">
-                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                          isCancelled ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
-                        }`}>
-                          {c.status || "Active"}
+                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${statusStyle}`}>
+                          {displayStatus}
                         </span>
                       </td>
                     )}

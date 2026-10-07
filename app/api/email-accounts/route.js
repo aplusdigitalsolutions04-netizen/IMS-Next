@@ -72,6 +72,35 @@ export const POST = withErrorHandling(async (request) => {
   // Only Admin can grant sharing — a non-admin creating their own account
   // has no standing to hand other people access to it unilaterally.
   const isAdmin = isSuperUser(normalizeRole(user.role));
+
+  // One mailbox = one account. If this exact mailbox (same login on the same SMTP
+  // host) is already added — by Admin or anybody else — don't create a second row.
+  //   • the person who already has it  -> told it already exists
+  //   • someone else, with the right password -> the existing account is simply
+  //     shared with them, so it shows once (for Admin too) and also for them
+  //   • someone else, wrong password -> refused (knowing an address is not access)
+  const [dupes] = await mysqlPool.query(
+    "SELECT guid, accountName, smtpPass, createdBy, sharedWith FROM email_accounts WHERE LOWER(TRIM(smtpUser)) = ? AND LOWER(TRIM(smtpHost)) = ?",
+    [smtpUser.trim().toLowerCase(), smtpHost.trim().toLowerCase()]
+  );
+  if (dupes.length > 0) {
+    const existing = dupes[0];
+    const shared = parseSharedWith(existing.sharedWith);
+    const alreadyHasIt = isAdmin || existing.createdBy === user.id || shared.includes(String(user.id));
+    if (alreadyHasIt) {
+      throw new ApiError(409, `This email account already exists as "${existing.accountName}" — it is not added twice.`);
+    }
+    if (String(existing.smtpPass) !== smtpPass.trim()) {
+      throw new ApiError(400, "This email account is already added, but the password you entered doesn't match, so it can't be shared with you.");
+    }
+    shared.push(String(user.id));
+    await mysqlPool.query("UPDATE email_accounts SET sharedWith = ? WHERE guid = ?", [JSON.stringify(shared), existing.guid]);
+    return NextResponse.json({
+      message: `This email account already existed ("${existing.accountName}") — it was not added twice; it is now available to you.`,
+      guid: existing.guid,
+      merged: true,
+    });
+  }
   const sharedWithJson = isAdmin && Array.isArray(sharedWith) ? JSON.stringify(sharedWith.map(String)) : null;
 
   const guid = randomUUID();

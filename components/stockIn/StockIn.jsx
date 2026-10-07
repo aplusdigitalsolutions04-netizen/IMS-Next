@@ -13,6 +13,8 @@ import { printerService } from "@/lib/services/api";
 import DayFilterSelect from "@/components/common/DayFilterSelect";
 import { getDayFilterRange } from "@/lib/client/dayFilter";
 import { toLocalDateStr as toYmd } from "@/lib/dateUtils";
+import { roundOff } from "@/lib/roundOff";
+import { getStoredUser } from "@/lib/client/auth";
 
 
 // In a real crypto JS environment we'd use crypto.randomUUID()
@@ -23,12 +25,40 @@ const generateUUID = () => {
     });
 };
 
+// Admin always has it (a session created before this flag existed won't carry
+// it, so check the role rather than relying on the flag alone).
+const hasDuePermission = () => {
+  const u = getStoredUser();
+  return String(u?.role || "").toLowerCase() === "admin" || !!u?.allow_due_purchase_bill;
+};
+
 const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "", initialCustomEnd = "" }) => {
   const [stockInId, setStockInId] = useState("");
   const [vendors, setVendors] = useState([]);
   const [vendorId, setVendorId] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
+  // Due Purchase Bill: stock is taken in before the bill arrives, so vendor /
+  // invoice no / date are optional and get filled in later from the Due tab.
+  const [isDue, setIsDue] = useState(false);
+  // Optional nearest-rupee round off of the bill total (saved with the stock-in).
+  const [roundOffOn, setRoundOffOn] = useState(false);
+  const roundOffRef = React.useRef(false);
+  const applyRoundOff = (v) => { roundOffRef.current = !!v; setRoundOffOn(!!v); };
+  // Admin-granted (Roles → Edit Permissions → "Due Purchase Bill"); Admin always has it.
+  // ...and switched on for the active company in Company Master (from GetStockInCounts).
+  const [dueEnabled, setDueEnabled] = useState(false);
+  const dueEnabledRef = React.useRef(null); // null = not known yet (counts still loading)
+  const canDue = hasDuePermission() && dueEnabled;
+  // Top-level tabs: "entry" = the Stock In form, "history" = the Drafts /
+  // Finalized / Due Purchase Bill list (filter chosen by activeFilter).
+  const [view, setView] = useState(initialDayFilter !== "all" ? "history" : "entry");
+  const [dueCount, setDueCount] = useState(0);
+  const [dueBillTarget, setDueBillTarget] = useState(null);
+  const [dueBillForm, setDueBillForm] = useState({ vendorId: "", invoiceNo: "", invoiceDate: "", invoiceFile: "" });
+  const [uploadingDueFile, setUploadingDueFile] = useState(false);
+  const [savingDueBill, setSavingDueBill] = useState(false);
+  const headerComplete = isDue || (!!vendorId && !!invoiceNo && !!invoiceDate);
   const [barcodeInput, setBarcodeInput] = useState("");
   const [parsingInvoice, setParsingInvoice] = useState(false);
   const fileInputRef = React.useRef(null);
@@ -36,7 +66,11 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
   const [stockItems, setStockItems] = useState([]);
   
   // History Filters and counts
-  const [activeFilter, setActiveFilter] = useState(() => parseInt(localStorage.getItem('stockInFilter') || "0"));
+  const [activeFilter, setActiveFilter] = useState(() => {
+    const saved = parseInt(localStorage.getItem('stockInFilter') || "0");
+    // A remembered Due tab is meaningless (and its API is forbidden) without the permission.
+    return saved === 2 && !hasDuePermission() ? 1 : saved;
+  });
   const [draftCount, setDraftCount] = useState(0);
   const [finalCount, setFinalCount] = useState(0);
   const [historyItems, setHistoryItems] = useState([]);
@@ -182,12 +216,21 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
       const data = await inventoryService.getStockInCounts();
       setDraftCount(Number(data?.draftCount || 0));
       setFinalCount(Number(data?.finalizedCount || 0));
+      setDueCount(Number(data?.dueCount || 0));
+      const wasKnown = dueEnabledRef.current !== null;
+      dueEnabledRef.current = !!data?.dueEnabled;
+      setDueEnabled(!!data?.dueEnabled);
+      if (!data?.dueEnabled) setActiveFilter((f) => (f === 2 ? 1 : f));
+      else if (!wasKnown && activeFilter === 2) fetchHistory(2);
     } catch (e) {
       console.error(e);
     }
   };
 
   const fetchHistory = async (status, start = startDate, end = endDate, page = currentPage, limit = pageSize) => {
+    // The Due tab is company-gated server-side; don't ask until the counts
+    // call has told us it is enabled (fetchCounts re-triggers this if so).
+    if (Number(status) === 2 && !dueEnabledRef.current) return;
     try {
       const response = await inventoryService.getStockInList(status, start, end, page, limit);
       setHistoryItems(response?.data || []);
@@ -283,6 +326,8 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
       setStockInId(draft.stockInId);
       setVendorId(draft.vendorId);
       setInvoiceNo(draft.invoiceNo);
+      setIsDue(!!draft.isDue);
+      applyRoundOff(draft.isRoundOff);
       if (draft.invoiceDate) {
         setInvoiceDate(draft.invoiceDate.split("T")[0]);
       }
@@ -323,6 +368,8 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
     setVendorId("");
     setInvoiceNo("");
     setInvoiceDate("");
+    setIsDue(false);
+    applyRoundOff(false);
     setStockItems([]);
     setIsFinalized(false);
     setBarcodeInput("");
@@ -331,6 +378,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
 
   const loadSpecificDraft = async (id) => {
     if (!id) return;
+    setView("entry");
     setStockInId(id);
     setStockItems([]);
 
@@ -341,6 +389,8 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
       const h = data[0];
       setVendorId(h.vendorId);
       setInvoiceNo(h.invoiceNo);
+      setIsDue(!!h.isDue);
+      applyRoundOff(h.isRoundOff);
       if (h.invoiceDate) setInvoiceDate(h.invoiceDate.split("T")[0]);
       setInvoiceFile(h.invoiceFile || null);
 
@@ -379,7 +429,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
 
   const autoSaveDraft = async (itemObj, itemsList, specificIndex, onComplete) => {
     // Only save if header is complete
-    if (!vendorId || !invoiceNo || !invoiceDate) {
+    if (!headerComplete) {
       if (onComplete) onComplete();
       return;
     }
@@ -392,6 +442,8 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
         InvoiceNo: invoiceNo,
         InvoiceDate: invoiceDate,
         Remarks: "",
+        IsDue: isDue,
+        RoundOff: roundOffRef.current,
         InvoiceFile: invoiceFile || "",
         ItemVariantId: itemObj.itemVariantId,
         modelGuid: itemObj.modelGuid || null,
@@ -454,8 +506,8 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
     if (e.key === "Enter") {
       e.preventDefault();
       
-      if (!vendorId || !invoiceNo || !invoiceDate) {
-        Swal.fire("Header Required", "Please select Vendor, Invoice No and Date before scanning", "warning");
+      if (!headerComplete) {
+        Swal.fire("Header Required", "Please select Vendor, Invoice No and Date (or mark as Due Purchase Bill) before scanning", "warning");
         setBarcodeInput("");
         return;
       }
@@ -515,8 +567,8 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
   }, [itemSearchQuery, showItemSearch]);
 
   const handleItemSearchSelect = (variantData) => {
-    if (!vendorId || !invoiceNo || !invoiceDate) {
-      Swal.fire("Header Required", "Please select Vendor, Invoice No and Date before adding items", "warning");
+    if (!headerComplete) {
+      Swal.fire("Header Required", "Please select Vendor, Invoice No and Date (or mark as Due Purchase Bill) before adding items", "warning");
       return;
     }
     // No barcode to attach — same processVariantSelection a scan uses, just
@@ -529,8 +581,8 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
 
   // Printer model barcode — skip unit selection, add directly with modelGuid
   const processModelItem = (data) => {
-    if (!vendorId || !invoiceNo || !invoiceDate) {
-      Swal.fire("Header Required", "Please fill Vendor, Invoice No and Date first", "warning");
+    if (!headerComplete) {
+      Swal.fire("Header Required", "Please fill Vendor, Invoice No and Date (or mark as Due Purchase Bill) first", "warning");
       return;
     }
     setStockItems(prev => {
@@ -708,6 +760,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
     acc.amount += obj.amount;
     return acc;
   }, { qty: 0, amount: 0 });
+  const roundedTotal = roundOffOn ? roundOff(totals.amount) : { rounded: totals.amount, diff: 0 };
 
   // ----------------------------------------------------
   // SERIAL NUMBERS
@@ -914,8 +967,8 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
   // FINALIZE
   // ----------------------------------------------------
   const finalizeStockIn = () => {
-     if (!vendorId || !invoiceNo || !invoiceDate || stockItems.length === 0) {
-        Swal.fire("Required", "Vendor, Invoice No, Invoice Date and at least one item are required", "warning");
+     if (!headerComplete || stockItems.length === 0) {
+        Swal.fire("Required", "Vendor, Invoice No, Invoice Date (unless Due Purchase Bill) and at least one item are required", "warning");
         return;
      }
 
@@ -927,7 +980,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
 
      Swal.fire({
        title: "Finalize Stock In?",
-       text: "Once finalized, this invoice cannot be edited.",
+       text: isDue ? "Stock will be added now. The purchase bill will appear under the Due Purchase Bill tab until you add its details." : "Once finalized, this invoice cannot be edited.",
        icon: "warning",
        showCancelButton: true,
        confirmButtonText: "Yes, Finalize"
@@ -952,6 +1005,48 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
          }
        }
      });
+  };
+
+  const handleDueFilePick = () => {
+    const el = document.createElement("input");
+    el.type = "file";
+    el.accept = ".pdf,image/*";
+    el.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      setUploadingDueFile(true);
+      const formData = new FormData();
+      formData.append("file", file);
+      try {
+        const res = await legacyApi.post("/Inventory/UploadInvoice", formData);
+        setDueBillForm((prev) => ({ ...prev, invoiceFile: res.data.filePath }));
+      } catch (err) {
+        Swal.fire("Error", "File upload failed", "error");
+      } finally {
+        setUploadingDueFile(false);
+      }
+    };
+    el.click();
+  };
+
+  const handleSaveDueBill = async () => {
+    const { vendorId: v, invoiceNo: n, invoiceDate: d } = dueBillForm;
+    if (!v || !n.trim() || !d) {
+      Swal.fire("Required", "Vendor, Invoice No and Invoice Date are required", "warning");
+      return;
+    }
+    setSavingDueBill(true);
+    try {
+      await inventoryService.updateDueBill({ stockInId: dueBillTarget.stockInId, vendorId: v, invoiceNo: n.trim(), invoiceDate: d, invoiceFile: dueBillForm.invoiceFile || undefined });
+      setDueBillTarget(null);
+      Swal.fire("Saved", "Purchase bill details added.", "success");
+      fetchCounts();
+      fetchHistory(activeFilter);
+    } catch (e) {
+      Swal.fire("Error", e.response?.data?.message || "Failed to save bill details", "error");
+    } finally {
+      setSavingDueBill(false);
+    }
   };
 
   const handleRevertStockIn = async () => {
@@ -1073,8 +1168,35 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
   };
 
 
+  const openTab = (status) => {
+    setView("history");
+    handleFilterChange(status);
+  };
+
   return (
     <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-100 min-h-screen">
+      <div className="sticky top-0 z-30 -mx-2 mb-6 flex flex-wrap gap-2 bg-white/95 backdrop-blur py-2 border-b border-slate-100">
+        {[
+          { key: "entry", label: "+ New Stock In", cls: "text-slate-700 bg-slate-50 border-slate-200", onClick: () => setView("entry") },
+          { key: 0, label: `Drafts (${draftCount})`, cls: "text-indigo-700 bg-indigo-50 border-indigo-200", onClick: () => openTab(0) },
+          { key: 1, label: `Finalized (${finalCount})`, cls: "text-emerald-700 bg-emerald-50 border-emerald-200", onClick: () => openTab(1) },
+          { key: 2, label: `Due Purchase Bill (${dueCount})`, cls: "text-amber-700 bg-amber-50 border-amber-200", onClick: () => openTab(2), needsDue: true },
+        ].filter((t) => !t.needsDue || canDue).map((t) => {
+          const active = t.key === "entry" ? view === "entry" : (view === "history" && activeFilter === t.key);
+          return (
+            <button
+              key={t.key}
+              onClick={t.onClick}
+              className={`px-5 py-2.5 rounded-xl text-sm font-black border transition-all hover:shadow-sm ${t.cls} ${active ? "ring-2 ring-offset-1 ring-slate-400 shadow-sm" : "opacity-80"}`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {view === "entry" && (
+      <>
       <div className="flex items-center gap-4 border-b border-slate-100 pb-6 mb-8">
         <div className="p-3 bg-indigo-50 rounded-xl">
           <PackagePlus size={28} className="text-indigo-600" />
@@ -1107,10 +1229,17 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
            <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded ml-auto text-[10px] tracking-normal">Draft UUID: {stockInId.split("-")[0]}...</span>
         </h3>
         
+        {!isFinalized && canDue && (
+          <label className="flex items-center gap-2 mb-5 text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 cursor-pointer w-fit">
+            <input type="checkbox" checked={isDue} onChange={(e) => setIsDue(e.target.checked)} className="w-4 h-4 accent-amber-600" />
+            Due Purchase Bill — bill not received yet (stock in now, add Vendor / Invoice No / Date later)
+          </label>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex justify-between items-center">
-              Vendor *
+              Vendor {isDue ? "" : "*"}
               {!isFinalized && (
                 <button 
                    onClick={() => setShowAddVendor(true)} 
@@ -1136,7 +1265,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Invoice No *</label>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Invoice No {isDue ? "" : "*"}</label>
             <input
               type="text"
               value={invoiceNo}
@@ -1148,7 +1277,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
           </div>
 
           <div>
-             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Invoice Date *</label>
+             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Invoice Date {isDue ? "" : "*"}</label>
              <input 
                type="date"
                value={invoiceDate}
@@ -1172,8 +1301,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
                   <button
                     onClick={() => {
                       const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
-                      setPreviewFileUrl(`${baseUrl}/uploads/${invoiceFile}`);
-                      setShowInvoicePreview(true);
+                      window.open(`${baseUrl}/uploads/${invoiceFile}`, "_blank", "noopener,noreferrer");
                     }}
                     className="bg-indigo-50 text-indigo-600 p-3 rounded-xl hover:bg-indigo-100 transition-colors shadow-sm"
                     title="View Invoice"
@@ -1416,8 +1544,26 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
             <div>
                <div className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Total Amount</div>
                <div className="text-2xl font-black font-mono tracking-tight text-emerald-400">
-                 ₹ {totals.amount.toFixed(2)}
+                 ₹ {roundedTotal.rounded.toFixed(2)}
                </div>
+               <label className="flex items-center gap-1.5 mt-1 text-[11px] font-bold text-slate-300 cursor-pointer">
+                 <input
+                   type="checkbox"
+                   checked={roundOffOn}
+                   disabled={isFinalized}
+                   onChange={(e) => {
+                     applyRoundOff(e.target.checked);
+                     if (stockItems.length > 0) autoSaveDraft(stockItems[0], stockItems, 0);
+                   }}
+                   className="w-3.5 h-3.5 accent-emerald-500"
+                 />
+                 Round Off
+               </label>
+               {roundedTotal.diff !== 0 && (
+                 <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                   Sub Total ₹ {totals.amount.toFixed(2)} · Round Off {roundedTotal.diff > 0 ? "+" : ""}{roundedTotal.diff.toFixed(2)}
+                 </div>
+               )}
             </div>
          </div>
 
@@ -1449,29 +1595,14 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
          </div>
       </div>
 
-      <hr className="border-slate-200 mb-8" />
+      </>
+      )}
 
       {/* FILTERS & HISTORY TABLE */}
-      <div>
+      {view === "history" && (
+      <div id="stockin-history">
          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <div className="flex gap-3 bg-slate-100 p-1 rounded-xl">
-               <button 
-                 onClick={() => handleFilterChange(0)}
-                 className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
-                   activeFilter === 0 ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-200/50'
-                 }`}
-               >
-                 Drafts ({draftCount})
-               </button>
-               <button 
-                 onClick={() => handleFilterChange(1)}
-                 className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
-                   activeFilter === 1 ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-200/50'
-                 }`}
-               >
-                 Finalized ({finalCount})
-               </button>
-            </div>
+            <div className="text-sm font-black text-slate-500 uppercase tracking-wider">{activeFilter === 0 ? "Drafts" : activeFilter === 1 ? "Finalized" : "Due Purchase Bill"}</div>
 
             <div className="flex flex-wrap items-center gap-2">
                <button
@@ -1599,6 +1730,8 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
                           <td className="py-4 px-6 text-center text-sm font-bold">
                             {h.status === 0 ? (
                                <span className="text-amber-600">Draft</span>
+                            ) : h.isDue ? (
+                               <span className="text-orange-600">Bill Due</span>
                             ) : (
                                <span className="text-emerald-600">Finalized</span>
                             )}
@@ -1609,8 +1742,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
                                  <button 
                                    onClick={() => {
                                      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
-                                     setPreviewFileUrl(`${baseUrl}/uploads/${h.invoiceFile}`);
-                                     setShowInvoicePreview(true);
+                                     window.open(`${baseUrl}/uploads/${h.invoiceFile}`, "_blank", "noopener,noreferrer");
                                    }} 
                                    className="bg-sky-50 text-sky-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-sky-100 transition-colors flex items-center gap-1.5"
                                    title="Preview Invoice File"
@@ -1624,9 +1756,14 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
                                     <button onClick={() => handleDeleteDraft(h.stockInId)} className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors" title="Delete Draft">Del</button>
                                  </>
                                ) : (
+                                  <>
+                                  {h.isDue && canDue ? (
+                                    <button onClick={() => { setDueBillTarget(h); setDueBillForm({ vendorId: "", invoiceNo: "", invoiceDate: "", invoiceFile: h.invoiceFile || "" }); }} className="bg-amber-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-amber-600 transition-colors" title="Add purchase bill details">Add Bill</button>
+                                  ) : null}
                                   <button onClick={() => loadSpecificDraft(h.stockInId)} className="bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-lg text-xs font-black hover:bg-emerald-100 transition-all border border-emerald-100 flex items-center gap-2">
                                     <CheckCircle2 size={14} /> View Details
                                   </button>
+                                  </>
                                )}
                              </div>
                           </td>
@@ -1703,6 +1840,7 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
             )}
          </div>
       </div>
+      )}
 
       {/* MODAL: ADD VENDOR */}
       {showAddVendor && (
@@ -1740,6 +1878,37 @@ const StockIn = ({ onRefresh, initialDayFilter = "all", initialCustomStart = "",
         }}
       />
 
+      {dueBillTarget && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-black text-slate-800 mb-1">Add Purchase Bill Details</h3>
+            <p className="text-xs text-slate-500 mb-4">Stock is already in inventory. Enter the bill to remove it from the Due list.</p>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Vendor *</label>
+            <select value={dueBillForm.vendorId} onChange={(e) => setDueBillForm({ ...dueBillForm, vendorId: e.target.value })} className="w-full border border-slate-300 rounded-xl px-3 py-2 mb-3 text-sm">
+              <option value="">Select Vendor</option>
+              {vendors.map(v => (<option key={v.vendorId} value={v.vendorId}>{v.vendorFirmName}</option>))}
+            </select>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoice No *</label>
+            <input value={dueBillForm.invoiceNo} onChange={(e) => setDueBillForm({ ...dueBillForm, invoiceNo: e.target.value })} className="w-full border border-slate-300 rounded-xl px-3 py-2 mb-3 text-sm font-mono" />
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoice Date *</label>
+            <input type="date" value={dueBillForm.invoiceDate} onChange={(e) => setDueBillForm({ ...dueBillForm, invoiceDate: e.target.value })} className="w-full border border-slate-300 rounded-xl px-3 py-2 mb-3 text-sm" />
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Bill File (optional)</label>
+            <div className="flex items-center gap-2 mb-5">
+              <input readOnly value={dueBillForm.invoiceFile || ""} placeholder="No file attached" className="flex-1 bg-slate-100 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-500 truncate outline-none" />
+              {dueBillForm.invoiceFile && (
+                <button type="button" onClick={() => { const baseUrl = process.env.NEXT_PUBLIC_API_URL || ""; window.open(`${baseUrl}/uploads/${dueBillForm.invoiceFile}`, "_blank", "noopener,noreferrer"); }} className="bg-indigo-50 text-indigo-600 p-2.5 rounded-xl hover:bg-indigo-100" title="View file"><FileText size={16} /></button>
+              )}
+              <button type="button" onClick={handleDueFilePick} disabled={uploadingDueFile} className="bg-slate-800 text-white p-2.5 rounded-xl hover:bg-slate-700 disabled:opacity-50" title="Upload bill">
+                {uploadingDueFile ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+              </button>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setDueBillTarget(null)} className="px-4 py-2 rounded-xl text-sm font-bold bg-slate-100 text-slate-700 hover:bg-slate-200">Cancel</button>
+              <button onClick={handleSaveDueBill} disabled={savingDueBill} className="px-4 py-2 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">{savingDueBill ? "Saving..." : "Save Bill"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

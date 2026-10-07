@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requirePermission, authorizeMasterWrite, resolveRole, ApiError } from "@/lib/auth";
+import { authenticateRequest, requirePermission, authorizeMasterWrite, resolveRole, isSuperUser, ApiError } from "@/lib/auth";
 import { sanitizeUser, safeStr, hashPassword } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { ensureUsersRoleColumnIsVarchar } from "@/lib/usersMigration";
+import { ensureUserAccessColumns, saveAccessOverrides } from "@/lib/userAccess";
 
 // Mounted behind `requirePermission("users", ...)` in Backend4/index.js.
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requirePermission(user, "users", "User management access required.");
   await ensureUsersRoleColumnIsVarchar();
+  await ensureUserAccessColumns();
 
   // Self-heals rows corrupted by the ENUM this column used to be (see
   // lib/usersMigration.js): a user assigned to a custom role whose name
@@ -40,7 +42,8 @@ export const GET = withErrorHandling(async (request) => {
             permissions, allCompaniesAccess, notificationsEnabled, createdAt, updatedAt,
             allow_edit_models, allow_edit_serials, allow_edit_godown, allow_create_order,
             allow_edit_order_processing, allow_edit_billing, allow_edit_dispatch, allow_edit_installations,
-            allow_edit_damaged, allow_edit_returns, allow_edit_fbf_fba, allow_edit_warranty, allow_edit_inventory
+            allow_edit_damaged, allow_edit_returns, allow_edit_fbf_fba, allow_edit_warranty, allow_edit_inventory,
+            extraPermissions, blockedPermissions, extraEditPermissions, blockedEditPermissions
      FROM users ORDER BY createdAt DESC, userid DESC LIMIT ? OFFSET ?`,
     [limit, offset]
   );
@@ -71,7 +74,7 @@ export const POST = withErrorHandling(async (request) => {
 
   const {
     username, password, roleId, fullName, email, phone,
-    companyIds, allCompaniesAccess,
+    companyIds, allCompaniesAccess, accessOverrides,
   } = await parseJsonBody(request);
 
   const safeUsername = safeStr(username, "");
@@ -98,11 +101,15 @@ export const POST = withErrorHandling(async (request) => {
   );
 
   const [newUser] = await mysqlPool.query("SELECT * FROM users WHERE username=?", [safeUsername]);
+  if (accessOverrides !== undefined && isSuperUser(user.role)) {
+    await saveAccessOverrides(newUser[0].userid, accessOverrides);
+  }
   if (Array.isArray(companyIds) && companyIds.length > 0) {
     for (const cid of companyIds) {
       await mysqlPool.query("INSERT INTO user_companies (userGuid, companyGuid, isDefault) VALUES (?, ?, ?)", [newUser[0].userid, cid, cid === companyIds[0] ? 1 : 0]);
     }
   }
 
-  return NextResponse.json({ message: "User created successfully.", user: sanitizeUser(newUser[0]) }, { status: 201 });
+  const [created] = await mysqlPool.query("SELECT * FROM users WHERE userid=?", [newUser[0].userid]);
+  return NextResponse.json({ message: "User created successfully.", user: sanitizeUser(created[0]) }, { status: 201 });
 });

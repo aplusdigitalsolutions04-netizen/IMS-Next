@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest, requireAuth } from "@/lib/auth";
+import { authenticateRequest, requireShippingAccess } from "@/lib/auth";
 import { loginToDelhivery, sanitizeLoginResponse } from "@/lib/delhivery";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireAuth(user);
+  requireShippingAccess(user);
 
   const body = await parseJsonBody(request);
   try {

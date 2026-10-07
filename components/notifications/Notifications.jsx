@@ -212,9 +212,9 @@ const Notifications = ({ onOpenOrder }) => {
               <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
                 <BellOff size={32} className="text-slate-300" />
               </div>
-              <h3 className="text-base font-semibold text-slate-800">You're all caught up!</h3>
+              <h3 className="text-base font-semibold text-slate-800">You&apos;re all caught up!</h3>
               <p className="text-sm text-slate-500 mt-1 max-w-xs">
-                When new activity or alerts happen, they'll appear right here.
+                When new activity or alerts happen, they&apos;ll appear right here.
               </p>
             </div>
           ) : (

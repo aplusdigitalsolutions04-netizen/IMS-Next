@@ -3,12 +3,14 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling } from "@/lib/apiResponse";
+import { ensureStockInDueColumn } from "@/lib/stockInDueMigration";
 
 export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   authorizeInventory(user, "GET");
   requireAuth(user);
 
+  await ensureStockInDueColumn();
   const stockInId = new URL(request.url).searchParams.get("stockInId");
   const [rows] = await mysqlPool.query(`
     SELECT
@@ -20,7 +22,7 @@ export const GET = withErrorHandling(async (request) => {
       IFNULL(u.unitName, '') as unitName,
       IF(d.modelGuid IS NOT NULL, 1, i.isTrackable) as hasSerialNumber,
       (SELECT COUNT(*) FROM inventorystockinserial iss WHERE iss.stockInDetailId = d.stockInDetailId AND iss.isDeleted = 0) as serialCount,
-      s.vendorId, s.invoiceNo, s.invoiceDate, s.invoiceFile, s.status as stockInStatus
+      s.vendorId, s.invoiceNo, s.invoiceDate, s.invoiceFile, s.status as stockInStatus, s.isDue, s.isRoundOff
     FROM inventorystockindetail d
     JOIN inventorystockin s ON d.stockInId = s.stockInId
     LEFT JOIN inventoryitemvariant v ON d.itemVariantId = v.itemVariantId

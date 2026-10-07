@@ -20,6 +20,9 @@ import { printerService } from "@/lib/services/api";
 import { legacyApi } from "@/lib/client/http";
 import { buildDayFilterQuery } from "@/lib/client/dayFilter";
 import { platformsService } from "@/lib/services/platformsService";
+import MyTasksWidget from "@/components/tasks/MyTasksWidget";
+import ContractGroupsWidget from "@/components/contractGroups/ContractGroupsWidget";
+import MailWidget from "@/components/mail/MailWidget";
 
 // Full port of Frontend4/src/components/dashboard/Dashboard.jsx. models/serials/
 // dispatches/returns now come from AppDataContext (app/(app)/layout.jsx) instead
@@ -577,6 +580,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {hasPermission(currentUser, "dash_orders") && (
         <div
           onClick={() => onNavigate("orderTracking")}
           className="group relative bg-white rounded-xl px-3 py-2.5 border border-slate-200/60 shadow-sm hover:shadow-md hover:shadow-indigo-500/10 transition-all cursor-pointer overflow-hidden flex items-center gap-3"
@@ -591,8 +595,9 @@ export default function DashboardPage() {
           </div>
           <ArrowUpRight size={13} className="text-slate-300 group-hover:text-indigo-500 shrink-0 transition-all" />
         </div>
+        )}
 
-        {showOpsCards && (
+        {showOpsCards && hasPermission(currentUser, "dash_dispatch") && (
           <div
             onClick={() => onNavigate("dispatch")}
             className="group relative bg-white rounded-xl px-3 py-2.5 border border-slate-200/60 shadow-sm hover:shadow-md hover:shadow-amber-500/10 transition-all cursor-pointer overflow-hidden flex items-center gap-3"
@@ -608,7 +613,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {showOpsCards && (
+        {showOpsCards && hasPermission(currentUser, "dash_returns") && (
           <div
             onClick={() => onNavigate("returns")}
             className="group relative bg-white rounded-xl px-3 py-2.5 border border-slate-200/60 shadow-sm hover:shadow-md hover:shadow-orange-500/10 transition-all cursor-pointer overflow-hidden flex items-center gap-3"
@@ -624,7 +629,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {showOpsCards && (
+        {showOpsCards && hasPermission(currentUser, "dash_stockIn") && (
           <div
             onClick={() => onNavigate("stockIn")}
             className="group relative bg-white rounded-xl px-3 py-2.5 border border-slate-200/60 shadow-sm hover:shadow-md hover:shadow-emerald-500/10 transition-all cursor-pointer overflow-hidden flex items-center gap-3"
@@ -640,7 +645,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {showOpsCards && (
+        {showOpsCards && hasPermission(currentUser, "dash_damaged") && (
           <div
             onClick={() => onNavigate("damaged")}
             className="group relative bg-gradient-to-br from-red-50 to-rose-50 rounded-xl px-3 py-2.5 border border-red-100 shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden flex items-center gap-3"
@@ -659,7 +664,7 @@ export default function DashboardPage() {
 
       {(showOpsCards || showFinanceCards) && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {(showOpsCards || showFinanceCards) && (
+          {(showOpsCards || showFinanceCards) && hasPermission(currentUser, "dash_stockAvailable") && (
             <div
               onClick={() => onNavigate("currentStock")}
               className="group relative bg-white rounded-xl px-3 py-2.5 border border-slate-200/60 shadow-sm hover:shadow-md hover:shadow-teal-500/10 transition-all cursor-pointer overflow-hidden flex items-center gap-3"
@@ -675,7 +680,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {showFinanceCards && (
+          {showFinanceCards && hasPermission(currentUser, "dash_duePayments") && (
             <div
               onClick={() => onNavigate("billing")}
               className="group relative bg-white rounded-xl px-3 py-2.5 border border-slate-200/60 shadow-sm hover:shadow-md hover:shadow-rose-500/10 transition-all cursor-pointer overflow-hidden flex items-center gap-3"
@@ -693,7 +698,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {showFinanceCards && (
+          {showFinanceCards && hasPermission(currentUser, "dash_pendingBill") && (
             <div
               onClick={() => onNavigate("billing")}
               className="group relative bg-white rounded-xl px-3 py-2.5 border border-slate-200/60 shadow-sm hover:shadow-md hover:shadow-yellow-500/10 transition-all cursor-pointer overflow-hidden flex items-center gap-3"
@@ -709,7 +714,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {showFinanceCards && (
+          {showFinanceCards && hasPermission(currentUser, "dash_totalOrder") && (
             <div
               onClick={() => onNavigate("orderTracking")}
               className="group relative bg-white rounded-xl px-3 py-2.5 border border-slate-200/60 shadow-sm hover:shadow-md hover:shadow-violet-500/10 transition-all cursor-pointer overflow-hidden flex items-center gap-3"
@@ -729,7 +734,7 @@ export default function DashboardPage() {
 
       {(showOpsCards || showFinanceCards) && (
       <div className={`grid grid-cols-1 ${showOpsCards && showFinanceCards ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]" : ""} gap-4`}>
-        {showOpsCards && (
+        {showOpsCards && hasPermission(currentUser, "dash_stockHealth") && (
         <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
@@ -785,7 +790,7 @@ export default function DashboardPage() {
         </div>
         )}
 
-        {showFinanceCards && (
+        {showFinanceCards && hasPermission(currentUser, "dash_sales") && (
         <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -865,6 +870,7 @@ export default function DashboardPage() {
 
       {showOpsCards && (
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4">
+        {hasPermission(currentUser, "dash_godownStock") && (
         <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
             <div className="p-1.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg">
@@ -923,7 +929,9 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+        )}
 
+        {hasPermission(currentUser, "dash_topCategory") && (
         <div className="bg-white rounded-xl border border-slate-200/60 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
             <div className="p-1.5 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg">
@@ -953,8 +961,13 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+        )}
       </div>
       )}
+
+      {hasPermission(currentUser, "tasks") && hasPermission(currentUser, "dash_myTasks") && <MyTasksWidget onNavigate={onNavigate} />}
+      {hasPermission(currentUser, "emailInbox") && hasPermission(currentUser, "dash_mail") && <MailWidget />}
+      {hasPermission(currentUser, "contractGroups") && hasPermission(currentUser, "dash_contractGroups") && <ContractGroupsWidget />}
 
       {showStockModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -1015,7 +1028,7 @@ export default function DashboardPage() {
               <div className="flex gap-3 p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-blue-600">
                 <Sparkles size={16} className="shrink-0" />
                 <p className="text-[10px] font-medium leading-relaxed">
-                  Printer stock includes all serialized units in "Available" status. Stationery includes all consumables and other items managed by quantity.
+                  Printer stock includes all serialized units in &quot;Available&quot; status. Stationery includes all consumables and other items managed by quantity.
                 </p>
               </div>
             </div>

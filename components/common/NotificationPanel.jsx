@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Package, Receipt, Truck, Clock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import Swal from "sweetalert2";
 import api from "@/lib/client/apiClient";
 
 const parseOrderId = (text) => {
@@ -21,6 +22,58 @@ export default function NotificationPanel() {
   // are genuinely new (to fire a desktop Notification) vs. just a refetch
   // of the same list. null until the first fetch completes.
   const seenGuidsRef = useRef(null);
+  // Task alerts (assigned / due soon / overdue / completed) also get a
+  // friendly pop-up. Remembered per browser session so a page reload doesn't
+  // replay ones already shown.
+  const toastedRef = useRef(null);
+  const toastChainRef = useRef(Promise.resolve());
+  const loadToasted = () => {
+    if (toastedRef.current) return toastedRef.current;
+    let ids = [];
+    try { ids = JSON.parse(sessionStorage.getItem("toastedTaskNotifs") || "[]"); } catch {}
+    toastedRef.current = new Set(ids);
+    return toastedRef.current;
+  };
+  const saveToasted = () => {
+    try { sessionStorage.setItem("toastedTaskNotifs", JSON.stringify([...toastedRef.current].slice(-200))); } catch {}
+  };
+
+  const showTaskToasts = (list) => {
+    const toasted = loadToasted();
+    const fresh = list.filter((n) => !n.isRead && n.link === "/tasks" && !toasted.has(n.guid));
+    if (fresh.length === 0) return;
+    // Don't replace a dialog the user is in the middle of (confirm, form...).
+    if (Swal.isVisible()) return;
+    fresh.forEach((n) => toasted.add(n.guid));
+    saveToasted();
+
+    const iconFor = (n) => (n.type === "warning" ? "warning" : n.type === "success" ? "success" : "info");
+    const open = (opts, markRead) =>
+      Swal.fire({
+        toast: true, position: "top-end", timer: 9000, timerProgressBar: true, showCloseButton: true,
+        showConfirmButton: true, confirmButtonText: "View tasks", confirmButtonColor: "#4f46e5",
+        didOpen: (el) => { el.onmouseenter = Swal.stopTimer; el.onmouseleave = Swal.resumeTimer; },
+        ...opts,
+      }).then(async (r) => {
+        if (!r.isConfirmed) return;
+        try { await Promise.all(markRead.map((g) => api.put(`/notifications/${g}/read`))); } catch {}
+        window.dispatchEvent(new Event("notificationsUpdated"));
+        router.push("/tasks");
+      });
+
+    if (fresh.length > 2) {
+      const warn = fresh.some((n) => n.type === "warning");
+      toastChainRef.current = toastChainRef.current.then(() =>
+        open({ icon: warn ? "warning" : "info", title: `${fresh.length} task updates`, text: fresh.slice(0, 3).map((n) => n.title).join(" · ") }, fresh.map((n) => n.guid))
+      );
+      return;
+    }
+    fresh.forEach((n) => {
+      toastChainRef.current = toastChainRef.current.then(() =>
+        open({ icon: iconFor(n), title: n.title, text: n.message }, [n.guid])
+      );
+    });
+  };
 
   async function fetchNotifications() {
     try {
@@ -34,6 +87,7 @@ export default function NotificationPanel() {
         }
       }
       seenGuidsRef.current = new Set(list.map((n) => n.guid));
+      showTaskToasts(list);
 
       setNotifications(list);
       setUnreadCount(data.unreadCount || 0);

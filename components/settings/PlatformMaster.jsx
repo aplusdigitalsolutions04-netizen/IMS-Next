@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { Globe, Plus, Loader2, Trash2, Lock, ToggleLeft, ToggleRight, Pencil, X, Check, Settings2, ScanLine } from "lucide-react";
+import { Globe, Plus, Loader2, Trash2, Lock, ToggleLeft, ToggleRight, Pencil, X, Check, Settings2, ScanLine, ShieldCheck } from "lucide-react";
 import Swal from "sweetalert2";
 import { platformsService } from "@/lib/services/platformsService";
 import { getStoredUser } from "@/lib/client/auth";
@@ -134,6 +134,18 @@ export default function PlatformMaster() {
       Swal.fire("Error", err?.response?.data?.message || "Failed to add platform", "error");
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleToggleWarranty = async (platform) => {
+    setBusyId(platform.guid);
+    try {
+      await platformsService.setPlatformWarranty(platform.guid, !platform.warrantyEnabled);
+      await load();
+    } catch (err) {
+      Swal.fire("Error", err?.response?.data?.message || "Failed to update platform", "error");
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -298,6 +310,7 @@ export default function PlatformMaster() {
                 </span>
               )}
 
+              {!!p.warrantyEnabled && <span className="text-[10px] font-bold text-emerald-600 uppercase bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1"><ShieldCheck size={10} /> Warranty</span>}
               {!p.isActive && <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded-full">Inactive</span>}
 
               <div className="flex items-center gap-1 shrink-0">
@@ -313,6 +326,14 @@ export default function PlatformMaster() {
                   title={p.isActive ? "Deactivate" : "Activate"}
                 >
                   {p.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                </button>
+                <button
+                  onClick={() => handleToggleWarranty(p)}
+                  disabled={busyId === p.guid}
+                  className={`p-2 rounded-lg transition-colors ${p.warrantyEnabled ? "text-emerald-600 bg-emerald-50 hover:bg-emerald-100" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"}`}
+                  title={p.warrantyEnabled ? "Warranty is ON — orders of this platform show in the Warranty tab (click to turn off)" : "Turn Warranty ON — show this platform's orders in the Warranty tab"}
+                >
+                  <ShieldCheck size={14} />
                 </button>
                 <button
                   onClick={() => setItemTypeModalFor(p)}
@@ -365,7 +386,12 @@ function ManageFieldsModal({ platform, onClose }) {
   const [newFieldOptions, setNewFieldOptions] = React.useState([]);
   const [newOptionDraft, setNewOptionDraft] = React.useState("");
   const [newIsRequired, setNewIsRequired] = React.useState(false);
-  const [busyId, setBusyId] = React.useState(null);
+  // Kept separate from deletingId so a Save-in-progress on a field doesn't
+  // also light up that same field's Delete button spinner (both used to
+  // share one `busyId` keyed by the field's guid).
+  const [formBusy, setFormBusy] = React.useState(false);
+  const [deletingId, setDeletingId] = React.useState(null);
+  const [editingFieldId, setEditingFieldId] = React.useState(null);
 
   const loadFields = async () => {
     setLoading(true);
@@ -404,10 +430,28 @@ function ManageFieldsModal({ platform, onClose }) {
     }
   };
 
+  const resetFieldForm = () => {
+    setEditingFieldId(null);
+    setNewFieldName("");
+    setNewIsRequired(false);
+    setNewFieldType("text");
+    setNewFieldOptions([]);
+    setNewOptionDraft("");
+  };
+
+  const startEditField = (f) => {
+    setEditingFieldId(f.guid);
+    setNewFieldName(f.fieldName);
+    setNewFieldType(f.fieldType);
+    setNewFieldOptions(Array.isArray(f.fieldOptions) ? f.fieldOptions : []);
+    setNewOptionDraft("");
+    setNewIsRequired(f.isRequired === 1);
+  };
+
   const handleAddField = async (e) => {
     e.preventDefault();
     if (!newFieldName.trim()) return;
-    // A half-typed option still sitting in the draft box when Add is
+    // A half-typed option still sitting in the draft box when Add/Save is
     // clicked is almost certainly meant to be included, not silently
     // dropped.
     const optionsList = newOptionDraft.trim() ? [...newFieldOptions, newOptionDraft.trim()] : newFieldOptions;
@@ -415,38 +459,44 @@ function ManageFieldsModal({ platform, onClose }) {
       Swal.fire("Options required", "Add at least one option for a Dropdown field.", "warning");
       return;
     }
-    setBusyId("add");
+    setFormBusy(true);
     try {
-      await platformsService.addPlatformField(platform.guid, {
-        fieldName: newFieldName.trim(),
-        fieldType: newFieldType,
-        fieldOptions: newFieldType === "dropdown" ? optionsList : undefined,
-        isRequired: newIsRequired,
-        sortOrder: fields.length
-      });
-      setNewFieldName("");
-      setNewIsRequired(false);
-      setNewFieldType("text");
-      setNewFieldOptions([]);
-      setNewOptionDraft("");
+      if (editingFieldId) {
+        await platformsService.updatePlatformField(platform.guid, editingFieldId, {
+          fieldName: newFieldName.trim(),
+          fieldType: newFieldType,
+          fieldOptions: newFieldType === "dropdown" ? optionsList : [],
+          isRequired: newIsRequired,
+        });
+      } else {
+        await platformsService.addPlatformField(platform.guid, {
+          fieldName: newFieldName.trim(),
+          fieldType: newFieldType,
+          fieldOptions: newFieldType === "dropdown" ? optionsList : undefined,
+          isRequired: newIsRequired,
+          sortOrder: fields.length
+        });
+      }
+      resetFieldForm();
       await loadFields();
     } catch (err) {
-      Swal.fire("Error", err?.response?.data?.message || "Failed to add field", "error");
+      Swal.fire("Error", err?.response?.data?.message || `Failed to ${editingFieldId ? "update" : "add"} field`, "error");
     } finally {
-      setBusyId(null);
+      setFormBusy(false);
     }
   };
 
   const handleDeleteField = async (fieldGuid) => {
     if (!confirm("Delete this field?")) return;
-    setBusyId(fieldGuid);
+    setDeletingId(fieldGuid);
     try {
       await platformsService.deletePlatformField(platform.guid, fieldGuid);
+      if (editingFieldId === fieldGuid) resetFieldForm();
       await loadFields();
     } catch (err) {
       Swal.fire("Error", "Failed to delete field", "error");
     } finally {
-      setBusyId(null);
+      setDeletingId(null);
     }
   };
 
@@ -480,7 +530,12 @@ function ManageFieldsModal({ platform, onClose }) {
             </div>
           )}
 
-          <label className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 block">Custom Fields</label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block">Custom Fields</label>
+            {editingFieldId && (
+              <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-full">Editing field</span>
+            )}
+          </div>
           <form onSubmit={handleAddField} className="mb-8">
             <div className="flex gap-3 items-end">
               <div className="flex-1">
@@ -500,8 +555,14 @@ function ManageFieldsModal({ platform, onClose }) {
                 <input type="checkbox" id="req" checked={newIsRequired} onChange={e => setNewIsRequired(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" />
                 <label htmlFor="req" className="text-sm font-medium text-slate-700">Required</label>
               </div>
-              <button type="submit" disabled={busyId === "add" || !newFieldName.trim()} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all">
-                {busyId === "add" ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />} Add
+              {editingFieldId && (
+                <button type="button" onClick={resetFieldForm} className="text-slate-500 hover:bg-slate-100 px-4 py-2.5 rounded-xl font-bold transition-all">
+                  Cancel
+                </button>
+              )}
+              <button type="submit" disabled={formBusy || !newFieldName.trim()} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all">
+                {formBusy ? <Loader2 className="animate-spin" size={16} /> : (editingFieldId ? <Pencil size={16} /> : <Plus size={16} />)}
+                {editingFieldId ? "Save" : "Add"}
               </button>
             </div>
             {newFieldType === "dropdown" && (
@@ -537,12 +598,15 @@ function ManageFieldsModal({ platform, onClose }) {
           ) : (
             <div className="flex flex-wrap gap-2">
               {fields.map(f => (
-                <span key={f.guid} className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200 pl-3 pr-1.5 py-1.5 rounded-full">
+                <span key={f.guid} className={`inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-slate-100 border pl-3 pr-1.5 py-1.5 rounded-full ${editingFieldId === f.guid ? "border-indigo-300 ring-2 ring-indigo-100" : "border-slate-200"}`}>
                   {f.fieldName}
                   <span className="text-[10px] font-bold text-slate-400 uppercase">· {f.fieldType}</span>
                   {f.isRequired === 1 && <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full uppercase">Required</span>}
-                  <button type="button" onClick={() => handleDeleteField(f.guid)} disabled={busyId === f.guid} title="Delete" className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors">
-                    {busyId === f.guid ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
+                  <button type="button" onClick={() => startEditField(f)} disabled={deletingId === f.guid} title="Edit" className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors">
+                    <Pencil size={11} />
+                  </button>
+                  <button type="button" onClick={() => handleDeleteField(f.guid)} disabled={deletingId === f.guid} title="Delete" className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors">
+                    {deletingId === f.guid ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
                   </button>
                 </span>
               ))}

@@ -21,6 +21,7 @@ import SearchableSelect from "../common/SearchableSelect";
 import SidePanel from "./SidePanel";
 import { useCompany } from "@/lib/client/CompanyContext";
 import { platformsService } from "@/lib/services/platformsService";
+import { roundOff } from "@/lib/roundOff";
 
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -151,6 +152,7 @@ export default function NewDispatch({
     paymentAuthorityEmail: "",
     consigneeName: "",
     warranty: "",
+    remarks: "",
     invoiceNo: "",
     invoiceDate: "",
     invoiceGst: "",
@@ -773,7 +775,7 @@ export default function NewDispatch({
     return Object.values(summary);
   }, [batchList]);
 
-  const batchTotalValue = useMemo(() => {
+  const batchSubTotal = useMemo(() => {
     return batchList.reduce((sum, item) => {
       const modelPrice = modelPrices[item.modelGuid];
       const price =
@@ -785,6 +787,10 @@ export default function NewDispatch({
       return sum + (price || 0) * (Number(item.quantity) || 1) + Number(item.carePackUpgradePrice || 0);
     }, 0);
   }, [batchList, modelPrices, form.sellingPrice]);
+  // Optional nearest-rupee round off (>= .50 up, < .50 down), only when ticked.
+  const [roundOffOn, setRoundOffOn] = useState(false);
+  const batchRoundOff = roundOffOn ? roundOff(batchSubTotal) : { rounded: batchSubTotal, diff: 0 };
+  const batchTotalValue = batchRoundOff.rounded;
 
   // Derive the live status from the dispatch status
   const deriveLiveStatus = (dispatchStatus) => {
@@ -935,6 +941,7 @@ export default function NewDispatch({
         user: currentUser?.username || "Unknown",
         sellingPrice: price,
         platformFields: form.platformFields,
+        remarks: form.remarks?.trim() || null,
         ...additionalDetails
       });
 
@@ -2137,11 +2144,7 @@ export default function NewDispatch({
 
                   {/* Dynamic Platform Fields */}
                   {form.platform && getSelectedPlatformConfig()?.fields?.length > 0 && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4 mt-4">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-lg">⚙️</span>
-                        <span className="text-xs font-extrabold text-slate-600 uppercase tracking-widest">Additional {form.platform} Details</span>
-                      </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mt-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {getSelectedPlatformConfig().fields.map(f => (
                           <div key={f.guid} className="space-y-1.5">
@@ -2369,12 +2372,13 @@ export default function NewDispatch({
 
                 {/* ═══ Mixed tab: add a Non-Serialized line into the shared batchList ═══ */}
                 {activeTab === "mixed" && getSelectedPlatformConfig()?.itemTypeMode !== "serialized" && (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                  <div className="space-y-3 bg-amber-50/40 border border-amber-200/70 rounded-2xl p-4">
+                    <div className="flex items-center gap-2 pb-2 border-b border-amber-100">
                       <div className="p-1.5 bg-amber-100 rounded-lg">
                         <Box size={13} className="text-amber-600" />
                       </div>
                       <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wide">Add Non-Serialized Item</h3>
+                      <span className="ml-auto text-[10px] font-semibold text-amber-700/80">Scan serialized items below</span>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_auto] gap-3 items-end">
@@ -2622,8 +2626,18 @@ export default function NewDispatch({
                   {(activeTab === "multiple" || activeTab === "mixed") && batchList.length > 0 && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">
+                        <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2 flex-wrap">
                           Scanned Items
+                          {activeTab === "mixed" && (
+                            <>
+                              <span className="normal-case tracking-normal font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                                {batchList.filter((b) => !b.nonSerialized).length} serialized
+                              </span>
+                              <span className="normal-case tracking-normal font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                                {batchList.filter((b) => b.nonSerialized).length} non-serialized
+                              </span>
+                            </>
+                          )}
                         </span>
                         <button
                           type="button"
@@ -2633,7 +2647,7 @@ export default function NewDispatch({
                           <Trash2 size={10} /> Clear All
                         </button>
                       </div>
-                      <div className="border border-slate-200/80 rounded-2xl bg-slate-50/50 max-h-60 overflow-y-auto shadow-inner">
+                      <div className={`border border-slate-200/80 rounded-2xl bg-slate-50/50 shadow-inner ${activeTab === "mixed" ? "" : "max-h-60 overflow-y-auto"}`}>
                         <div className="divide-y divide-slate-200/60">
                           {batchList.map((item, index) => (
                             <div key={item.nonSerialized ? `ns-${index}` : item.serialId} className="p-3 hover:bg-white transition-colors">
@@ -2643,16 +2657,23 @@ export default function NewDispatch({
                                     {index + 1}
                                   </span>
                                   <div>
-                                    <p className="font-mono text-xs font-bold text-slate-800">
-                                      {item.nonSerialized ? `Qty: ${item.quantity}` : item.serialValue}
+                                    <p className={`text-xs font-bold text-slate-800 ${item.nonSerialized ? "" : "font-mono"}`}>
+                                      {item.nonSerialized ? (
+                                        <span className="flex items-center gap-2">
+                                          {item.modelName}
+                                          <span className="font-mono text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Qty: {item.quantity}</span>
+                                        </span>
+                                      ) : item.serialValue}
                                     </p>
                                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                       <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                                         {item.companyName}
                                       </span>
-                                      <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
-                                        {item.modelName}
-                                      </span>
+                                      {!item.nonSerialized && (
+                                        <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                                          {item.modelName}
+                                        </span>
+                                      )}
                                       {item.nonSerialized && (
                                         <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Non-Serialized</span>
                                       )}
@@ -2794,6 +2815,22 @@ export default function NewDispatch({
                           })}
                         </tbody>
                         <tfoot>
+                          <tr className="bg-slate-100 text-slate-600 text-xs font-bold">
+                            <td colSpan="4" className="px-6 py-2 text-right">
+                              <label className="inline-flex items-center gap-2 cursor-pointer uppercase tracking-widest">
+                                <input type="checkbox" checked={roundOffOn} onChange={(e) => setRoundOffOn(e.target.checked)} className="w-4 h-4 accent-indigo-600" />
+                                Round Off
+                              </label>
+                            </td>
+                          </tr>
+                          {roundOffOn && batchRoundOff.diff !== 0 && (
+                            <tr className="bg-slate-100 text-slate-600 text-xs font-bold">
+                              <td colSpan="3" className="px-6 py-2 text-right uppercase tracking-widest">Sub Total / Round Off</td>
+                              <td className="px-6 py-2 text-right">
+                                ₹{batchSubTotal.toFixed(2)} ({batchRoundOff.diff > 0 ? "+" : ""}{batchRoundOff.diff.toFixed(2)})
+                              </td>
+                            </tr>
+                          )}
                           <tr className="bg-gradient-to-r from-slate-800 to-slate-900 text-white">
                             <td colSpan="3" className="px-6 py-4 text-right">
                               <span className="text-xs font-bold text-slate-300 uppercase tracking-widest">
@@ -2811,6 +2848,20 @@ export default function NewDispatch({
                     </div>
                   </div>
                 )}
+
+                {/* ═══ Remarks ═══ */}
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1.5">
+                    Remarks (optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={form.remarks}
+                    onChange={(e) => setForm({ ...form, remarks: e.target.value })}
+                    placeholder="Any note for this order..."
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                  />
+                </div>
 
                 {/* ═══ Submit Button ═══ */}
                 <div className="pt-6 border-t border-slate-100">

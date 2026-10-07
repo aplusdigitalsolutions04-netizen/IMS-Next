@@ -1,7 +1,9 @@
 "use client";
 import React from "react";
-import { Mail, RefreshCw, Eye, AlertCircle, CheckCircle, Send, Plus, X, FileText, Loader2, History, PenSquare, CornerUpLeft } from "lucide-react";
+import { Mail, RefreshCw, Eye, AlertCircle, CheckCircle, Send, Plus, X, FileText, Loader2, History, PenSquare, CornerUpLeft, ExternalLink } from "lucide-react";
 import api from "@/lib/client/apiClient";
+import { useCompany } from "@/lib/client/CompanyContext";
+import LogoText from "@/components/common/LogoText";
 
 // Extracted out of OrderDetailModal.jsx — was ~800 lines inlined into that
 // file's "Email" tab (state, handlers, and the choose-template/compose/
@@ -10,13 +12,36 @@ import api from "@/lib/client/apiClient";
 // composing/attaching/sending on its own. Loads its own draft on mount
 // instead of the parent driving it via tab-click, since it's only ever
 // rendered while the Email tab is active.
+// A stored order document, shown as an attachment chip. Sent by reference
+// (the server reads the file itself), so nothing is downloaded to the browser.
+const docToAttachment = (d) => ({ name: d.displayName || d.label, ref: true, filename: d.filename });
+
+// Opens an attachment in a new tab so it can be checked before sending: a stored
+// order document comes from /uploads, a file the user added is rebuilt from its data.
+const openAttachment = (a) => {
+  let url;
+  if (a.ref) {
+    url = `/uploads/${encodeURIComponent(a.filename)}`;
+  } else {
+    const bytes = Uint8Array.from(atob(a.base64 || ""), (c) => c.charCodeAt(0));
+    url = URL.createObjectURL(new Blob([bytes], { type: a.type || "application/octet-stream" }));
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+  window.open(url, "_blank", "noopener");
+};
+
 export default function EmailComposeTab({ orderGuid }) {
+  const { activeCompany } = useCompany();
+  const logoSrc = activeCompany?.logoFilename ? `/uploads/${activeCompany.logoFilename}` : null;
   const [emailDraft, setEmailDraft] = React.useState(null);
   const [emailSending, setEmailSending] = React.useState(false);
   const [emailSent, setEmailSent] = React.useState(false);
   const [emailError, setEmailError] = React.useState("");
   const [emailPreview, setEmailPreview] = React.useState(false);
   const [emailAttachments, setEmailAttachments] = React.useState([]);
+  // The order's own stored documents (invoice, e-way bill, POD, contract, challan...).
+  // They are attached automatically; the user may remove any or add more files.
+  const [orderDocs, setOrderDocs] = React.useState([]);
   const emailFileRef = React.useRef(null);
   // "Choose Template" step — always shown before compose. A template now
   // always names its own Email Account (Settings > Email Templates), so
@@ -78,16 +103,20 @@ export default function EmailComposeTab({ orderGuid }) {
     setEmailError("");
     setEmailPreview(false);
     setEmailAttachments([]);
+    setOrderDocs([]);
     try {
       const qs = templateGuid ? `?templateGuid=${encodeURIComponent(templateGuid)}` : "";
       const res = await api.get(`/warranty/email-preview/${orderGuid}${qs}`);
       if (blank) {
-        setEmailDraft({ to: res.data?.to || "", cc: "", bcc: "", subject: "", body: "", loading: false });
+        setEmailDraft({ to: res.data?.to || "", recipientOptions: res.data?.recipientOptions || [], cc: "", bcc: "", subject: "", body: "", loading: false });
         setPendingVars([]);
       } else {
         setEmailDraft({ ...res.data, loading: false });
         setPendingVars(res.data?.unresolvedVariables || []);
       }
+      const docs = Array.isArray(res.data?.documents) ? res.data.documents : [];
+      setOrderDocs(docs);
+      setEmailAttachments(docs.map(docToAttachment));
       // The template's own Email Account wins when it has one; otherwise
       // (older template with none set, or "Skip") fall back to the sole
       // account if there's only one — same rule Email Templates uses.
@@ -223,12 +252,9 @@ export default function EmailComposeTab({ orderGuid }) {
         purpose: pickedTemplatePurpose,
         accountGuid: pickedAccountGuid,
         orderGuid,
-        attachments: emailAttachments.map((a) => ({
-          filename: a.name,
-          content: a.base64,
-          encoding: "base64",
-          contentType: a.type,
-        })),
+        attachments: emailAttachments.map((a) => (a.ref
+          ? { ref: true, filename: a.filename }
+          : { filename: a.name, content: a.base64, encoding: "base64", contentType: a.type })),
       });
       setEmailSent(true);
       // Back to the history view (now showing this send) instead of
@@ -440,14 +466,14 @@ export default function EmailComposeTab({ orderGuid }) {
                 <div><span className="font-bold text-slate-700 w-14 inline-block">Sub:</span> {emailDraft.subject || <em className="text-slate-400">—</em>}</div>
               </div>
               <div className="border border-slate-200 rounded-xl p-4 bg-white text-sm text-slate-800 whitespace-pre-wrap leading-relaxed font-sans min-h-[160px]">
-                {emailDraft.body || <span className="text-slate-400 italic">No body content</span>}
+                {emailDraft.body ? <LogoText text={emailDraft.body} logoSrc={logoSrc} /> : <span className="text-slate-400 italic">No body content</span>}
               </div>
               {emailAttachments.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {emailAttachments.map((a, i) => (
-                    <span key={i} className="flex items-center gap-1 bg-slate-100 text-slate-600 text-xs px-2.5 py-1 rounded-full border border-slate-200">
-                      <FileText size={11} /> {a.name}
-                    </span>
+                    <button key={i} type="button" onClick={() => openAttachment(a)} title="Open this file" className="flex items-center gap-1 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 text-xs px-2.5 py-1 rounded-full border border-slate-200 hover:border-indigo-200">
+                      <FileText size={11} /> {a.name} <ExternalLink size={10} className="text-slate-400" />
+                    </button>
                   ))}
                 </div>
               )}
@@ -471,6 +497,32 @@ export default function EmailComposeTab({ orderGuid }) {
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">To</label>
+                {/* Only when the order has more than one address is there anything to choose; with a single one it is already filled in below. */}
+                {(emailDraft.recipientOptions?.length || 0) > 1 && (
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    {emailDraft.recipientOptions.map((opt) => {
+                      const current = String(emailDraft.to || "").split(/[,;\s]+/).filter(Boolean).map((e) => e.toLowerCase());
+                      const on = current.includes(opt.email.toLowerCase());
+                      return (
+                        <button
+                          key={opt.email}
+                          type="button"
+                          onClick={() => setEmailDraft((d) => {
+                            const list = String(d.to || "").split(/[,;\s]+/).filter(Boolean);
+                            const has = list.some((e) => e.toLowerCase() === opt.email.toLowerCase());
+                            const next = has ? list.filter((e) => e.toLowerCase() !== opt.email.toLowerCase()) : [...list, opt.email];
+                            return { ...d, to: next.join(", ") };
+                          })}
+                          title={opt.label}
+                          className={`text-left px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-colors ${on ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-slate-200 text-slate-500 hover:border-indigo-200"}`}
+                        >
+                          <span className="block leading-tight">{opt.email}</span>
+                          <span className="block text-[9px] font-bold uppercase tracking-wide opacity-60">{opt.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <input type="text" value={emailDraft.to} onChange={(e) => setEmailDraft((d) => ({ ...d, to: e.target.value }))} placeholder="recipient@example.com" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 outline-none" />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -489,7 +541,17 @@ export default function EmailComposeTab({ orderGuid }) {
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Body</label>
-                <textarea rows={8} value={emailDraft.body} onChange={(e) => setEmailDraft((d) => ({ ...d, body: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 outline-none resize-y font-mono" />
+                <textarea rows={18} value={emailDraft.body} onChange={(e) => setEmailDraft((d) => ({ ...d, body: e.target.value }))} className="w-full min-h-[360px] border border-slate-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:ring-2 focus:ring-indigo-400 outline-none resize-y font-mono" />
+                {String(emailDraft.body || "").includes("{{COMPANY_LOGO}}") && (
+                  <div className="mt-2 flex items-center gap-3 border border-dashed border-indigo-200 bg-indigo-50/50 rounded-lg px-3 py-2">
+                    <div className="shrink-0">
+                      <LogoText text="{{COMPANY_LOGO}}" logoSrc={logoSrc} />
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      <span className="font-bold text-indigo-600">{"{{COMPANY_LOGO}}"}</span> in the body is replaced by this company logo when the mail is sent. Click <b>Preview</b> to see the whole mail.
+                    </p>
+                  </div>
+                )}
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -499,6 +561,18 @@ export default function EmailComposeTab({ orderGuid }) {
                   </button>
                   <input ref={emailFileRef} type="file" multiple className="hidden" onChange={handleEmailFileAdd} />
                 </div>
+                {orderDocs.some((d) => !emailAttachments.some((a) => a.ref && a.filename === d.filename)) && (
+                  <button
+                    type="button"
+                    onClick={() => setEmailAttachments((prev) => [
+                      ...prev,
+                      ...orderDocs.filter((d) => !prev.some((a) => a.ref && a.filename === d.filename)).map(docToAttachment),
+                    ])}
+                    className="mb-2 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 underline"
+                  >
+                    + Re-attach order documents
+                  </button>
+                )}
                 {emailAttachments.length === 0 ? (
                   <p className="text-[11px] text-slate-400 italic">No attachments</p>
                 ) : (
@@ -506,8 +580,13 @@ export default function EmailComposeTab({ orderGuid }) {
                     {emailAttachments.map((a, i) => (
                       <div key={i} className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
                         <FileText size={11} className="text-slate-400" />
-                        <span className="text-xs text-slate-700 max-w-[160px] truncate">{a.name}</span>
-                        <span className="text-[10px] text-slate-400">({(a.size / 1024).toFixed(0)}KB)</span>
+                        <button type="button" onClick={() => openAttachment(a)} title="Open this file" className="flex items-center gap-1 text-xs text-slate-700 hover:text-indigo-600 hover:underline max-w-[180px]">
+                          <span className="truncate">{a.name}</span>
+                          <ExternalLink size={10} className="shrink-0 text-slate-400" />
+                        </button>
+                        {a.ref
+                          ? <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-1.5 rounded">order doc</span>
+                          : <span className="text-[10px] text-slate-400">({(a.size / 1024).toFixed(0)}KB)</span>}
                         <button onClick={() => setEmailAttachments((prev) => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600 ml-1">
                           <X size={11} />
                         </button>

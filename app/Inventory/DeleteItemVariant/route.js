@@ -28,12 +28,17 @@ export const POST = withErrorHandling(async (request) => {
   // makes its Model/Company silently go blank everywhere, with no trace of
   // why. Block it here instead, the same way DeleteVariantSerial already
   // blocks deleting a serial that's still Dispatched/Sold.
-  const [[usage]] = await mysqlPool.query(
-    "SELECT COUNT(*) as cnt FROM order_items WHERE itemVariantId = ? AND companyGuid = ?",
+  const [usageRows] = await mysqlPool.query(
+    `SELECT DISTINCT o.orderid, o.status, o.isDeleted
+     FROM order_items oi JOIN orders o ON oi.orderGuid = o.guid
+     WHERE oi.itemVariantId = ? AND oi.companyGuid = ?
+     ORDER BY o.dispatchDate DESC LIMIT 6`,
     [itemVariantId, user.companyId]
   );
-  if (usage.cnt > 0) {
-    throw new ApiError(400, `Can't delete — this variant appears in ${usage.cnt} order(s)' history. Deleting it would make their Model/Company go blank everywhere. Transfer or remove those first if it's genuinely unused.`);
+  if (usageRows.length > 0) {
+    const shown = usageRows.slice(0, 5).map((r) => `${r.orderid}${r.isDeleted ? " (cancelled/deleted)" : ` (${r.status})`}`).join(", ");
+    const more = usageRows.length > 5 ? " and more" : "";
+    throw new ApiError(400, `Can't delete — this variant appears in order history: ${shown}${more}. Deleting it would make their Model/Company go blank everywhere. Transfer the variant or remove those orders first if it's genuinely unused.`);
   }
 
   await mysqlPool.execute(

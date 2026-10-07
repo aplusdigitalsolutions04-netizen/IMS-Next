@@ -33,9 +33,12 @@ export default function OrderTrackingPage() {
   const initialCustomEnd = searchParams.get("end") || "";
 
   const focusOrderId = searchParams.get("focus") || null;
-  const handleFocusHandled = useCallback(() => {
+  // `orderId` (when an order was opened) swaps ?focus= for ?order= in one
+  // step, so the open order page keeps its URL.
+  const handleFocusHandled = useCallback((orderId) => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("focus");
+    if (orderId) params.set("order", orderId);
     router.replace(`/orderTracking${params.toString() ? `?${params.toString()}` : ""}`);
   }, [router, searchParams]);
 
