@@ -111,6 +111,19 @@ const getBatchKey = (item) => {
     return `single__${item.guid}`;
 };
 
+// Courier names are stored inconsistently ("delivery" and "Delhivery" are the
+// same partner — the DELIVERY_PARTNER option value is spelled without the "h"),
+// so match on a normalized key and show a tidy label.
+const courierKey = (v) => {
+  const k = String(v || "").trim().toLowerCase();
+  return k === "delivery" ? "delhivery" : k;
+};
+const courierLabel = (v) => {
+  const raw = String(v || "").trim();
+  if (courierKey(raw) === "delhivery") return "Delhivery";
+  return raw === raw.toLowerCase() ? raw.replace(/\b\w/g, (m) => m.toUpperCase()) : raw;
+};
+
 export default function Dispatch({
   models = [],
   serials = [],
@@ -124,6 +137,7 @@ export default function Dispatch({
   isAdmin,
   isSupervisor,
   isAccountant,
+  canManagePackaging = false,
   initialDayFilter = "all",
   initialCustomStart = "",
   initialCustomEnd = "",
@@ -137,6 +151,16 @@ export default function Dispatch({
   const [selectedIndices, setSelectedIndices] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [platformFilter, setPlatformFilter] = useState("All");
+  // Delivery platform = the courier/delivery partner on the shipment.
+  const [courierFilter, setCourierFilter] = useState("All"); // "All" | "__none__" | lowercased partner name
+  const courierOptions = useMemo(() => {
+    const seen = new Map();
+    for (const d of dispatches) {
+      const k = courierKey(d.courierPartner);
+      if (k && !seen.has(k)) seen.set(k, courierLabel(d.courierPartner));
+    }
+    return [...seen.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [dispatches]);
   const [platformOptions, setPlatformOptions] = useState([]);
   useEffect(() => {
     platformsService.getPlatforms()
@@ -149,6 +173,12 @@ export default function Dispatch({
   const dayRange = useMemo(() => getDayFilterRange(dayFilter, customStart, customEnd), [dayFilter, customStart, customEnd]);
   const [viewOrder, setViewOrder] = useState(null);
   const [showPackagingModal, setShowPackagingModal] = useState(false);
+  // Every Item Master variant (serialized + non-serialized) for the Packaging table;
+  // `models` only carries the serialized ones.
+  const [packagingList, setPackagingList] = useState([]);
+  const [packagingLoading, setPackagingLoading] = useState(false);
+  const [packagingSearch, setPackagingSearch] = useState("");
+  const [packagingType, setPackagingType] = useState("all"); // all | serialized | nonSerialized
   const [editingModelId, setEditingModelId] = useState(null);
   const [tempCost, setTempCost] = useState("");
   const [tempLength, setTempLength] = useState("");
@@ -372,8 +402,10 @@ export default function Dispatch({
         (d.modelName || "").toLowerCase().includes(term)
       );
       const matchesPlatform = platformFilter === "All" || (d.firmName || "Other") === platformFilter;
+      const courier = courierKey(d.courierPartner);
+      const matchesCourier = courierFilter === "All" || (courierFilter === "__none__" ? !courier : courier === courierFilter);
       const matchesDay = isWithinDayFilter(d.dispatchDate || d.createdAt, dayRange);
-      return matchesSearch && matchesPlatform && matchesDay;
+      return matchesSearch && matchesPlatform && matchesCourier && matchesDay;
     });
 
     filtered.forEach((d) => {
@@ -385,7 +417,7 @@ export default function Dispatch({
     return Object.values(groups).sort(
       (a, b) => new Date(b[0].dispatchDate || b[0].createdAt || 0) - new Date(a[0].dispatchDate || a[0].createdAt || 0)
     );
-  }, [activeDispatches, deliveredDispatches, rtoDispatches, cancelledDispatches, inTransitDispatches, podPendingDispatches, activeTabView, searchTerm, platformFilter, getDetails, dayRange]);
+  }, [activeDispatches, deliveredDispatches, rtoDispatches, cancelledDispatches, inTransitDispatches, podPendingDispatches, activeTabView, searchTerm, platformFilter, courierFilter, getDetails, dayRange]);
 
   const totalPages = Math.max(1, Math.ceil(allGroupedDispatches.length / itemsPerPage));
 
@@ -518,6 +550,36 @@ export default function Dispatch({
     }
   };
 
+  const loadPackagingList = async () => {
+    setPackagingLoading(true);
+    try {
+      const list = await printerService.getPackagingModels();
+      setPackagingList(list);
+      return list;
+    } catch (error) {
+      toast.error("Failed to load products: " + (error.response?.data?.message || error.message));
+      return [];
+    } finally {
+      setPackagingLoading(false);
+    }
+  };
+
+  const visiblePackagingModels = useMemo(() => {
+    const q = packagingSearch.trim().toLowerCase();
+    return packagingList.filter((m) => {
+      if (packagingType === "serialized" && !m.isSerialized) return false;
+      if (packagingType === "nonSerialized" && m.isSerialized) return false;
+      if (!q) return true;
+      return `${m.itemName || ""} ${m.name || ""} ${m.company || ""}`.toLowerCase().includes(q);
+    });
+  }, [packagingList, packagingSearch, packagingType]);
+
+  // Load whenever the table is opened, so it always matches Item Master.
+  useEffect(() => {
+    if (showPackagingModal) loadPackagingList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPackagingModal]);
+
   const startEditingModel = (model) => {
     setEditingModelId(model.guid);
     setTempCost(model.packagingCost || "");
@@ -529,7 +591,7 @@ export default function Dispatch({
 
   const saveModelCost = async (modelGuid) => {
     const apiFunction = onUpdateModel || printerService.onUpdateModel || printerService.updateModel;
-    const existingModel = localModels.find(m => (m.guid || m.id) === modelGuid);
+    const existingModel = packagingList.find(m => (m.guid || m.id) === modelGuid);
     if (apiFunction && existingModel) {
       try {
         const newCost = Number(tempCost);
@@ -545,9 +607,9 @@ export default function Dispatch({
           packageHeight: newHeight,
           packageWeight: newWeight,
         });
-        setLocalModels(prev => prev.map(m => (m.guid || m.id) === modelGuid
-          ? { ...m, packagingCost: newCost, packageLength: newLength, packageWidth: newWidth, packageHeight: newHeight, packageWeight: newWeight }
-          : m));
+        const patch = { packagingCost: newCost, packageLength: newLength, packageWidth: newWidth, packageHeight: newHeight, packageWeight: newWeight };
+        setPackagingList(prev => prev.map(m => (m.guid || m.id) === modelGuid ? { ...m, ...patch } : m));
+        setLocalModels(prev => prev.map(m => (m.guid || m.id) === modelGuid ? { ...m, ...patch } : m));
         setEditingModelId(null);
       } catch (error) {
         toast.error("Failed to update model cost: " + error.message);
@@ -577,6 +639,7 @@ export default function Dispatch({
       if (data.results.success.length > 0) {
         const refreshed = await printerService.getModels();
         setLocalModels(Array.isArray(refreshed) ? refreshed : []);
+        await loadPackagingList();
       }
     } catch (error) {
       toast.error("Failed to import packaging data: " + (error.response?.data?.message || error.message));
@@ -616,6 +679,7 @@ export default function Dispatch({
       includePackaging: savedCost > 0 ? "yes" : "no",
       packagingCost: savedCost > 0 ? savedCost : "",
       dpodFile: null,
+      deliveredDate: toDateInputValue(firstItem.deliveredDate),
       sendBackRemark: "",
       removeInvoice: false,
       removeEwayBill: false,
@@ -623,17 +687,25 @@ export default function Dispatch({
     });
   };
 
-  const handlePackagingToggle = (e) => {
+  const handlePackagingToggle = async (e) => {
     if (isDeliveredLogisticsLocked) return;
     const value = e.target.value;
+    if (value === "yes" && !packagingList.length) await loadPackagingList();
     if (value === "yes") {
       if (logisticsBatch && logisticsBatch.length > 0) {
+        const costOf = (variantId, list) => {
+          const m = list.find(x => String(x.guid || x.id) === String(variantId));
+          return m ? Number(m.packagingCost || 0) : 0;
+        };
+        const costList = packagingList.length ? packagingList : localModels;
         const totalBatchCost = logisticsBatch.reduce((sum, item) => {
-          const lookupId = String(item.serialNumberId || item.serialNumberGuid || item.serialGuid || item.serialId);
-          const s = serials.find((x) => String(x.guid || x.id) === lookupId);
-          if (!s) return sum;
-          const matchedModel = localModels.find(m => String(m.guid || m.id) === String(s.modelGuid || s.modelId));
-          return sum + (matchedModel ? Number(matchedModel.packagingCost || 0) : 0);
+          const serialId = item.serialNumberId || item.serialNumberGuid || item.serialGuid || item.serialId;
+          const s = serialId ? serials.find((x) => String(x.guid || x.id) === String(serialId)) : null;
+          if (s) return sum + costOf(s.modelGuid || s.modelId, costList);
+          // Non-serialized item: no serial to look the model up from — use the item's own
+          // variant, once per unit ordered.
+          const variantId = item.itemVariantId || item.modelId || item.modelGuid;
+          return sum + costOf(variantId, costList) * (Number(item.quantity) || 1);
         }, 0);
         setLogisticsForm(prev => ({
           ...prev,
@@ -752,32 +824,27 @@ export default function Dispatch({
     if (isSavingLogistics) return;
     const finalLogisticsStatus = logisticsForm.logisticsStatus;
 
-    // Marking RTO doesn't have to mean the freight/packaging already spent on
-    // this shipment gets wiped — ask instead of silently deciding either way.
-    let clearChargesOnRTO = false;
-    const wasAlreadyRTO = (logisticsBatch || []).every((item) => item.logisticsStatus === "RTO");
+    // Marking RTO never clears freight/packaging - that cost was already
+    // spent on the shipment, so it stays on the order as-is.
     const currentFreight = logisticsForm.freightCharges ? Number(logisticsForm.freightCharges) : 0;
     const currentPackaging = logisticsForm.includePackaging === "yes" ? Number(logisticsForm.packagingCost) : 0;
-    if (!isDeliveredLogisticsLocked && finalLogisticsStatus === "RTO" && !wasAlreadyRTO && (currentFreight > 0 || currentPackaging > 0)) {
-      clearChargesOnRTO = confirm(
-        `This order has ₹${currentFreight.toLocaleString("en-IN")} freight` +
-        (currentPackaging > 0 ? ` and ₹${currentPackaging.toLocaleString("en-IN")} packaging` : "") +
-        ` charges.\n\nOK = clear these charges (RTO)\nCancel = keep them as-is`
-      );
-    }
 
     setIsSavingLogistics(true);
 
+    // Optional: when it was actually delivered (only meaningful for Delivered).
+    const deliveredDateData = finalLogisticsStatus === "Delivered" ? { deliveredDate: logisticsForm.deliveredDate || null } : {};
+
     const commonUpdateData = isDeliveredLogisticsLocked
-      ? { logisticsStatus: finalLogisticsStatus }
+      ? { logisticsStatus: finalLogisticsStatus, ...deliveredDateData }
       : {
           dispatchDate: logisticsForm.dispatchDate || null,
           courierPartner: logisticsForm.courierPartner || null,
           logisticsDispatchDate: logisticsForm.dispatchDate || null,
           trackingId: logisticsForm.trackingId || null,
-          freightCharges: clearChargesOnRTO ? 0 : currentFreight,
+          freightCharges: currentFreight,
           logisticsStatus: finalLogisticsStatus,
-          packagingCost: clearChargesOnRTO ? 0 : currentPackaging
+          packagingCost: currentPackaging,
+          ...deliveredDateData
         };
 
     try {
@@ -930,11 +997,19 @@ export default function Dispatch({
         {(isAdmin || isAccountant || isSupervisor) && (
             <StatCard className="col-span-2 md:col-span-2" icon={Package} label="Cost" value={`₹${dashboardStats.totalPackagingCost.toLocaleString("en-IN")}`} color="bg-pink-50 text-pink-600" subText=" Packaging Cost" />
         )}
-        {isAdmin && (
-            <div className="col-span-full flex justify-end mt-1">
-              <button onClick={() => setShowPackagingModal(true)} className="flex items-center gap-2 bg-pink-50 text-pink-700 px-4 py-2 rounded-xl text-xs font-bold border border-pink-100 hover:bg-pink-100 transition shadow-sm"><Package size={14} />Packaging Cost & Dimensions</button>
+        <div className="col-span-full flex flex-wrap items-center justify-between gap-3 mt-1">
+            <div className="flex flex-nowrap overflow-x-auto max-w-full w-fit bg-slate-100 p-1 rounded-xl">
+              <button onClick={() => handleTabChange("active")} className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "active" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><CheckCircle size={14} /> Active</button>
+              <button onClick={() => handleTabChange("in_transit")} className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "in_transit" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><Truck size={14} /> In Transit</button>
+              <button onClick={() => handleTabChange("pod_pending")} className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "pod_pending" ? "bg-white text-amber-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><FileText size={14} /> POD Pending{podPendingGroupCount > 0 ? ` (${podPendingGroupCount})` : ""}</button>
+              <button onClick={() => handleTabChange("delivered")} className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "delivered" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><CheckCircle size={14} /> Delivered</button>
+              <button onClick={() => handleTabChange("rto")} className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "rto" ? "bg-white text-rose-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><RotateCcw size={14} /> RTO</button>
+              <button onClick={() => handleTabChange("cancelled")} className={`flex items-center gap-1.5 whitespace-nowrap shrink-0 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "cancelled" ? "bg-white text-red-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><XCircle size={14} /> Cancelled</button>
             </div>
-        )}
+          {canManagePackaging && (
+              <button onClick={() => setShowPackagingModal(true)} className="flex items-center gap-2 bg-pink-50 text-pink-700 px-4 py-2 rounded-xl text-xs font-bold border border-pink-100 hover:bg-pink-100 transition shadow-sm"><Package size={14} />Packaging Cost & Dimensions</button>
+          )}
+        </div>
       </div>
 
       {showPreview && (
@@ -966,17 +1041,9 @@ export default function Dispatch({
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pt-4 border-t border-slate-100">
-        <div className="flex flex-wrap bg-slate-100 p-1 rounded-xl">
-          <button onClick={() => handleTabChange("active")} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "active" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><CheckCircle size={14} /> Active</button>
-          <button onClick={() => handleTabChange("in_transit")} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "in_transit" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><Truck size={14} /> In Transit</button>
-          <button onClick={() => handleTabChange("pod_pending")} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "pod_pending" ? "bg-white text-amber-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><FileText size={14} /> POD Pending{podPendingGroupCount > 0 ? ` (${podPendingGroupCount})` : ""}</button>
-          <button onClick={() => handleTabChange("delivered")} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "delivered" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><CheckCircle size={14} /> Delivered</button>
-          <button onClick={() => handleTabChange("rto")} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "rto" ? "bg-white text-rose-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><RotateCcw size={14} /> RTO</button>
-          <button onClick={() => handleTabChange("cancelled")} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTabView === "cancelled" ? "bg-white text-red-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}><XCircle size={14} /> Cancelled</button>
-        </div>
-        <div className="flex flex-wrap gap-2 w-full md:w-auto items-center">
-          <div className="relative flex-1 md:w-64 group">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-2 w-full items-center">
+          <div className="relative flex-1 min-w-[220px] max-w-sm group">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input className="w-full border border-slate-200 pl-9 pr-3 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 outline-none transition-all shadow-sm" placeholder="Search orders..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} />
             {searchTerm && <button onClick={() => setSearchTerm("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={14} /></button>}
@@ -991,6 +1058,21 @@ export default function Dispatch({
               {platformOptions.map((p) => (
                 <option key={p.name} value={p.name}>{p.name}</option>
               ))}
+            </select>
+            <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          </div>
+          <div className="relative">
+            <select
+              value={courierFilter}
+              onChange={(e) => { setCourierFilter(e.target.value); setCurrentPage(1); }}
+              className="appearance-none border border-slate-200 bg-white pl-3 pr-8 py-2.5 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm cursor-pointer"
+              title="Delivery platform / courier partner"
+            >
+              <option value="All">All Delivery Platforms</option>
+              {courierOptions.map((c) => (
+                <option key={c.key} value={c.key}>{c.label}</option>
+              ))}
+              <option value="__none__">Not assigned</option>
             </select>
             <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
           </div>
@@ -1191,9 +1273,9 @@ export default function Dispatch({
 
       {showPackagingModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl p-6 flex flex-col max-h-[85vh]">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[96vw] p-6 flex flex-col max-h-[94vh] h-[94vh]">
             <div className="flex justify-between items-center mb-4 shrink-0 gap-3">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Package className="text-pink-500" size={20} /> Packaging Cost & Dimensions</h3>
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Package className="text-pink-500" size={20} /> Packaging Cost & Dimensions <span className="text-xs font-bold text-slate-400">({packagingList.length} products)</span></h3>
               <div className="flex items-center gap-2">
                 <input ref={packagingImportInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportPackagingFileChosen} />
                 <button
@@ -1215,11 +1297,35 @@ export default function Dispatch({
                 <button onClick={() => setShowPackagingModal(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={18} /></button>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl">
+            <div className="flex flex-wrap items-center gap-2 mb-3 shrink-0">
+              <div className="relative flex-1 min-w-[220px] max-w-md">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={packagingSearch}
+                  onChange={(e) => setPackagingSearch(e.target.value)}
+                  placeholder="Search product, model or brand..."
+                  className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-pink-200"
+                />
+              </div>
+              {[["all", "All"], ["serialized", "Serialized"], ["nonSerialized", "Non-serialized"]].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setPackagingType(key)}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold border transition-colors ${packagingType === key ? "bg-pink-50 border-pink-300 text-pink-700" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 overflow-auto border border-slate-200 rounded-xl min-h-0">
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-bold sticky top-0">
+                <thead className="bg-slate-50 text-xs text-slate-500 uppercase font-bold sticky top-0 z-10">
                   <tr>
-                    <th className="px-4 py-3">Model Name</th>
+                    <th className="px-4 py-3 w-12">#</th>
+                    <th className="px-4 py-3">Product</th>
+                    <th className="px-4 py-3">Model / Variant</th>
+                    <th className="px-4 py-3">Brand</th>
+                    <th className="px-4 py-3">Type</th>
                     <th className="px-4 py-3 text-right">Cost</th>
                     <th className="px-3 py-3 text-right">L (cm)</th>
                     <th className="px-3 py-3 text-right">W (cm)</th>
@@ -1229,11 +1335,25 @@ export default function Dispatch({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {localModels.map((model) => {
+                  {packagingLoading && packagingList.length === 0 && (
+                    <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin mr-2" />Loading products...</td></tr>
+                  )}
+                  {!packagingLoading && visiblePackagingModels.length === 0 && (
+                    <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400 text-sm">No products found{packagingSearch || packagingType !== "all" ? " for this filter" : ""}.</td></tr>
+                  )}
+                  {visiblePackagingModels.map((model, idx) => {
                     const isEditing = editingModelId === model.guid;
                     return (
                       <tr key={model.guid} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 font-medium text-slate-700">{model.name}</td>
+                        <td className="px-4 py-3 text-xs font-semibold text-slate-400">{idx + 1}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-800 max-w-[320px]">{model.itemName}</td>
+                        <td className="px-4 py-3 font-medium text-slate-600 max-w-[380px]">{model.name}</td>
+                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{model.company || "—"}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${model.isSerialized ? "bg-indigo-50 text-indigo-600" : "bg-amber-50 text-amber-600"}`}>
+                            {model.isSerialized ? "Serialized" : "Non-serialized"}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-right font-mono">{isEditing ? <input type="number" className="w-20 border border-indigo-300 rounded px-2 py-1 text-right text-xs focus:ring-2 focus:ring-indigo-500 outline-none" value={tempCost} onChange={(e) => setTempCost(e.target.value)} autoFocus /> : <span className={model.packagingCost > 0 ? "text-pink-600 font-bold" : "text-slate-400"}>₹{Number(model.packagingCost || 0).toLocaleString()}</span>}</td>
                         <td className="px-3 py-3 text-right font-mono">{isEditing ? <input type="number" min="0" step="0.1" className="w-16 border border-indigo-300 rounded px-2 py-1 text-right text-xs focus:ring-2 focus:ring-indigo-500 outline-none" value={tempLength} onChange={(e) => setTempLength(e.target.value)} placeholder="L" /> : <span className={model.packageLength ? "text-slate-700" : "text-slate-300"}>{model.packageLength || "-"}</span>}</td>
                         <td className="px-3 py-3 text-right font-mono">{isEditing ? <input type="number" min="0" step="0.1" className="w-16 border border-indigo-300 rounded px-2 py-1 text-right text-xs focus:ring-2 focus:ring-indigo-500 outline-none" value={tempWidth} onChange={(e) => setTempWidth(e.target.value)} placeholder="W" /> : <span className={model.packageWidth ? "text-slate-700" : "text-slate-300"}>{model.packageWidth || "-"}</span>}</td>
@@ -1407,6 +1527,18 @@ export default function Dispatch({
                       hover:file:bg-orange-200 transition cursor-pointer"
                   />
                   <p className="text-xs text-orange-600 mt-2">Required before marking any order as Delivered.</p>
+                  <div className="mt-4 pt-3 border-t border-orange-100">
+                    <label className="block text-xs font-bold text-orange-700 mb-1.5 uppercase tracking-wide">
+                      Delivered Date <span className="normal-case font-semibold text-orange-400">(optional)</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={logisticsForm.deliveredDate || ""}
+                      max={new Date().toISOString().slice(0, 10)}
+                      onChange={(e) => setLogisticsForm((prev) => ({ ...prev, deliveredDate: e.target.value }))}
+                      className="w-full border border-orange-200 bg-white p-2 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 outline-none"
+                    />
+                  </div>
                 </div>
               )}
 

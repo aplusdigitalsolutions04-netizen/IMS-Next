@@ -5,10 +5,12 @@ import { mapDispatchRow } from "@/lib/helpers";
 import { updateDispatchItem } from "@/lib/dispatchHelpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { ensureCarePackColumn, ensureOrderItemsCarePackColumns } from "@/lib/carePackMigration";
+import { ensureDeliveredDateColumn } from "@/lib/orderLogisticsMigration";
 
 export const GET = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   authorizeDispatchRequest(user, "GET", null);
+  await ensureDeliveredDateColumn();
   const { id: guid } = await params;
 
   if (guid.startsWith("SO-")) {
@@ -60,7 +62,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
         o.invoiceDate, o.warrantyStartDate, o.invoiceFilename, o.ewayBillNumber, o.ewayBillFilename, o.gemBillUploaded, o.freightCharges,
         o.packagingCost, o.commission, o.orderVerified, oi.remarks AS remarks, o.remarks AS orderRemarks, o.cancellationReason as cancelReason,
         o.cancelledBy, o.cancelledAt, o.isDeleted, o.rowColor, o.tags,
-        ol.courierPartner, ol.trackingId, ol.logisticsStatus, ol.logisticsDispatchDate, ol.podFilename, ol.lastDeliveryDate,
+        ol.courierPartner, ol.trackingId, ol.logisticsStatus, ol.logisticsDispatchDate, ol.podFilename, ol.lastDeliveryDate, ol.deliveredDate,
         ins.installationRequired, ins.installationStatus, ins.technicianName, ins.technicianContact,
         ins.installationCharges, ins.installationRemarks, ins.scheduledDate, ins.installationDate,
         s.serialNumber as serialValue, s.landingPrice, s.carePack as originalCarePack,

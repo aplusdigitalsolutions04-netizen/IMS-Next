@@ -51,6 +51,7 @@ const toDateOnly = (v) => {
 import { broadcastRealtimeEvent } from "@/lib/realtimeEvents";
 import { createNotification } from "@/lib/notifications";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { cleanContactNumber } from "@/lib/aiParse";
 
 // Creates a "Draft" order straight from a Contract's extracted data — no
 // serial numbers exist yet (nothing has been picked/dispatched), so
@@ -159,7 +160,7 @@ export const POST = withErrorHandling(async (request) => {
       [orderId, user.companyId, orderid, "GeM", displayName, buyerEmail || null,
         consigneeEmail || null, buyerAddress || null, consigneeAddress || null, buyerAddress || null,
         user.username || "System", "Draft", "Direct Order", bidNumber || null,
-        toDateOnly(generatedDate), buyerGstin || null, buyerContact || null, buyerEmail || null,
+        toDateOnly(generatedDate), buyerGstin || null, cleanContactNumber(buyerContact) || null, buyerEmail || null,
         "No",
         `Draft created from Contract #${contractNumber || orderId}${deliveryStartAfter ? ` — delivery window ${deliveryStartAfter} to ${deliveryCompletedBy || "?"}` : ""}`,
         rawBody.platformFields ? JSON.stringify(rawBody.platformFields) : null]

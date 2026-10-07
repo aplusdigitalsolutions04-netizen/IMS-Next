@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest, requireAuth } from "@/lib/auth";
+import { authenticateRequest, requireShippingAccess } from "@/lib/auth";
 import { getConfig, delhiveryRequest } from "@/lib/delhivery";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
@@ -8,7 +8,7 @@ import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 //            quantity, productDescription }
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireAuth(user);
+  requireShippingAccess(user);
 
   const config = getConfig();
   if (!config.pickupLocation) {

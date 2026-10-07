@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeMasterWrite, authorizeMasterDelete, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
-import { ensurePlatformItemTypeColumn } from "@/lib/platformsMigration";
+import { ensurePlatformItemTypeColumn, ensurePlatformWarrantyColumn } from "@/lib/platformsMigration";
 
 const VALID_COLOR_THEMES = new Set([
   "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal",
@@ -17,8 +17,9 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   authorizeMasterWrite(user, "platformMaster", { isCreate: false, denyMessage: "You do not have permission to edit selling platforms." });
   const { id } = await params;
   await ensurePlatformItemTypeColumn();
+  await ensurePlatformWarrantyColumn();
 
-  const { name, isActive, colorTheme, itemTypeMode } = await parseJsonBody(request);
+  const { name, isActive, colorTheme, itemTypeMode, warrantyEnabled } = await parseJsonBody(request);
 
   const [[platform]] = await mysqlPool.query("SELECT * FROM selling_platforms WHERE guid = ?", [id]);
   if (!platform) throw new ApiError(404, "Platform not found.");
@@ -49,6 +50,10 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   if (itemTypeMode !== undefined) {
     if (!VALID_ITEM_TYPE_MODES.has(itemTypeMode)) throw new ApiError(400, "Invalid item type mode.");
     await mysqlPool.query("UPDATE selling_platforms SET itemTypeMode = ? WHERE guid = ?", [itemTypeMode, id]);
+  }
+
+  if (warrantyEnabled !== undefined) {
+    await mysqlPool.query("UPDATE selling_platforms SET warrantyEnabled = ? WHERE guid = ?", [warrantyEnabled ? 1 : 0, id]);
   }
 
   return NextResponse.json({ message: "Platform updated" });

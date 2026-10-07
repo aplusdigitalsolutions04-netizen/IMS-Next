@@ -101,7 +101,7 @@ export default function RateLimitSettings() {
         <div>
           <h2 className="text-2xl font-black text-slate-800 tracking-tight">API Rate Limiting</h2>
           <p className="text-slate-500 font-medium text-sm mt-0.5">
-            Every API request is capped per IP address. Adjust the limits below, or reset a specific IP that's currently blocked.
+            Every API request is capped per IP address. Adjust the limits below, or reset a specific IP that&apos;s currently blocked.
           </p>
         </div>
       </div>

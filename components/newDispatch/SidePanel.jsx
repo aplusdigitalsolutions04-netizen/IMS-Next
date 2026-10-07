@@ -13,7 +13,7 @@ export default function SidePanel({
   setSelectedModelId, itemNameOptions = [], selectedItemName = "", setSelectedItemName,
 }) {
   return (
-          <aside className="xl:sticky xl:top-6 self-start">
+          <aside className="self-start">
             <div className="bg-white/95 backdrop-blur-2xl border border-slate-200/80 rounded-2xl shadow-xl shadow-slate-200/50 overflow-hidden">
               {/* Panel Header */}
               <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-indigo-50/80 relative overflow-hidden">
@@ -113,7 +113,7 @@ export default function SidePanel({
                       <p className="text-[11px] text-amber-600 mt-1">for this model</p>
                     </div>
                   ) : (
-                    <div className="border border-slate-200/80 rounded-2xl bg-slate-50/80 max-h-[480px] overflow-y-auto shadow-inner">
+                    <div className="border border-slate-200/80 rounded-2xl bg-slate-50/80 shadow-inner">
                       <div className="divide-y divide-slate-200/80">
                         {selectedPanelSerials.map((serial) => {
                           // /api/serials never actually returns a `modelGuid`

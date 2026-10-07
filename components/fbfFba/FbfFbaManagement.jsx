@@ -913,7 +913,7 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
-              <p className="text-xs text-slate-400">Quantity and serials can't be edited here — they already moved stock when this sell out was made.</p>
+              <p className="text-xs text-slate-400">Quantity and serials can&apos;t be edited here — they already moved stock when this sell out was made.</p>
               <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -1085,7 +1085,7 @@ export default function FbfFbaManagement({ isAdmin, currentUser }) {
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-50 font-black text-indigo-600 ring-4 ring-indigo-50/50">2</div>
                 <div>
                   <h3 className="text-lg font-black text-slate-900">Item &amp; Warehouse</h3>
-                  <p className="text-sm font-medium text-slate-500">Pick the item, then which warehouse's stock to return from.</p>
+                  <p className="text-sm font-medium text-slate-500">Pick the item, then which warehouse&apos;s stock to return from.</p>
                 </div>
               </div>
 

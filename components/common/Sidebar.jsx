@@ -39,7 +39,11 @@ import {
   Sparkles,
   Database,
   Tag,
-  ShieldCheck
+  ShieldCheck,
+  ListChecks,
+  KeyRound,
+  ClipboardList,
+  BookOpen,
 } from "lucide-react";
 import { useCompany } from "@/lib/client/CompanyContext";
 
@@ -66,6 +70,7 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
     { id: "contracts-upload", label: "Upload Contract", icon: UploadCloud, group: "contracts", path: "/contracts/upload", permission: "contracts" },
     { id: "contracts-list", label: "Saved Contracts", icon: FileText, group: "contracts", path: "/contracts", permission: "contracts" },
     { id: "contracts-cancelled", label: "Cancelled Contracts", icon: Ban, group: "contracts", path: "/contracts/cancelled", permission: "contracts" },
+    { id: "contracts-groups", label: "Contract Groups", icon: Layers, group: "contracts", path: "/contracts/groups", permission: "contractGroups" },
 
     // Masters
     { id: "categoryMaster", label: "Category Master", icon: Tags, group: "masters", permission: "stat_category" },
@@ -97,6 +102,7 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
     { id: "billing", label: "Billing", icon: Receipt, permission: "billing" },
     { id: "warranty", label: "Warranty Certs", icon: ShieldAlert, permission: "warranty" },
     { id: "installations", label: "Installations", icon: Wrench, badgeColor: "orange", permission: "installation" },
+    { id: "tasks", label: "Tasks", icon: ListChecks, permission: "tasks" },
   ].filter((item) => hasPermission(item.permission));
 
   const hasGroup = (group) => navItems.some((i) => i.group === group);
@@ -107,7 +113,7 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
     const ordersGroup = ["orderTracking","dispatch","stockOut"];
     const operationsGroup = ["returns","damaged"];
     const mainEmailGroup = ["sentEmails","emailInbox"];
-    const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","apiLogs","backupRestore","rateLimitSettings","aiSettings","platformMaster","deliveryPartnerMaster","clientMaster","carePackMaster","googleDrive","deletedItems"];
+    const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","userGuide","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","apiLogs","backupRestore","rateLimitSettings","aiSettings","platformMaster","deliveryPartnerMaster","clientMaster","carePackMaster","googleDrive","deletedItems"];
 
     const expandTo = (group) => {
       setIsSidebarVisible(true);
@@ -197,6 +203,33 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               <Wrench size={20} />
             </Link>
           )}
+          {hasPermission('tasks') && (
+            <Link
+              href="/tasks"
+              title="Tasks"
+              className={`p-2.5 rounded-xl transition-colors ${activeTab === "tasks" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <ListChecks size={20} />
+            </Link>
+          )}
+          {hasPermission('credentials') && (
+            <Link
+              href="/credentials"
+              title="Credentials"
+              className={`p-2.5 rounded-xl transition-colors ${activeTab === "credentials" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <KeyRound size={20} />
+            </Link>
+          )}
+          {hasPermission('dailyTasks') && (
+            <Link
+              href="/dailyTasks"
+              title="Daily Tasks"
+              className={`p-2.5 rounded-xl transition-colors ${activeTab === "dailyTasks" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <ClipboardList size={20} />
+            </Link>
+          )}
           {(hasPermission('sentEmails') || hasPermission('emailInbox')) && (
             <button
               onClick={() => expandTo("mainEmail")}
@@ -235,7 +268,7 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
   }
 
   // Settings mode
-  if (['companyMaster','users','roles','userActivity','reports','profile','settings','notifications','warrantyEmail','emailAccounts','emailTemplates','apiLogs','backupRestore','rateLimitSettings','aiSettings','platformMaster','deliveryPartnerMaster','clientMaster','carePackMaster','googleDrive','deletedItems'].includes(activeTab)) {
+  if (['companyMaster','users','roles','userActivity','reports','profile','userGuide','settings','notifications','warrantyEmail','emailAccounts','emailTemplates','apiLogs','backupRestore','rateLimitSettings','aiSettings','platformMaster','deliveryPartnerMaster','clientMaster','carePackMaster','googleDrive','deletedItems'].includes(activeTab)) {
     return (
       <aside className="bg-white border-r flex flex-col w-64 h-full shrink-0 animate-sidebar-in transition-all">
         <div className="p-4 flex items-center justify-between border-b border-slate-100">
@@ -262,6 +295,9 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
         <nav className="flex-1 px-2 py-2 flex flex-col overflow-y-auto gap-1 min-h-0">
           <Link href="/profile" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'profile' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <User size={18} /> <span>My Profile</span>
+          </Link>
+          <Link href="/userGuide" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'userGuide' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <BookOpen size={18} /> <span>User Guide</span>
           </Link>
           {(hasPermission('companyMaster') || hasPermission('platformMaster') || hasPermission('deliveryPartnerMaster') || hasPermission('clientMaster') || hasPermission('carePackMaster')) && (
             <div className="space-y-1">
@@ -535,6 +571,27 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
         {hasPermission('installation') && (
           <Link href="/installations" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'installations' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
             <Wrench size={18} /> <span>Installations</span>
+          </Link>
+        )}
+
+        {/* TASKS */}
+        {hasPermission('tasks') && (
+          <Link href="/tasks" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'tasks' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <ListChecks size={18} /> <span>Tasks</span>
+          </Link>
+        )}
+
+        {/* CREDENTIALS */}
+        {hasPermission('credentials') && (
+          <Link href="/credentials" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'credentials' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <KeyRound size={18} /> <span>Credentials</span>
+          </Link>
+        )}
+
+        {/* DAILY TASKS */}
+        {hasPermission('dailyTasks') && (
+          <Link href="/dailyTasks" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'dailyTasks' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <ClipboardList size={18} /> <span>Daily Tasks</span>
           </Link>
         )}
 

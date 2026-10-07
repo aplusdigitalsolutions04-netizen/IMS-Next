@@ -4,6 +4,7 @@ import { authenticateRequest, ApiError, isSuperUser } from "@/lib/auth";
 import { authorizeWarranty } from "@/lib/warrantyAuth";
 import { normalizeRole } from "@/lib/helpers";
 import { sendWarrantyEmail } from "@/lib/mailer";
+import { resolveEmailAttachments } from "@/lib/orderEmailDocuments";
 import { logUserActivity } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 
@@ -32,7 +33,8 @@ export const POST = withErrorHandling(async (request) => {
     // `purpose` comes from whichever template the user picked in the compose
     // flow — that decides which connected email account the send resolves
     // to (falls back to "warranty" for older callers that don't send it).
-    await sendWarrantyEmail({ companyGuid: user.companyId, purpose: purpose || "warranty", accountGuid, to, cc, bcc, subject, body: emailBody, bodyHtml, attachments, orderGuid });
+    const resolvedAttachments = await resolveEmailAttachments(attachments, { orderGuid, companyGuid: user.companyId });
+    await sendWarrantyEmail({ companyGuid: user.companyId, purpose: purpose || "warranty", accountGuid, to, cc, bcc, subject, body: emailBody, bodyHtml, attachments: resolvedAttachments, orderGuid });
   } catch (err) {
     console.error("[warranty] POST /send-email:", err);
     throw new ApiError(500, err.message || "Failed to send email");

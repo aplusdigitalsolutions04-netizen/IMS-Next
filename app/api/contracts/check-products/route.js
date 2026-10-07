@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, requireCompany, requirePermission } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
+import { callOpenAIMatchProducts, checkOpenAIKey } from "@/lib/aiParse";
 
 // Called right after a contract is saved — checks each product on the
 // contract against Item Master (matched by variant name, case/whitespace
@@ -90,6 +91,51 @@ export const POST = withErrorHandling(async (request) => {
     }
     return { productName, exists: false, matchedBy: null, itemVariantId: null, itemId: null, matchedName: null };
   });
+
+  // Last resort for products neither the name nor the model check found: the
+  // same product is sometimes saved under two different names, so ask OpenAI
+  // to compare against the closest catalogue entries. Any failure here (no
+  // key configured, API error, bad reply) just leaves the product as "not in
+  // inventory" — same result as before this step existed. The UI asks the
+  // user to confirm an AI match, so a wrong guess is never applied silently.
+  try {
+    const unmatched = data.map((d, i) => ({ d, i })).filter(({ d }) => !d.exists);
+    if (unmatched.length > 0 && rows.length > 0 && (await checkOpenAIKey())) {
+      const tokenSet = (v) => new Set(tokenizeWords(v).concat(norm(v).match(/[a-z]+|\d+/g) || []).filter((t) => t.length > 1));
+      const rowTokens = rows.map((r) => tokenSet(r.variantName));
+      const candidateMap = new Map();
+      const aiProducts = unmatched.map(({ d, i }) => {
+        const src = cleaned[i];
+        const pt = tokenSet(`${src.productName} ${src.model || ""}`);
+        rows
+          .map((r, idx) => {
+            let score = 0;
+            for (const t of rowTokens[idx]) if (pt.has(t)) score++;
+            return { r, score };
+          })
+          .filter((x) => x.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 20)
+          .forEach(({ r }) => candidateMap.set(r.itemVariantId, r));
+        return { index: i, productName: src.productName, model: src.model || "" };
+      });
+      if (candidateMap.size > 0) {
+        const candidates = Array.from(candidateMap.values()).map((r) => ({ id: r.itemVariantId, name: r.variantName }));
+        const { data: ai } = await callOpenAIMatchProducts(aiProducts, candidates, { source: "contracts-check-products", user });
+        for (const m of ai?.matches || []) {
+          const hit = m?.candidateId ? candidateMap.get(m.candidateId) : null;
+          if (hit && data[m.index] && !data[m.index].exists) {
+            data[m.index] = {
+              productName: data[m.index].productName, exists: true, matchedBy: "ai",
+              itemVariantId: hit.itemVariantId, itemId: hit.itemId, matchedName: hit.variantName,
+            };
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[ai] contracts/check-products AI match failed:", err.message);
+  }
 
   return NextResponse.json({ data });
 });

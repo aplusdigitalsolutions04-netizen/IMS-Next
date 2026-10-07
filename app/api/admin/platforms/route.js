@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requirePermission, authorizeMasterWrite, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
-import { ensurePlatformItemTypeColumn } from "@/lib/platformsMigration";
+import { ensurePlatformItemTypeColumn, ensurePlatformWarrantyColumn } from "@/lib/platformsMigration";
 
 const COLOR_THEMES = [
   "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal",
@@ -20,6 +20,7 @@ export const GET = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
   requirePermission(user, "platformMaster", "Only Admin can manage selling platforms.");
   await ensurePlatformItemTypeColumn();
+  await ensurePlatformWarrantyColumn();
 
   const [rows] = await mysqlPool.query("SELECT * FROM selling_platforms ORDER BY sortOrder ASC, name ASC");
   return NextResponse.json({ data: rows });

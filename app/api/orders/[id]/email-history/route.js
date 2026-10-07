@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany, authorizeOrdersRequest } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
+import { ensureSentLogColumn } from "@/lib/mailer";
 
 // Combined sent + reply history for one order — `id` here is orders.guid
 // (matching EmailComposeTab's own `orderGuid` prop), not order_items.guid
@@ -15,6 +16,9 @@ export const GET = withErrorHandling(async (request, { params }) => {
   requireCompany(user);
   authorizeOrdersRequest(user, "GET", new URL(request.url).pathname, null);
   const { id: orderGuid } = await params;
+  // orderGuid on email_sent_log is only created lazily when the first email is
+  // SENT — reading history before that (nothing sent yet) hit "Unknown column".
+  await ensureSentLogColumn();
 
   const [sent] = await mysqlPool.query(
     `SELECT guid, toAddress, subject, body, purpose, sentAt, repliedAt, remindersSent

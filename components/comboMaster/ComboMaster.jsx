@@ -212,7 +212,7 @@ const ComboMaster = () => {
           </div>
           <div>
             <h2 className="text-2xl font-black text-slate-800 tracking-tight">Combo & Pack Master</h2>
-            <p className="text-sm text-slate-500 mt-1 font-medium">Create bundles, kits and "Pack of X" variants</p>
+            <p className="text-sm text-slate-500 mt-1 font-medium">Create bundles, kits and &quot;Pack of X&quot; variants</p>
           </div>
         </div>
         <div className="flex gap-3">

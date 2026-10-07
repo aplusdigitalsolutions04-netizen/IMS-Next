@@ -4,17 +4,25 @@ import { authenticateRequest, authorizeMasterWrite, authorizeMasterDelete, isSup
 import { sanitizeUser, safeStr, hashPassword } from "@/lib/helpers";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { ensureUsersRoleColumnIsVarchar } from "@/lib/usersMigration";
+import { ensureUserAccessColumns, saveAccessOverrides } from "@/lib/userAccess";
 
 export const PUT = withErrorHandling(async (request, { params }) => {
   const user = await authenticateRequest(request);
   authorizeMasterWrite(user, "users", { isCreate: false, denyMessage: "You do not have permission to edit users." });
   await ensureUsersRoleColumnIsVarchar();
+  await ensureUserAccessColumns();
   const { id } = await params;
 
   const {
     username, password, roleId, fullName, email, phone,
-    companyIds, allCompaniesAccess,
+    companyIds, allCompaniesAccess, accessOverrides,
   } = await parseJsonBody(request);
+
+  // Changing someone's custom access is Admin-only — otherwise anyone who can edit
+  // users could hand themselves (or a friend) extra permissions.
+  if (accessOverrides !== undefined && !isSuperUser(user.role)) {
+    throw new ApiError(403, "Only Admin can change a user's custom access.");
+  }
 
   const [existing] = await mysqlPool.query("SELECT * FROM users WHERE userid=?", [id]);
   if (!existing.length) throw new ApiError(404, "User not found.");
@@ -52,6 +60,8 @@ export const PUT = withErrorHandling(async (request, { params }) => {
       await mysqlPool.query("INSERT INTO user_companies (userGuid, companyGuid, isDefault) VALUES (?, ?, ?)", [id, cid, cid === companyIds[0] ? 1 : 0]);
     }
   }
+
+  if (accessOverrides !== undefined) await saveAccessOverrides(id, accessOverrides);
 
   invalidateUserCache(id);
   const [updated] = await mysqlPool.query("SELECT * FROM users WHERE userid=?", [id]);

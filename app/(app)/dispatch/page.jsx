@@ -26,6 +26,12 @@ export default function DispatchPage() {
   // role name) gates cost/financial visibility here — Supervisor/Accountant
   // tier by default, same as the Dashboard's equivalent split.
   const hasReportsAccess = isAdmin || !!currentUser?.permissions?.includes("reports");
+  // Packaging Cost & Dimensions management modal saves via
+  // app/api/models/[id]/route.js's PUT, which is actually gated by the
+  // "Model Pricing (Dispatch)" (print_models) view permission plus the
+  // allow_edit_models edit-flag — match that here instead of the previous
+  // hardcoded Admin-only gate, so a non-Admin user granted both can use it.
+  const canManagePackaging = isAdmin || (!!currentUser?.permissions?.includes("print_models") && !!currentUser?.allow_edit_models);
 
   const handleUpdate = useCallback(
     async (ids, updatedData) => {
@@ -64,6 +70,7 @@ export default function DispatchPage() {
       isAdmin={isAdmin}
       isSupervisor={hasReportsAccess}
       isAccountant={hasReportsAccess}
+      canManagePackaging={canManagePackaging}
       initialDayFilter={initialDayFilter}
       initialCustomStart={initialCustomStart}
       initialCustomEnd={initialCustomEnd}

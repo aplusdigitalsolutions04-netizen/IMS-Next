@@ -85,7 +85,7 @@ function PickOrCreate({ icon: Icon, label, helperText, items, valueKey, labelKey
 
       {isMatched && (
         <div className="flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-4">
-          <Sparkles size={13} /> Matched "{contractHint}" from the contract
+          <Sparkles size={13} /> Matched &quot;{contractHint}&quot; from the contract
         </div>
       )}
 
@@ -429,7 +429,7 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
                   <div>
                     <h4 className="text-base font-black text-slate-800 mb-1.5">Link Category to Brand</h4>
                     <p className="text-sm text-slate-500 leading-relaxed">
-                      We'll map category <span className="text-indigo-700 font-black">{category?.Text}</span> to brand{" "}
+                      We&apos;ll map category <span className="text-indigo-700 font-black">{category?.Text}</span> to brand{" "}
                       <span className="text-indigo-700 font-black">{brand?.Text}</span> — this makes it available together in Item Master going forward.
                     </p>
                   </div>
@@ -503,7 +503,7 @@ export default function AddProductWizard({ product, onClose, onLinked }) {
                       </button>
                       {items.length === 0 ? (
                         <p className="text-sm text-slate-400 mb-4 bg-slate-50 border border-slate-200 rounded-xl p-4">
-                          No existing items for this brand/category yet — try "New Item" instead.
+                          No existing items for this brand/category yet — try &quot;New Item&quot; instead.
                         </p>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4">

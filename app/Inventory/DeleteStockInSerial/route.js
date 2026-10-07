@@ -29,7 +29,7 @@ export const POST = withErrorHandling(async (request) => {
     await conn.beginTransaction();
 
     const [rows] = await conn.query(
-      "SELECT serialId, itemVariantId, serialStatus FROM inventorystockinserial WHERE serialId = ? AND companyGuid = ? AND isDeleted = 0 FOR UPDATE",
+      "SELECT serialId, itemVariantId, serialStatus, guid FROM inventorystockinserial WHERE serialId = ? AND companyGuid = ? AND isDeleted = 0 FOR UPDATE",
       [serialId, user.companyId]
     );
     if (!rows.length) throw new ApiError(404, "Serial not found.");
@@ -49,7 +49,7 @@ export const POST = withErrorHandling(async (request) => {
     // ever finalized) was never added to availablePCS in the first place, so
     // decrementing it here for that case would wrongly undercount stock that
     // this serial never contributed to.
-    if (serial.itemVariantId && serial.serialStatus === "Available") {
+    if (serial.itemVariantId && serial.serialStatus === "Available" && serial.guid) {
       await conn.query(
         "UPDATE inventoryvariantstock SET availablePCS = GREATEST(availablePCS - 1, 0) WHERE itemVariantId = ?",
         [serial.itemVariantId]

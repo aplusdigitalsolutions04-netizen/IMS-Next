@@ -54,3 +54,5 @@ uploads
 *.sql
 *.txt
 *.log
+
+/.next-build/

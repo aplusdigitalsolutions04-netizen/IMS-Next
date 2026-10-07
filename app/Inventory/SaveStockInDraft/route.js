@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import { mysqlPool } from "@/lib/db";
-import { authenticateRequest, requireAuth, ApiError } from "@/lib/auth";
+import { authenticateRequest, requireAuth, requireEditPermission, ApiError } from "@/lib/auth";
 import { authorizeInventory } from "@/lib/inventoryAuth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { validateBody } from "@/lib/validate";
+import { roundOff } from "@/lib/roundOff";
+import { ensureStockInDueColumn, requireDueBillEnabled } from "@/lib/stockInDueMigration";
 
 // Every numeric field is `z.coerce.number()` rather than a bare
 // `if (!x) ...` check — the previous version silently trusted whatever
@@ -28,6 +30,8 @@ const bodySchema = z.object({
   PurchaseRate: z.coerce.number().nonnegative().default(0),
   Remarks: z.string().nullish(),
   InvoiceFile: z.string().nullish(),
+  IsDue: z.union([z.boolean(), z.number()]).nullish(),
+  RoundOff: z.union([z.boolean(), z.number()]).nullish(),
 }).refine((b) => b.ItemVariantId || b.modelGuid, { message: "ItemVariantId or modelGuid is required", path: ["ItemVariantId"] });
 
 export const POST = withErrorHandling(async (request) => {
@@ -40,8 +44,16 @@ export const POST = withErrorHandling(async (request) => {
     StockInId, StockInDetailId, VendorId, InvoiceNo, InvoiceDate,
     ItemVariantId, modelGuid, godownGuid, UnitId, Barcode, StockInQty,
     DefaultPcsQty, FinalPcsQty, PurchaseRate,
-    Remarks, InvoiceFile,
+    Remarks, InvoiceFile, IsDue, RoundOff,
   } = validateBody(bodySchema, rawBody);
+
+  if (IsDue) {
+    requireEditPermission(user, "allow_due_purchase_bill");
+    await requireDueBillEnabled(user);
+  }
+  await ensureStockInDueColumn();
+  const dueFlag = IsDue ? 1 : 0;
+  const roundFlag = RoundOff ? 1 : 0;
 
   // Invoice-parse auto-fill fires one of these per item, staggered only by a
   // short client-side setTimeout (see StockIn.jsx's handleInvoiceUpload) —
@@ -61,12 +73,12 @@ export const POST = withErrorHandling(async (request) => {
       const sanitizedVendorId = VendorId && VendorId.trim() !== "" ? VendorId : null;
 
       await connection.execute(
-        "INSERT IGNORE INTO inventorystockin (stockInId, vendorId, invoiceNo, invoiceDate, remarks, invoiceFile, status, companyGuid) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
-        [StockInId, sanitizedVendorId, InvoiceNo || null, sanitizedInvoiceDate, Remarks || null, InvoiceFile || null, user.companyId]
+        "INSERT IGNORE INTO inventorystockin (stockInId, vendorId, invoiceNo, invoiceDate, remarks, invoiceFile, status, isDue, isRoundOff, companyGuid) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+        [StockInId, sanitizedVendorId, InvoiceNo || null, sanitizedInvoiceDate, Remarks || null, InvoiceFile || null, dueFlag, roundFlag, user.companyId]
       );
       await connection.execute(
-        "UPDATE inventorystockin SET vendorId = ?, invoiceNo = ?, invoiceDate = ?, remarks = ?, invoiceFile = ? WHERE stockInId = ? AND status = 0 AND companyGuid = ?",
-        [sanitizedVendorId, InvoiceNo || null, sanitizedInvoiceDate, Remarks || null, InvoiceFile || null, StockInId, user.companyId]
+        "UPDATE inventorystockin SET vendorId = ?, invoiceNo = ?, invoiceDate = ?, remarks = ?, invoiceFile = ?, isDue = ?, isRoundOff = ? WHERE stockInId = ? AND status = 0 AND companyGuid = ?",
+        [sanitizedVendorId, InvoiceNo || null, sanitizedInvoiceDate, Remarks || null, InvoiceFile || null, dueFlag, roundFlag, StockInId, user.companyId]
       );
 
       currentDetailId = StockInDetailId;
@@ -100,7 +112,7 @@ export const POST = withErrorHandling(async (request) => {
         "SELECT SUM(stockInQty) as totalQty, SUM(stockInQty * purchaseRate) as totalAmount FROM inventorystockindetail WHERE stockInId = ? AND isDeleted = 0 AND companyGuid = ?",
         [StockInId, user.companyId]
       );
-      await connection.execute("UPDATE inventorystockin SET totalAmount = ? WHERE stockInId = ? AND companyGuid = ?", [totals[0].totalAmount || 0, StockInId, user.companyId]);
+      await connection.execute("UPDATE inventorystockin SET totalAmount = ? WHERE stockInId = ? AND companyGuid = ?", [roundFlag ? roundOff(totals[0].totalAmount).rounded : Number(totals[0].totalAmount || 0), StockInId, user.companyId]);
 
       await connection.commit();
       break;

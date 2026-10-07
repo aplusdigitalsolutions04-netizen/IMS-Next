@@ -19,6 +19,7 @@ import { toLocalDateStr } from "@/lib/dateUtils";
 import { useToast } from "@/lib/client/ToastContext";
 import { useAppData } from "@/lib/client/AppDataContext";
 import { calculateBatchFinancials, isItemReturned, isItemReplaced, getItemSerial, getOldSerial, safeFormatDate, getAuthHeaders } from "@/components/orderTracking/helpers";
+import { ordersService } from "@/lib/services/ordersService";
 
 // Same bridge OrderDetailModal.jsx uses — opens HP's public warranty lookup
 // for a serial in a new tab, no API call of our own needed.
@@ -328,10 +329,36 @@ export default function Billing({
         });
     };
 
-    const handleFileChange = (e) => {
-        if (e.target.files && e.target.files.length > 0) {
-            const file = e.target.files[0];
-            setEditForm(prev => ({ ...prev, invoiceFile: file }));
+    // Reads the uploaded invoice with AI (same extraction New Order's
+    // "Auto-Fill from Invoice" uses — app/api/ai/parse-file/route.js) and
+    // fills Invoice No. / Invoice Date from it, same as it already does for
+    // Order Date/GST/warranty elsewhere. Never blocks the upload itself: a
+    // failed or inconclusive read just leaves those two fields for the user
+    // to type in by hand, exactly like before this existed.
+    const handleFileChange = async (e) => {
+        if (!(e.target.files && e.target.files.length > 0)) return;
+        const file = e.target.files[0];
+        setEditForm(prev => ({ ...prev, invoiceFile: file }));
+
+        const allowedTypes = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
+        if (!allowedTypes.includes(file.type) || file.size > 15 * 1024 * 1024) return;
+
+        setAiParsingInvoice(true);
+        try {
+            const extracted = await ordersService.parseOrderFile(file);
+            setEditForm(prev => ({
+                ...prev,
+                invoiceNo: prev.invoiceNo?.trim() ? prev.invoiceNo : (extracted?.invoiceNo || prev.invoiceNo),
+                invoiceDate: extracted?.invoiceDate || prev.invoiceDate,
+            }));
+            if (extracted?.invoiceDate) setInvoiceDateIsDefault(false);
+            if (extracted?.invoiceNo || extracted?.invoiceDate) toast.success("Invoice No. / Date read from the file — check before saving.");
+        } catch (err) {
+            console.error("Invoice AI read failed:", err.message);
+            // Silent — this is a convenience prefill, not a required step, and
+            // the user's own file selection above already succeeded.
+        } finally {
+            setAiParsingInvoice(false);
         }
     };
 
@@ -1766,7 +1793,7 @@ export default function Billing({
                                     <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
                                         <FileText size={14} className="text-slate-400 shrink-0" />
                                         <p className="text-[11px] text-slate-600 font-semibold">
-                                            This order is still in Draft — saving here only stores billing details early. It moves to Active from Order Processing's Confirm step.
+                                            This order is still in Draft — saving here only stores billing details early. It moves to Active from Order Processing&apos;s Confirm step.
                                         </p>
                                     </div>
                                 ) : (

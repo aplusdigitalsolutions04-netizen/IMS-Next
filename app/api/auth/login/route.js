@@ -1,3 +1,4 @@
+import { ensureDashboardWidgetPermissions } from "@/lib/rolesMigration";
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { ApiError, hasAllCompaniesAccess } from "@/lib/auth";
@@ -18,6 +19,7 @@ export const POST = withErrorHandling(async (request) => {
   const forwarded = request.headers.get("x-forwarded-for");
   const ip = forwarded ? forwarded.split(",")[0].trim() : "unknown";
 
+  await ensureDashboardWidgetPermissions();
   const [rows] = await mysqlPool.query(
     `SELECT u.*, r.permissions as rolePermissions, r.editPermissions as roleEditPermissions
      FROM users u LEFT JOIN roles r ON u.roleId = r.guid AND r.isDeleted = 0

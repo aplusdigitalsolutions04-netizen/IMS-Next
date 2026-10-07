@@ -45,9 +45,11 @@ export const POST = withErrorHandling(async (request) => {
       );
       if (dupRows.length > 0) throw new Error(`Serial Number ${dupRows[0].serialNumber} already exists`);
 
-      const values = entries.map((e) => [uuidv4(), stockInDetailId, itemVariantId || null, e.serialNumber, user.companyId, e.carePack || null, e.carePackPrice != null && e.carePackPrice !== "" ? Number(e.carePackPrice) : null]);
+      const values = entries.map((e) => [uuidv4(), stockInDetailId, itemVariantId || null, e.serialNumber, user.companyId, e.carePack || null, e.carePackPrice != null && e.carePackPrice !== "" ? Number(e.carePackPrice) : null, null]);
       await connection.query(
-        "INSERT INTO inventorystockinserial (serialId, stockInDetailId, itemVariantId, serialNumber, companyGuid, carePack, carePackPrice) VALUES ?",
+        // serialStatus is set explicitly to NULL (= staged, not stock yet) — the column's own
+        // DEFAULT is 'Available', which would put draft serials into Current Stock.
+        "INSERT INTO inventorystockinserial (serialId, stockInDetailId, itemVariantId, serialNumber, companyGuid, carePack, carePackPrice, serialStatus) VALUES ?",
         [values]
       );
       await connection.commit();

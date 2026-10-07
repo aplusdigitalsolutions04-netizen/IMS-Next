@@ -304,6 +304,11 @@ export default function Users({ currentUser }) {
                             {editCount > 0 && (
                               <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black">{editCount} edits</span>
                             )}
+                            {user.accessOverrides && (user.accessOverrides.extra.length + user.accessOverrides.blocked.length + user.accessOverrides.extraEdit.length + user.accessOverrides.blockedEdit.length) > 0 && (
+                              <span title="Has custom access on top of the role" className="px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-black">
+                                custom +{user.accessOverrides.extra.length + user.accessOverrides.extraEdit.length}/−{user.accessOverrides.blocked.length + user.accessOverrides.blockedEdit.length}
+                              </span>
+                            )}
                           </button>
                         ) : null}
                       </td>
@@ -453,6 +458,11 @@ export default function Users({ currentUser }) {
                             <span>{modCount} modules</span>
                             {editCount > 0 && (
                               <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black">{editCount} edits</span>
+                            )}
+                            {user.accessOverrides && (user.accessOverrides.extra.length + user.accessOverrides.blocked.length + user.accessOverrides.extraEdit.length + user.accessOverrides.blockedEdit.length) > 0 && (
+                              <span title="Has custom access on top of the role" className="px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-black">
+                                custom +{user.accessOverrides.extra.length + user.accessOverrides.extraEdit.length}/−{user.accessOverrides.blocked.length + user.accessOverrides.blockedEdit.length}
+                              </span>
                             )}
                           </button>
                         )}

@@ -27,7 +27,7 @@ export const POST = withErrorHandling(async (request) => {
     if (stockInRow.status !== 1) throw new ApiError(400, "This stock-in has already been reverted (or was never finalized).");
 
     const [details] = await connection.query(`
-      SELECT d.*, i.useSerialTab
+      SELECT d.*, i.isTrackable
       FROM inventorystockindetail d
       LEFT JOIN inventoryitemvariant v ON d.itemVariantId = v.itemVariantId
       LEFT JOIN inventoryitemmaster i ON v.itemId = i.itemId
@@ -37,16 +37,30 @@ export const POST = withErrorHandling(async (request) => {
     for (const item of details) {
       if (item.itemVariantId) {
         const [itemSerials] = await connection.query("SELECT serialNumber, serialStatus FROM inventorystockinserial WHERE stockInDetailId = ? AND isDeleted = 0", [item.stockInDetailId]);
-        if (item.useSerialTab && itemSerials.length > 0) {
+        // Same rule FinalizeStockIn used to choose the serialized path
+        // (isTrackable + staged serials) — this used a different flag
+        // (useSerialTab), so a line could be finalized as serials but
+        // reverted as plain quantity (or the other way round).
+        if (item.isTrackable && itemSerials.length > 0) {
           for (const s of itemSerials) {
             if (s.serialStatus && s.serialStatus !== "Available") {
               throw new Error(`Cannot revert: Serial ${s.serialNumber} is already ${s.serialStatus}.`);
             }
+            // Back to the staged state (what SaveStockInSerials creates): no
+            // guid, no status. It used to stay 'Available', so reverted serials
+            // kept counting in Current Stock — and kept counting after the line
+            // was removed from the draft.
             await connection.execute(
-              "UPDATE inventorystockinserial SET guid = NULL, companyGuid = NULL, godownGuid = NULL, landingPrice = 0, serialStatus = 'Available' WHERE stockInDetailId = ? AND serialNumber = ?",
+              "UPDATE inventorystockinserial SET guid = NULL, godownGuid = NULL, landingPrice = 0, serialStatus = NULL WHERE stockInDetailId = ? AND serialNumber = ?",
               [item.stockInDetailId, s.serialNumber]
             );
           }
+          // FinalizeStockIn added these serials to inventoryvariantstock; take
+          // them back out, otherwise re-finalizing after the edit adds them twice.
+          await connection.execute(
+            "UPDATE inventoryvariantstock SET availablePCS = GREATEST(availablePCS - ?, 0) WHERE itemVariantId = ?",
+            [itemSerials.length, item.itemVariantId]
+          );
         } else {
           const qty = item.stockInQty * item.defaultPcsQty;
           const [result] = await connection.execute(

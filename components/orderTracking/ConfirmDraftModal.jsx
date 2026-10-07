@@ -164,12 +164,28 @@ export default function ConfirmDraftModal({ batch, orderId, models, serials, onC
     return !!m && (m.isSerialized === false || m.isSerialized === 0 || m.isSerialized === "0");
   };
 
+  // A serial can already be attached to a draft item (added straight onto the
+  // order rather than through this modal's "Save"). Those must show up here
+  // pre-selected — they sit at status 'Dispatched', so the normal "available"
+  // filter below would otherwise hide them and the field would look empty.
+  const attachedSerialGuids = useMemo(() => {
+    const set = new Set();
+    items.forEach((item) => { const g = item.serialGuid || item.serialNumberGuid; if (g) set.add(String(g).toLowerCase()); });
+    return set;
+  }, [items]);
+
   const [selections, setSelections] = useState(() => {
     const initial = {};
     items.forEach((item) => {
       const qty = Number(item.quantity) || 1;
-      const prefilledModelGuid = item.modelId || item.modelGuid || "";
-      initial[item.id || item.guid] = Array.from({ length: qty }, () => ({ modelGuid: prefilledModelGuid, serialGuid: "" }));
+      const attachedGuid = item.serialGuid || item.serialNumberGuid || "";
+      // the item's own model, else the model of the serial already on it
+      const attachedSerial = attachedGuid ? serials.find((s) => sameId(s.id || s.guid, attachedGuid)) : null;
+      const prefilledModelGuid = item.modelId || item.modelGuid || attachedSerial?.modelId || attachedSerial?.itemVariantId || "";
+      initial[item.id || item.guid] = Array.from({ length: qty }, (_, i) => ({
+        modelGuid: prefilledModelGuid,
+        serialGuid: i === 0 ? attachedGuid : "",
+      }));
     });
     return initial;
   });
@@ -224,10 +240,12 @@ export default function ConfirmDraftModal({ batch, orderId, models, serials, onC
       // A serial this same draft already reserved via a previous "Save" sits
       // at status 'Reserved' (not 'Available') everywhere else in the app —
       // still pickable here, since it's this draft's own reservation.
-      const isAvailableToMe = status === "available" || (status === "reserved" && reservedSerialGuidsMine.has(sId));
+      const isAvailableToMe = status === "available"
+        || (status === "reserved" && reservedSerialGuidsMine.has(sId))
+        || attachedSerialGuids.has(sId); // already on this draft item
       return sameId(serialModelId, modelGuid) && isAvailableToMe && (isOwn || !chosen.has(sId));
     });
-  }, [serials, selections, reservedSerialGuidsMine]);
+  }, [serials, selections, reservedSerialGuidsMine, attachedSerialGuids]);
 
   const updateUnit = (itemKey, index, field, value) => {
     setSelections((prev) => {

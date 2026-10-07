@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest, requireAuth } from "@/lib/auth";
+import { authenticateRequest, requireShippingAccess } from "@/lib/auth";
 import { withErrorHandling } from "@/lib/apiResponse";
 
 // Delhivery's B2B (LTL freight) waybill-creation API uses a different
@@ -10,7 +10,7 @@ import { withErrorHandling } from "@/lib/apiResponse";
 // undocumented request against a live freight account.
 export const POST = withErrorHandling(async (request) => {
   const user = await authenticateRequest(request);
-  requireAuth(user);
+  requireShippingAccess(user);
 
   return NextResponse.json({
     message: "Delhivery B2B shipment creation isn't connected yet — needs the B2B waybill API endpoint and payload format from Delhivery's B2B docs.",

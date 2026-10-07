@@ -103,7 +103,7 @@ export default function DeliveryPartnerMaster() {
         <div>
           <h2 className="text-2xl font-black text-slate-800 tracking-tight">Delivery Partners</h2>
           <p className="text-slate-500 font-medium text-sm mt-0.5">
-            Manage the couriers that show up in the "Courier Partner" dropdown across Dispatch — no code change needed to add a new one.
+            Manage the couriers that show up in the &quot;Courier Partner&quot; dropdown across Dispatch — no code change needed to add a new one.
           </p>
         </div>
       </div>

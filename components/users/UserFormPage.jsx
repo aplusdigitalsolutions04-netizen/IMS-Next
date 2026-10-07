@@ -8,6 +8,7 @@ import {
 import { printerService } from "@/lib/services/api";
 import { INITIAL_FORM, roleConfigFor } from "./constants";
 import { ADMIN_ROLE_ID } from "@/lib/client/rbac";
+import CustomAccess, { EMPTY_OVERRIDES } from "./CustomAccess";
 
 export default function UserFormPage({ currentUser, onCurrentUserUpdate, editUser }) {
   const router = useRouter();
@@ -32,7 +33,12 @@ export default function UserFormPage({ currentUser, onCurrentUserUpdate, editUse
     phone: editUser.phone || "",
     companyIds: Array.isArray(editUser.companyIds) ? editUser.companyIds : [],
     allCompaniesAccess: !!editUser.allCompaniesAccess,
-  } : { ...INITIAL_FORM, companyIds: [], allCompaniesAccess: false });
+    accessOverrides: { ...EMPTY_OVERRIDES, ...(editUser.accessOverrides || {}) },
+  } : { ...INITIAL_FORM, companyIds: [], allCompaniesAccess: false, accessOverrides: { ...EMPTY_OVERRIDES } });
+
+  // Custom (per-user) access is Admin-only — the API rejects it from anyone else.
+  const isAdminEditor = currentUser?.role === "Admin";
+  const selectedRole = roles.find((r) => r.guid === form.roleId) || null;
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -66,14 +72,16 @@ export default function UserFormPage({ currentUser, onCurrentUserUpdate, editUse
     setSubmitting(true);
     setError("");
     try {
+      const payload = { ...form };
+      if (!isAdminEditor || form.roleId === ADMIN_ROLE_ID) delete payload.accessOverrides;
       if (editUser) {
-        const result = await printerService.updateUser(editUser.id, form);
+        const result = await printerService.updateUser(editUser.id, payload);
         const savedUser = result?.user;
         if (savedUser && currentUser && String(savedUser.id) === String(currentUser.id)) {
           onCurrentUserUpdate?.(savedUser);
         }
       } else {
-        await printerService.createUser(form);
+        await printerService.createUser(payload);
       }
       navigate("/users");
     } catch (err) {
@@ -301,6 +309,14 @@ export default function UserFormPage({ currentUser, onCurrentUserUpdate, editUse
               )}
             </div>
           </div>
+
+          {isAdminEditor && form.roleId !== ADMIN_ROLE_ID && (
+            <CustomAccess
+              role={selectedRole}
+              overrides={form.accessOverrides}
+              onChange={(next) => setForm((prev) => ({ ...prev, accessOverrides: next }))}
+            />
+          )}
         </div>
 
         {/* ── Navigation buttons ── */}

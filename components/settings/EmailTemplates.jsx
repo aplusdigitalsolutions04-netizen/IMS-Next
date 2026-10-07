@@ -1,8 +1,11 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import { FileText, Plus, Pencil, Trash2, X, Loader2, Save, Eye, EyeOff, Tags, Lock } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { FileText, Plus, Pencil, Trash2, X, Loader2, Save, Eye, EyeOff, Tags, Lock, ArrowLeft } from "lucide-react";
 import Swal from "sweetalert2";
 import api from "@/lib/client/apiClient";
+import { useCompany } from "@/lib/client/CompanyContext";
+import LogoText from "@/components/common/LogoText";
 
 const EMPTY_FORM = {
   guid: null,
@@ -22,51 +25,68 @@ const EMPTY_FORM = {
 // works — the compose screen prompts the sender to fill it in manually
 // (see EmailComposeTab.jsx's pendingVars) — this list is just what's
 // auto-filled for you, so it's worth knowing before inventing a new one.
-const KNOWN_VARIABLES = [
-  { name: "CUSTOMER_NAME", desc: "Buyer/customer name" },
-  { name: "CONSIGNEE_NAME", desc: "Consignee name" },
-  { name: "ORDER_ID", desc: "Order number" },
-  { name: "INVOICE_NUMBER", desc: "Invoice number" },
-  { name: "GEM_NUMBER", desc: "GeM/order/bid number" },
-  { name: "ADDRESS", desc: "Shipping/billing/buyer address, whichever is set" },
-  { name: "SHIPPING_ADDRESS", desc: "Shipping address only" },
-  { name: "BILLING_ADDRESS", desc: "Billing address only" },
-  { name: "BUYER_ADDRESS", desc: "Buyer address only" },
-  { name: "CONTACT_NUMBER", desc: "Customer phone number" },
-  { name: "PRODUCT_NAME", desc: "Model/product name" },
-  { name: "SERIAL_NUMBER", desc: "One serial number" },
-  { name: "SERIAL_NUMBERS", desc: "All serials, comma-separated" },
-  { name: "QUANTITY", desc: "Quantity" },
-  { name: "AMOUNT", desc: "Selling price" },
-  { name: "PURCHASE_DATE", desc: "Order date" },
-  { name: "DISPATCH_DATE", desc: "Dispatch date" },
-  { name: "WARRANTY_PERIOD", desc: "e.g. 1 Year" },
-  { name: "WARRANTY_EXPIRY", desc: "Calculated expiry date" },
-  { name: "GST_NUMBER", desc: "Buyer GST number" },
-  { name: "COMPANY_NAME", desc: "Your company name" },
-  { name: "CERT_NUMBER", desc: "Auto-generated certificate number" },
-  // The rest of what the order's own detail view shows.
-  { name: "PLATFORM", desc: "Order platform (GeM, Amazon, ...)" },
-  { name: "ORDER_STATUS", desc: "Order status" },
-  { name: "GEM_ORDER_TYPE", desc: "GeM order type" },
-  { name: "BUYER_EMAIL", desc: "Buyer email" },
-  { name: "CONSIGNEE_EMAIL", desc: "Consignee email" },
-  { name: "PAYMENT_AUTHORITY_EMAIL", desc: "Payment authority email" },
-  { name: "ALT_CONTACT_NUMBER", desc: "Alternate contact number" },
-  { name: "INVOICE_DATE", desc: "Invoice date" },
-  { name: "GSTIN", desc: "Buyer GSTIN" },
-  { name: "EWAY_BILL_NUMBER", desc: "E-way bill number" },
-  { name: "FREIGHT_CHARGES", desc: "Freight charges" },
-  { name: "PACKAGING_COST", desc: "Packaging cost" },
-  { name: "COMMISSION", desc: "Commission" },
-  { name: "ORDER_REMARKS", desc: "Order-level remarks" },
-  { name: "ITEM_REMARKS", desc: "Item-level remarks" },
-  { name: "COURIER_PARTNER", desc: "Courier partner" },
-  { name: "TRACKING_ID", desc: "Tracking ID" },
-  { name: "LOGISTICS_STATUS", desc: "Logistics status" },
-  { name: "LOGISTICS_DISPATCH_DATE", desc: "Logistics dispatch date" },
-  { name: "LAST_DELIVERY_DATE", desc: "Last delivery date" },
-  { name: "WARRANTY_START_DATE", desc: "Warranty start date" },
+const VARIABLE_GROUPS = [
+  { title: "Company", vars: [
+    { name: "COMPANY_LOGO", label: "Company Logo (image)" },
+  ] },
+  { title: "Order & Invoice", vars: [
+    { name: "ORDER_ID", label: "Order No." },
+    { name: "ORDER_DATE", label: "Order Date" },
+    { name: "INVOICE_NUMBER", label: "Invoice No." },
+    { name: "INVOICE_DATE", label: "Invoice Date" },
+    { name: "GEM_NUMBER", label: "GeM / Bid No." },
+    { name: "AMOUNT", label: "Amount" },
+    { name: "PLATFORM", label: "Platform" },
+    { name: "ORDER_STATUS", label: "Order Status" },
+    { name: "GEM_ORDER_TYPE", label: "GeM Order Type" },
+    { name: "GST_NUMBER", label: "GST Number" },
+    { name: "GSTIN", label: "Buyer GSTIN" },
+  ] },
+  { title: "Customer", vars: [
+    { name: "CUSTOMER_NAME", label: "Customer Name" },
+    { name: "CONSIGNEE_NAME", label: "Consignee Name" },
+    { name: "CONTACT_NUMBER", label: "Contact Number" },
+    { name: "ALT_CONTACT_NUMBER", label: "Alt. Contact" },
+    { name: "BUYER_EMAIL", label: "Buyer Email" },
+    { name: "CONSIGNEE_EMAIL", label: "Consignee Email" },
+    { name: "PAYMENT_AUTHORITY_EMAIL", label: "Payment Authority Email" },
+  ] },
+  { title: "Address", vars: [
+    { name: "ADDRESS", label: "Address (auto)" },
+    { name: "SHIPPING_ADDRESS", label: "Shipping Address" },
+    { name: "BILLING_ADDRESS", label: "Billing Address" },
+    { name: "BUYER_ADDRESS", label: "Buyer Address" },
+  ] },
+  { title: "Product", vars: [
+    { name: "PRODUCT_NAME", label: "Product / Model" },
+    { name: "SERIAL_NUMBER", label: "Serial No." },
+    { name: "SERIAL_NUMBERS", label: "All Serial Nos." },
+    { name: "QUANTITY", label: "Quantity" },
+    { name: "ITEM_REMARKS", label: "Item Remarks" },
+  ] },
+  { title: "Dispatch & Delivery", vars: [
+    { name: "DISPATCH_DATE", label: "Dispatch Date" },
+    { name: "COURIER_PARTNER", label: "Courier" },
+    { name: "TRACKING_ID", label: "Tracking ID" },
+    { name: "LOGISTICS_STATUS", label: "Logistics Status" },
+    { name: "LOGISTICS_DISPATCH_DATE", label: "Logistics Dispatch Date" },
+    { name: "LAST_DELIVERY_DATE", label: "Last Delivery Date" },
+    { name: "EWAY_BILL_NUMBER", label: "E-way Bill No." },
+    { name: "FREIGHT_CHARGES", label: "Freight Charges" },
+    { name: "PACKAGING_COST", label: "Packaging Cost" },
+  ] },
+  { title: "Warranty", vars: [
+    { name: "WARRANTY_PERIOD", label: "Warranty Period" },
+    { name: "WARRANTY_START_DATE", label: "Warranty Start" },
+    { name: "WARRANTY_EXPIRY", label: "Warranty Expiry" },
+    { name: "CERT_NUMBER", label: "Certificate No." },
+    { name: "PURCHASE_DATE", label: "Purchase Date" },
+  ] },
+  { title: "Company & Other", vars: [
+    { name: "COMPANY_NAME", label: "Company Name" },
+    { name: "COMMISSION", label: "Commission" },
+    { name: "ORDER_REMARKS", label: "Order Remarks" },
+  ] },
 ];
 
 function insertAtCursor(ref, text) {
@@ -83,18 +103,23 @@ function insertAtCursor(ref, text) {
   return newVal;
 }
 
-export default function EmailTemplates() {
+// formFor: undefined = the list, "new" = full-page new-template form, <guid> = full-page edit form.
+export default function EmailTemplates({ formFor } = {}) {
+  const router = useRouter();
+  const [formReady, setFormReady] = useState(false);
+  const [formMissing, setFormMissing] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [purposes, setPurposes] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
   const [showPurposes, setShowPurposes] = useState(false);
   const [preview, setPreview] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [customVarName, setCustomVarName] = useState("");
+  const [varSearch, setVarSearch] = useState("");
+  const [openGroups, setOpenGroups] = useState(() => new Set(["Order & Invoice"]));
 
   const subjectRef = useRef(null);
   const bodyRef = useRef(null);
@@ -133,7 +158,10 @@ export default function EmailTemplates() {
     load();
   }, []);
 
-  const openNew = () => {
+  const openNew = () => router.push("/emailTemplates/new");
+  const openEdit = (tpl) => router.push(`/emailTemplates/${tpl.guid}`);
+
+  const initNew = () => {
     const defaultPurpose = purposes.find((p) => p.purposeKey === "general" && p.isActive) || purposes.find((p) => p.isActive);
     // /api/email-accounts already only returns accounts this user (or
     // everyone, for Admin) can see — one account means there's no real
@@ -142,10 +170,9 @@ export default function EmailTemplates() {
     const soleAccountGuid = activeAccounts.length === 1 ? activeAccounts[0].guid : "";
     setForm({ ...EMPTY_FORM, purpose: defaultPurpose?.purposeKey || "general", emailAccountGuid: soleAccountGuid });
     setPreview(false);
-    setShowForm(true);
   };
 
-  const openEdit = (tpl) => {
+  const initEdit = (tpl) => {
     setForm({
       guid: tpl.guid,
       companyGuid: tpl.companyGuid || "",
@@ -159,8 +186,23 @@ export default function EmailTemplates() {
       emailAccountGuid: tpl.emailAccountGuid || "",
     });
     setPreview(false);
-    setShowForm(true);
   };
+
+  // Full-page form: fill it as soon as the templates / purposes / accounts have loaded.
+  useEffect(() => {
+    if (!formFor || loading || formReady) return;
+    if (formFor === "new") {
+      initNew();
+      setFormReady(true);
+      return;
+    }
+    const tpl = templates.find((t) => t.guid === formFor);
+    if (tpl) { initEdit(tpl); setFormReady(true); } else setFormMissing(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formFor, loading, templates]);
+
+  const { activeCompany } = useCompany();
+  const logoSrc = activeCompany?.logoFilename ? `/uploads/${activeCompany.logoFilename}` : null;
 
   const handleField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -197,8 +239,7 @@ export default function EmailTemplates() {
         await api.post("/email-templates", payload);
       }
       Swal.fire({ toast: true, position: "top-end", icon: "success", title: "Saved", timer: 1500, showConfirmButton: false });
-      setShowForm(false);
-      await load();
+      router.push("/emailTemplates");
     } catch (err) {
       Swal.fire("Error", err?.response?.data?.message || "Failed to save template", "error");
     } finally {
@@ -227,100 +268,49 @@ export default function EmailTemplates() {
 
   const SAMPLE_DATA = {
     CUSTOMER_NAME: "Ministry of Finance",
+    CONSIGNEE_NAME: "Ministry of Finance",
     ORDER_ID: "GEMC-511687780612696",
+    ORDER_NO: "GEMC-511687780612696",
+    ORDER_DATE: "12/09/2026",
+    PURCHASE_DATE: "12/09/2026",
+    INVOICE_NUMBER: "INV/25-26/0142",
+    INVOICE_NO: "INV/25-26/0142",
+    INVOICE_DATE: "14/09/2026",
+    DISPATCH_DATE: "15/09/2026",
     PRODUCT_NAME: "HP 4104dw",
-    AMOUNT: "45,000",
+    QUANTITY: "2",
+    AMOUNT: "45,000.00",
+    COURIER_PARTNER: "Delhivery",
+    TRACKING_ID: "DL123456789",
     COMPANY_NAME: "A Plus Digital Solutions",
   };
   const renderPreview = (text) =>
     Object.entries(SAMPLE_DATA).reduce((acc, [k, v]) => acc.split(`{{${k}}}`).join(v), text || "");
 
-  return (
-    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-black text-slate-800 flex items-center gap-2.5">
-            <FileText className="text-indigo-600" size={24} /> Email Templates
-          </h2>
-          <p className="text-sm text-slate-400 mt-1">
-            Subject &amp; body templates per company and purpose, with {"{{PLACEHOLDER}}"} substitution — used automatically when a feature sends that purpose's email.
-          </p>
+  if (formFor) {
+    if (formMissing) {
+      return (
+        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
+          <p className="text-slate-500 mb-4">This email template was not found.</p>
+          <button onClick={() => router.push("/emailTemplates")} className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold">Back to templates</button>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-        <button
-          onClick={() => setShowPurposes(true)}
-          className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2"
-        >
-          <Tags size={16} /> Manage Purposes
-        </button>
-        <button
-          onClick={openNew}
-          className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 shadow-md shadow-indigo-100"
-        >
-          <Plus size={16} /> New Template
-        </button>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="animate-spin text-indigo-600" size={26} />
-        </div>
-      ) : templates.length === 0 ? (
-        <div className="text-center py-12 text-slate-400 text-sm">
-          No templates configured yet — features that send email will build their own subject/body unless a template is set here.
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-2xl border border-slate-200">
-          <table className="w-full text-left border-collapse text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Name</th>
-                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Purpose</th>
-                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Company</th>
-                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Subject</th>
-                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Status</th>
-                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {templates.map((tpl) => (
-                <tr key={tpl.guid} className="hover:bg-slate-50">
-                  <td className="p-3 font-bold text-slate-700 whitespace-nowrap">{tpl.templateName}</td>
-                  <td className="p-3 whitespace-nowrap">
-                    <span className="px-2 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600">{purposeLabel(tpl.purpose)}</span>
-                  </td>
-                  <td className="p-3 whitespace-nowrap text-slate-600">{tpl.companyName || <span className="text-slate-400">All companies</span>}</td>
-                  <td className="p-3 max-w-[260px] truncate text-slate-500" title={tpl.emailSubject}>{tpl.emailSubject}</td>
-                  <td className="p-3 whitespace-nowrap">
-                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${tpl.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                      {tpl.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </td>
-                  <td className="p-3 whitespace-nowrap">
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => openEdit(tpl)} className="text-indigo-500 hover:text-indigo-700" title="Edit">
-                        <Pencil size={16} />
-                      </button>
-                      <button onClick={() => handleDelete(tpl)} className="text-rose-500 hover:text-rose-700" title="Delete">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {showForm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
-              <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                <FileText size={18} className="text-indigo-600" /> {form.guid ? "Edit" : "New"} Email Template
-              </h3>
+      );
+    }
+    if (loading || !formReady) {
+      return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-indigo-600" size={28} /></div>;
+    }
+    return (
+        <div className="w-full">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+            <div className="sticky top-0 z-20 bg-white rounded-t-2xl flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200">
+              <div className="flex items-center gap-3 min-w-0">
+                <button onClick={() => router.push("/emailTemplates")} className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900">
+                  <ArrowLeft size={16} /> Back
+                </button>
+                <h3 className="text-lg font-black text-slate-800 flex items-center gap-2 truncate">
+                  <FileText size={18} className="text-indigo-600" /> {form.guid ? "Edit" : "New"} Email Template
+                </h3>
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setPreview((p) => !p)}
@@ -328,30 +318,55 @@ export default function EmailTemplates() {
                 >
                   {preview ? <EyeOff size={13} /> : <Eye size={13} />} {preview ? "Edit" : "Preview"}
                 </button>
-                <button onClick={() => setShowForm(false)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500">
-                  <X size={18} />
-                </button>
               </div>
             </div>
 
-            <div className="p-5 overflow-y-auto space-y-4">
+            <div className={preview ? "p-5 space-y-4 max-w-4xl" : "p-5 grid grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)] gap-6 items-start"}>
               {!preview && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5 xl:sticky xl:top-20">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
                     Click to insert into Subject/Body at your cursor — auto-filled from the order when sent
                   </p>
-                  <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
-                    {KNOWN_VARIABLES.map((v) => (
-                      <button
-                        key={v.name}
-                        type="button"
-                        title={v.desc}
-                        onClick={() => insertVariable(v.name)}
-                        className="text-[11px] font-mono font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-1 rounded-lg transition-colors"
-                      >
-                        {`{{${v.name}}}`}
-                      </button>
-                    ))}
+                  <input
+                    value={varSearch}
+                    onChange={(e) => setVarSearch(e.target.value)}
+                    placeholder="Search variable (e.g. invoice, order date)..."
+                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-100"
+                  />
+                  <div className="space-y-1.5 max-h-52 xl:max-h-[55vh] overflow-y-auto pr-1">
+                    {VARIABLE_GROUPS.map((g) => {
+                      const q = varSearch.trim().toLowerCase();
+                      const vars = q ? g.vars.filter((v) => `${v.label} ${v.name}`.toLowerCase().includes(q)) : g.vars;
+                      if (vars.length === 0) return null;
+                      const open = q ? true : openGroups.has(g.title);
+                      return (
+                        <div key={g.title} className="bg-white border border-slate-200 rounded-lg">
+                          <button
+                            type="button"
+                            onClick={() => setOpenGroups((prev) => { const n = new Set(prev); n.has(g.title) ? n.delete(g.title) : n.add(g.title); return n; })}
+                            className="w-full flex items-center justify-between px-2.5 py-1.5 text-[11px] font-black text-slate-600 uppercase tracking-wide"
+                          >
+                            <span>{g.title} <span className="text-slate-400 font-bold">({vars.length})</span></span>
+                            <span className="text-slate-400">{open ? "−" : "+"}</span>
+                          </button>
+                          {open && (
+                            <div className="flex flex-wrap gap-1.5 px-2.5 pb-2">
+                              {vars.map((v) => (
+                                <button
+                                  key={v.name}
+                                  type="button"
+                                  title={`{{${v.name}}}`}
+                                  onClick={() => insertVariable(v.name)}
+                                  className="text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-1 rounded-lg transition-colors"
+                                >
+                                  {v.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                   <div className="flex items-center gap-2 pt-1 border-t border-slate-200">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide shrink-0">New variable</span>
@@ -377,6 +392,7 @@ export default function EmailTemplates() {
                 </div>
               )}
 
+              <div className="space-y-4 min-w-0">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Template Name</label>
                 <input
@@ -476,15 +492,29 @@ export default function EmailTemplates() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Email Body</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">Email Body</label>
+                  {!preview && (
+                    <button
+                      type="button"
+                      onClick={() => { lastFocus.current = "body"; insertVariable("COMPANY_LOGO"); }}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg"
+                      title="Puts {{COMPANY_LOGO}} where the cursor is — the logo from Company Master is embedded when the mail is sent"
+                    >
+                      + Insert company logo
+                    </button>
+                  )}
+                </div>
                 {preview ? (
                   <div className="border border-slate-200 rounded-xl px-3 py-3 text-sm bg-slate-50 text-slate-800 min-h-[220px] whitespace-pre-wrap">
-                    {renderPreview(form.emailBody) || <span className="text-slate-400 italic">No body set</span>}
+                    {form.emailBody
+                      ? <LogoText text={renderPreview(form.emailBody)} logoSrc={logoSrc} />
+                      : <span className="text-slate-400 italic">No body set</span>}
                   </div>
                 ) : (
                   <textarea
                     ref={bodyRef}
-                    rows={11}
+                    rows={20}
                     value={form.emailBody}
                     onChange={(e) => handleField("emailBody", e.target.value)}
                     onFocus={() => { lastFocus.current = "body"; }}
@@ -499,9 +529,11 @@ export default function EmailTemplates() {
                 <input type="checkbox" checked={form.isActive} onChange={(e) => handleField("isActive", e.target.checked)} />
                 Active
               </label>
+              </div>
             </div>
 
-            <div className="p-4 border-t border-slate-200 flex justify-end shrink-0">
+            <div className="sticky bottom-0 z-20 bg-white/95 backdrop-blur rounded-b-2xl p-4 border-t border-slate-200 flex justify-end gap-2">
+              <button onClick={() => router.push("/emailTemplates")} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
               <button
                 onClick={handleSave}
                 disabled={saving || !form.emailAccountGuid}
@@ -513,6 +545,86 @@ export default function EmailTemplates() {
               </button>
             </div>
           </div>
+        </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-black text-slate-800 flex items-center gap-2.5">
+            <FileText className="text-indigo-600" size={24} /> Email Templates
+          </h2>
+          <p className="text-sm text-slate-400 mt-1">
+            Subject &amp; body templates per company and purpose, with {"{{PLACEHOLDER}}"} substitution — used automatically when a feature sends that purpose&apos;s email.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={() => setShowPurposes(true)}
+          className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2"
+        >
+          <Tags size={16} /> Manage Purposes
+        </button>
+        <button
+          onClick={openNew}
+          className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 shadow-md shadow-indigo-100"
+        >
+          <Plus size={16} /> New Template
+        </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="animate-spin text-indigo-600" size={26} />
+        </div>
+      ) : templates.length === 0 ? (
+        <div className="text-center py-12 text-slate-400 text-sm">
+          No templates configured yet — features that send email will build their own subject/body unless a template is set here.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-slate-200">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Name</th>
+                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Purpose</th>
+                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Company</th>
+                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Subject</th>
+                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Status</th>
+                <th className="p-3 text-xs font-black text-slate-500 uppercase whitespace-nowrap">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {templates.map((tpl) => (
+                <tr key={tpl.guid} className="hover:bg-slate-50">
+                  <td className="p-3 font-bold text-slate-700 whitespace-nowrap">{tpl.templateName}</td>
+                  <td className="p-3 whitespace-nowrap">
+                    <span className="px-2 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600">{purposeLabel(tpl.purpose)}</span>
+                  </td>
+                  <td className="p-3 whitespace-nowrap text-slate-600">{tpl.companyName || <span className="text-slate-400">All companies</span>}</td>
+                  <td className="p-3 max-w-[260px] truncate text-slate-500" title={tpl.emailSubject}>{tpl.emailSubject}</td>
+                  <td className="p-3 whitespace-nowrap">
+                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${tpl.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                      {tpl.isActive ? "Active" : "Inactive"}
+                    </span>
+                  </td>
+                  <td className="p-3 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => openEdit(tpl)} className="text-indigo-500 hover:text-indigo-700" title="Edit">
+                        <Pencil size={16} />
+                      </button>
+                      <button onClick={() => handleDelete(tpl)} className="text-rose-500 hover:text-rose-700" title="Delete">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

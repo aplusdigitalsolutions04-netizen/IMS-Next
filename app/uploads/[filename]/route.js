@@ -32,6 +32,21 @@ function detectMimeType(buffer) {
   return "application/octet-stream";
 }
 
+// Only these are ever rendered inline. Anything else (HTML, SVG, scripts, ...)
+// is forced to download, so an uploaded file can never run script on our origin.
+const INLINE_TYPES = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"]);
+
+function fileHeaders(contentType, safeName) {
+  const inline = INLINE_TYPES.has(contentType);
+  return {
+    "Content-Type": inline ? contentType : "application/octet-stream",
+    "Cache-Control": "public, max-age=3600",
+    "X-Content-Type-Options": "nosniff",
+    // inline lets PDFs / images open in a tab instead of force-downloading.
+    "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${safeName.replace(/"/g, "")}"`,
+  };
+}
+
 export async function GET(request, { params }) {
   const { filename } = await params;
   const safeName = path.basename(filename); // prevent path traversal
@@ -40,16 +55,7 @@ export async function GET(request, { params }) {
   // Pre-migration uploads still live on local disk — serve those directly.
   if (filePath.startsWith(uploadDir) && fs.existsSync(filePath)) {
     const buffer = await fs.promises.readFile(filePath);
-    return new NextResponse(buffer, {
-      headers: {
-        "Content-Type": detectMimeType(buffer),
-        "Cache-Control": "public, max-age=3600",
-        // Without this, some browsers force-download instead of previewing
-        // (e.g. clicking "View" on a saved contract PDF) — inline tells the
-        // browser to render it in the tab when it's a viewable type.
-        "Content-Disposition": `inline; filename="${safeName.replace(/"/g, "")}"`,
-      },
-    });
+    return new NextResponse(buffer, { headers: fileHeaders(detectMimeType(buffer), safeName) });
   }
 
   // Everything uploaded since the Google Drive migration is looked up here.
@@ -72,11 +78,7 @@ export async function GET(request, { params }) {
       console.error(`Failed to cache Drive file "${safeName}" to disk:`, err);
     });
 
-  return new NextResponse(buffer, {
-    headers: {
-      "Content-Type": rows[0].mimetype || detectMimeType(buffer),
-      "Cache-Control": "public, max-age=3600",
-      "Content-Disposition": `inline; filename="${safeName.replace(/"/g, "")}"`,
-    },
-  });
+  // The stored mimetype came from the uploader's browser, so trust the bytes first.
+  const sniffed = detectMimeType(buffer);
+  return new NextResponse(buffer, { headers: fileHeaders(sniffed !== "application/octet-stream" ? sniffed : rows[0].mimetype, safeName) });
 }

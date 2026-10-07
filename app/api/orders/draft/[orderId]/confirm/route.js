@@ -68,7 +68,7 @@ export const POST = withErrorHandling(async (request, { params }) => {
       }
 
       const [draftItemRows] = await conn.query(
-        "SELECT sellingPrice, quantity, remarks, contractFilename, warranty FROM order_items WHERE guid = ? AND orderGuid = ? AND companyGuid = ?",
+        "SELECT sellingPrice, quantity, remarks, contractFilename, warranty, serialNumberGuid FROM order_items WHERE guid = ? AND orderGuid = ? AND companyGuid = ?",
         [draftItemGuid, orderId, user.companyId]
       );
       if (!draftItemRows.length) {
@@ -136,6 +136,16 @@ export const POST = withErrorHandling(async (request, { params }) => {
       );
       const resolvedItemVariantId = mappedModel[0]?.itemVariantId || modelGuid;
 
+      // A serial can already be attached to this draft item directly (added
+      // through the order's own edit, not this modal's "Save"). It sits at
+      // 'Dispatched', so without this it was rejected as "not available" —
+      // and its old item row is removed first so re-inserting the same
+      // serial below can't collide with it.
+      const ownAttachedSerial = draftItem.serialNumberGuid ? String(draftItem.serialNumberGuid).toLowerCase() : null;
+      if (ownAttachedSerial) {
+        await conn.query("DELETE FROM order_items WHERE guid = ? AND companyGuid = ?", [draftItemGuid, user.companyId]);
+      }
+
       for (const serialGuid of serialGuids) {
         const [serialRows] = await conn.query(
           "SELECT serialStatus as status, serialNumber as value, itemVariantId FROM inventorystockinserial WHERE guid = ? AND companyGuid = ? FOR UPDATE",
@@ -143,7 +153,8 @@ export const POST = withErrorHandling(async (request, { params }) => {
         );
         if (!serialRows.length) throw new ApiError(404, `Serial ${serialGuid} not found.`);
         const isOwnReservation = serialRows[0].status === "Reserved" && ownReservedSerialGuids.has(String(serialGuid));
-        if (serialRows[0].status !== "Available" && !isOwnReservation) {
+        const isOwnAttached = !!ownAttachedSerial && String(serialGuid).toLowerCase() === ownAttachedSerial;
+        if (serialRows[0].status !== "Available" && !isOwnReservation && !isOwnAttached) {
           throw new ApiError(400, `Serial ${serialRows[0].value} is not available.`);
         }
         if (String(serialRows[0].itemVariantId) !== String(resolvedItemVariantId)) {
@@ -166,6 +177,16 @@ export const POST = withErrorHandling(async (request, { params }) => {
              (guid,companyGuid,serialNumberGuid,serialValue,dispatchGuid,actionType,status,createdBy,notes,createdAt)
            VALUES (?,?,?,?,?,?,?,?,?,NOW())`,
           [randomUUID(), user.companyId, serialGuid, serialRows[0].value, newItemGuid, "Dispatched", "Dispatched", user.username || "System", `Assigned from draft order #${orderId}`]
+        );
+      }
+
+      // The serial that was attached to this draft item was swapped out for a
+      // different one — put it back in stock instead of leaving it stuck at
+      // 'Dispatched' with no order item pointing at it.
+      if (ownAttachedSerial && !serialGuids.some((g) => String(g).toLowerCase() === ownAttachedSerial)) {
+        await conn.query(
+          "UPDATE inventorystockinserial SET serialStatus = 'Available' WHERE LOWER(guid) = ? AND companyGuid = ?",
+          [ownAttachedSerial, user.companyId]
         );
       }
 

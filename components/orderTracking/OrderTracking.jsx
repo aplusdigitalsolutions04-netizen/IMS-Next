@@ -11,6 +11,7 @@ import {
   Hash, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, XCircle, Palette, Trash2, FileDown
 } from "lucide-react";
 import ColumnPicker from "@/components/common/ColumnPicker";
+import FilterPicker from "@/components/common/FilterPicker";
 import axios from "axios";
 import Swal from "sweetalert2";
 import NewDispatch from "../newDispatch/NewDispatch";
@@ -27,6 +28,7 @@ import {
 import { StatusBadge, StatusTimeline } from "./parts";
 import { useToast } from "@/lib/client/ToastContext";
 import OrderDetailModal from "./OrderDetailModal";
+import { useRouter, useSearchParams } from "next/navigation";
 import ConfirmDraftModal from "./ConfirmDraftModal";
 import OrderExportModal from "./OrderExportModal";
 import DayFilterSelect from "@/components/common/DayFilterSelect";
@@ -41,6 +43,7 @@ import InstallationDetailsModal from "./InstallationDetailsModal";
 // can be hidden via the Columns picker in the table toolbar.
 const TOGGLABLE_COLUMNS = [
   { key: "platform", label: "Platform" },
+  { key: "category", label: "Category" },
   { key: "items", label: "Items" },
   { key: "orderDate", label: "Order Date" },
   { key: "lastDelivery", label: "Last Delivery" },
@@ -51,6 +54,29 @@ const TOGGLABLE_COLUMNS = [
   { key: "status", label: "Status / Reason" },
   { key: "billing", label: "Billing / Dispatch" },
 ];
+
+// Toolbar filters the user can switch on/off from the "Filters" button.
+const FILTER_DEFS = [
+  { key: "status", label: "Status" },
+  { key: "date", label: "Date / Time" },
+  { key: "delivery", label: "Delivery Platform" },
+  { key: "platform", label: "Platform" },
+  { key: "category", label: "Category" },
+];
+const SHOWN_FILTERS_KEY = "orderTracking.shownFilters";
+
+// Courier names are stored inconsistently ("delivery" and "Delhivery" are the
+// same partner — the DELIVERY_PARTNER option value is spelled without the "h"),
+// so match on a normalized key and show a tidy label.
+const courierKey = (v) => {
+  const k = String(v || "").trim().toLowerCase();
+  return k === "delivery" ? "delhivery" : k;
+};
+const courierLabel = (v) => {
+  const raw = String(v || "").trim();
+  if (courierKey(raw) === "delhivery") return "Delhivery";
+  return raw === raw.toLowerCase() ? raw.replace(/\b\w/g, (m) => m.toUpperCase()) : raw;
+};
 
 export default function OrderTracking({
   orders = [],
@@ -129,6 +155,23 @@ export default function OrderTracking({
   const canCreateOrder = currentUser?.role === 'Admin' || !!currentUser?.allow_create_order;
   const canEditOrder = currentUser?.role === 'Admin' || !!currentUser?.allow_edit_order_processing;
   const [modalOpen, setModalOpen] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const orderParam = searchParams.get("order");
+  const orderUrlRef = useRef({ handled: null, pushed: false, pending: false, closing: false });
+  const modalOpenRef = useRef(false);
+  const listUrl = () => {
+    const p = new URLSearchParams(window.location.search);
+    p.delete("order");
+    const q = p.toString();
+    return `/orderTracking${q ? `?${q}` : ""}`;
+  };
+  const orderUrl = (id) => {
+    const p = new URLSearchParams(window.location.search);
+    p.delete("focus");
+    p.set("order", id);
+    return `/orderTracking?${p.toString()}`;
+  };
   const [modalDetailTab, setModalDetailTab] = useState("details"); // "details" | "documents" | "actions"
   const [isEditMode, setIsEditMode] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -142,6 +185,56 @@ export default function OrderTracking({
   const [replacingItemId, setReplacingItemId] = useState(null);
   const [replaceWithSerialId, setReplaceWithSerialId] = useState("");
   const [platformFilter, setPlatformFilter] = useState("All"); // ✅ New: Platform filter
+  // Delivery platform = the courier/delivery partner on the shipment.
+  const [courierFilter, setCourierFilter] = useState("All"); // "All" | "__none__" | lowercased partner name
+  const batchMatchesCourier = (batch) => {
+    if (courierFilter === "All") return true;
+    return batch.items.some((i) => {
+      const c = courierKey(i.courierPartner);
+      return courierFilter === "__none__" ? !c : c === courierFilter;
+    });
+  };
+
+  // ── Category filter + "which filters to show" chooser ──────────────────────
+  const [categoryFilter, setCategoryFilter] = useState("All"); // "All" | "__none__" | category name
+  const batchMatchesCategory = (batch) => {
+    if (categoryFilter === "All") return true;
+    if (categoryFilter === "__none__") return !(batch.categories || []).length;
+    return (batch.categories || []).includes(categoryFilter);
+  };
+
+  const [shownFilters, setShownFilters] = useState(() => new Set(FILTER_DEFS.map((f) => f.key)));
+  // Restored after mount (not in the initializer) so server and client render the same first paint.
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(SHOWN_FILTERS_KEY) || "null");
+      if (Array.isArray(saved)) setShownFilters(new Set(saved.filter((k) => FILTER_DEFS.some((f) => f.key === k))));
+    } catch { /* storage unavailable — keep the default */ }
+  }, []);
+  const saveShownFilters = (next) => {
+    setShownFilters(next);
+    try { window.localStorage.setItem(SHOWN_FILTERS_KEY, JSON.stringify([...next])); } catch { /* ignore */ }
+  };
+  // A hidden filter must not keep narrowing the list unseen, so hiding it also clears its value.
+  const resetFilterValue = (key) => {
+    if (key === "status") setStatusFilter("All");
+    if (key === "date") { setDayFilter("all"); setCustomStart(""); setCustomEnd(""); }
+    if (key === "delivery") setCourierFilter("All");
+    if (key === "platform") setPlatformFilter("All");
+    if (key === "category") setCategoryFilter("All");
+  };
+  const toggleFilterShown = (key) => {
+    const next = new Set(shownFilters);
+    if (next.has(key)) { next.delete(key); resetFilterValue(key); } else next.add(key);
+    saveShownFilters(next);
+  };
+  const filterIsActive = {
+    status: statusFilter !== "All",
+    date: dayFilter !== "all",
+    delivery: courierFilter !== "All",
+    platform: platformFilter !== "All",
+    category: categoryFilter !== "All",
+  };
 
   // ── Column visibility ──────────────────────────────────────────────────────
   const [visibleCols, setVisibleCols] = useState(() => new Set(TOGGLABLE_COLUMNS.map((c) => c.key)));
@@ -215,6 +308,7 @@ export default function OrderTracking({
   useEffect(() => {
     setStatusFilter("All");
     setPlatformFilter("All"); // ✅ Reset platform filter
+    setCourierFilter("All");
     setSearchTerm("");
   }, [activeTab]);
 
@@ -242,7 +336,13 @@ export default function OrderTracking({
         if (!mounted) return;
         console.error("Failed to load models/serials:", error);
       } finally {
-        if (mounted) setLoadingDispatchData(false);
+        // Not gated on `mounted`: this effect re-runs when catalogLoaded flips
+        // (cleanup sets mounted=false) while the fetch is still in flight, and
+        // the re-run returns early since catalogLoaded is true — so gating this
+        // left the "Loading models and serials..." spinner stuck forever. The
+        // models/serials are still synced from context in that case (see the
+        // catalogLoaded effects above); only the loading flag needs clearing.
+        setLoadingDispatchData(false);
       }
     };
     loadDispatchData();
@@ -467,6 +567,10 @@ export default function OrderTracking({
         groups[key].holdReason = order.holdReason || order.reason;
       }
     });
+    // Which item categories this order covers (e.g. Printer, Monitor) — shown in the Category column.
+    Object.values(groups).forEach((g) => {
+      g.categories = [...new Set(g.items.map((i) => i.categoryName).filter(Boolean))];
+    });
     return Object.values(groups).sort((a, b) => new Date(b.dispatchDate || 0) - new Date(a.dispatchDate || 0));
   }, [localOrders]);
 
@@ -511,6 +615,7 @@ export default function OrderTracking({
         const matchesSearch =
           (batch.customerName || "").toLowerCase().includes(term) ||
           (batch.firmName || "").toLowerCase().includes(term) ||
+          (batch.categories || []).some((c) => c.toLowerCase().includes(term)) ||
           (batch.bidNumber || "").toLowerCase().includes(term) ||
           (batch.contactNumber || "").toLowerCase().includes(term) ||
           (batch.altContactNumber || "").toLowerCase().includes(term) ||
@@ -550,6 +655,9 @@ export default function OrderTracking({
         if (batchFirm !== filterVal) return false;
       }
 
+      if (!batchMatchesCourier(batch)) return false;
+      if (!batchMatchesCategory(batch)) return false;
+
       return true;
     }).map(batch => {
       let displayItems = batch.items;
@@ -557,7 +665,18 @@ export default function OrderTracking({
       if (activeTab === "returned") displayItems = batch.items.filter(i => isItemReturned(i, returns));
       return { ...batch, displayItems };
     });
-  }, [groupedBatches, searchTerm, statusFilter, activeTab, returns, platformFilter, dayRange]);
+  }, [groupedBatches, searchTerm, statusFilter, activeTab, returns, platformFilter, courierFilter, categoryFilter, dayRange]);
+
+  const courierOptions = useMemo(() => {
+    const seen = new Map();
+    for (const b of groupedBatches) {
+      for (const i of b.items) {
+        const k = courierKey(i.courierPartner);
+        if (k && !seen.has(k)) seen.set(k, courierLabel(i.courierPartner));
+      }
+    }
+    return [...seen.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [groupedBatches]);
 
   const totalPages = Math.max(1, Math.ceil(filteredBatches.length / itemsPerPage));
 
@@ -568,7 +687,12 @@ export default function OrderTracking({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter, activeTab, platformFilter]);
+  }, [searchTerm, statusFilter, activeTab, platformFilter, courierFilter, categoryFilter]);
+
+  const categoryOptions = useMemo(
+    () => [...new Set(groupedBatches.flatMap((b) => b.categories || []))].sort((a, b) => a.localeCompare(b)),
+    [groupedBatches]
+  );
 
   // ✅ Updated stats to include hold & returned
   const stats = useMemo(() => {
@@ -580,6 +704,8 @@ export default function OrderTracking({
         const filterVal = platformFilter.toLowerCase();
         if (batchFirm !== filterVal) return;
       }
+      if (!batchMatchesCourier(b)) return;
+      if (!batchMatchesCategory(b)) return;
 
       const f = calculateBatchFinancials(b.items, returns);
       const activeItems = b.items.filter(i => !isItemReturned(i, returns) && String(i.status).trim() !== "Order Cancelled" && !i.isDeleted);
@@ -596,7 +722,7 @@ export default function OrderTracking({
       if (isCancelled) cancelled++;
     });
     return { total: groupedBatches.length, active, hold, completed, cancelled, returned, draft };
-  }, [groupedBatches, returns, platformFilter]); // ✅ Added platformFilter
+  }, [groupedBatches, returns, platformFilter, courierFilter, categoryFilter]); // ✅ Added platformFilter
 
   const handleViewDocument = useCallback((filename) => {
     if (!filename) {
@@ -1078,7 +1204,9 @@ export default function OrderTracking({
     // hadn't loaded/refreshed the serial yet (godown-scoped, soft-deleted,
     // etc.), the whole save silently aborted on a toast that looked
     // unrelated to what was actually edited.
-    for (let item of editItems) {
+    // Work on copies — resolving serial ids must not mutate the React state objects.
+    const resolvedItems = editItems.map((it) => ({ ...it }));
+    for (const item of resolvedItems) {
       const currentSerialId = item.serialNumberId || item.serialGuid || item.serialId;
       if (normalizeSerial(item.serialValue) === normalizeSerial(item.originalSerialValue)) {
         item.newSerialId = currentSerialId;
@@ -1136,7 +1264,7 @@ export default function OrderTracking({
       }
 
       await Promise.all(
-        editItems.map((item) => {
+        resolvedItems.map((item) => {
           const payload = {
             customerName: editFormData.customerName,
             shippingAddress: editFormData.shippingAddress,
@@ -1156,6 +1284,11 @@ export default function OrderTracking({
             invoiceDate: editFormData.invoiceDate,
             warranty: editFormData.warranty,
             sellingPrice: Number(item.sellingPrice) || 0,
+            // Distinct field name from `remarks` on purpose — that one is the
+            // order-level note (hold/cancel reason, see handleSendBack /
+            // handleHold below), a per-ITEM note would silently overwrite it
+            // otherwise since both would land on the same PUT payload key.
+            itemRemarks: item.remarks ?? null,
             contractFilename: uploadedContractFilename,
             invoiceFilename: uploadedInvoiceFilename,
             serialId: item.newSerialId,
@@ -1399,7 +1532,7 @@ export default function OrderTracking({
     }
   };
 
-  const openModal = useCallback((batch) => {
+  const openModal = useCallback((batch, opts = {}) => {
     const normalizedItems = (batch.items || []).map((item) => ({
       ...item,
       installationRequired: isInstallationRequired(item.installationRequired) || false,
@@ -1448,14 +1581,64 @@ export default function OrderTracking({
     setModalOpen(true);
     setReplacingItemId(null);
     setReplaceWithSerialId("");
-  }, [returns]);
+
+    // The order opens as its own full page: reflect it in the URL (?order=)
+    // so the browser Back button and a refresh both work. Opened from a
+    // deep link / focus, the URL already carries (or is about to get) it.
+    if (opts.push !== false) {
+      const u = orderUrlRef.current;
+      u.pending = true;
+      u.pushed = true;
+      u.closing = false;
+      router.push(orderUrl(String(batch.batchKey ?? batch.id)), { scroll: false });
+    } else {
+      orderUrlRef.current.pushed = false;
+    }
+  }, [returns, router]);
 
   const closeModal = useCallback(() => {
     setModalOpen(false);
     setSelectedBatch(null);
     setIsEditMode(false);
     setModalDetailTab("details");
-  }, []);
+    const u = orderUrlRef.current;
+    if (new URLSearchParams(window.location.search).get("order")) {
+      u.closing = true;
+      if (u.pushed) router.back();
+      else router.replace(listUrl(), { scroll: false });
+      u.pushed = false;
+    }
+  }, [router]);
+
+  // Keeps ?order=<id> and the open/closed state in step: browser Back closes
+  // the page, refreshing (or a shared link) re-opens it, and any code path
+  // that closes the order without touching the URL cleans the param up.
+  useEffect(() => { modalOpenRef.current = modalOpen; }, [modalOpen]);
+  useEffect(() => {
+    const u = orderUrlRef.current;
+    if (!orderParam) {
+      u.handled = null;
+      u.closing = false;
+      if (modalOpenRef.current && !u.pending) {
+        setModalOpen(false);
+        setSelectedBatch(null);
+        setIsEditMode(false);
+        setModalDetailTab("details");
+      }
+      return;
+    }
+    u.pending = false;
+    if (modalOpen) { u.handled = orderParam; return; }
+    if (u.closing) return;
+    if (u.handled === orderParam) { router.replace(listUrl(), { scroll: false }); return; }
+    const target = groupedBatches.find((b) => String(b.batchKey ?? b.id) === orderParam);
+    if (target) {
+      openModal(target, { push: false });
+      u.pending = false;
+      u.handled = orderParam;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderParam, modalOpen, groupedBatches]);
 
   useEffect(() => {
     if (!focusOrderId) return;
@@ -1496,9 +1679,10 @@ export default function OrderTracking({
     // Coming from "View Full Order" (Global Search's dispatch result) — open
     // the order straight away instead of just scrolling to and highlighting
     // the row, since that's the whole point of that button.
-    openModal(targetBatch);
+    openModal(targetBatch, { push: false });
+    orderUrlRef.current.pending = true; // the URL gets ?order= from onFocusHandled just below
     if (typeof onFocusHandled === "function") {
-      onFocusHandled();
+      onFocusHandled(String(targetBatch.batchKey ?? targetBatch.id));
     }
   }, [focusOrderId, groupedBatches, returns, onFocusHandled, openModal]);
 
@@ -1545,6 +1729,8 @@ export default function OrderTracking({
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-6 pb-24">
+      {/* The order list is hidden (not unmounted) while an order is open as a full page — filters, tab and scroll stay as they were. */}
+      <div className={modalOpen && selectedBatch ? "hidden" : ""}>
       <AppearanceModal
         isOpen={appearanceModalOpen}
         onClose={() => setAppearanceModalOpen(false)}
@@ -1664,7 +1850,7 @@ export default function OrderTracking({
           </div>
 
           {/* Only show status filter for active tab */}
-          {activeTab === "active" && (
+          {activeTab === "active" && shownFilters.has("status") && (
             <select
               className="border border-slate-200 bg-slate-50 px-4 py-2.5 rounded-xl text-sm outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500 focus:bg-white font-medium min-w-[150px]"
               value={statusFilter}
@@ -1692,6 +1878,7 @@ export default function OrderTracking({
             </select>
           )}
 
+          {shownFilters.has("date") && (
           <DayFilterSelect
             value={dayFilter}
             onChange={setDayFilter}
@@ -1700,8 +1887,25 @@ export default function OrderTracking({
             customEnd={customEnd}
             onCustomEndChange={setCustomEnd}
           />
+          )}
+
+          {shownFilters.has("delivery") && (
+          <select
+            className="border border-slate-200 bg-slate-50 px-4 py-2.5 rounded-xl text-sm outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500 focus:bg-white font-medium min-w-[140px]"
+            value={courierFilter}
+            onChange={(e) => setCourierFilter(e.target.value)}
+            title="Delivery platform / courier partner"
+          >
+            <option value="All">All Delivery Platforms</option>
+            {courierOptions.map((c) => (
+              <option key={c.key} value={c.key}>{c.label}</option>
+            ))}
+            <option value="__none__">Not assigned</option>
+          </select>
+          )}
 
           {/* ✅ New Platform Filter */}
+          {shownFilters.has("platform") && (
           <select
             className="border border-slate-200 bg-slate-50 px-4 py-2.5 rounded-xl text-sm outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500 focus:bg-white font-medium min-w-[140px]"
             value={platformFilter}
@@ -1712,6 +1916,30 @@ export default function OrderTracking({
               <option key={p.name} value={p.name}>{p.name}</option>
             ))}
           </select>
+          )}
+
+          {shownFilters.has("category") && (
+          <select
+            className="border border-slate-200 bg-slate-50 px-4 py-2.5 rounded-xl text-sm outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500 focus:bg-white font-medium min-w-[140px] max-w-[220px]"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            title="Item category"
+          >
+            <option value="All">All Categories</option>
+            {categoryOptions.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+            <option value="__none__">No category</option>
+          </select>
+          )}
+
+          <FilterPicker
+            filters={FILTER_DEFS.map((f) => ({ ...f, active: filterIsActive[f.key] }))}
+            shown={shownFilters}
+            onToggle={toggleFilterShown}
+            onShowAll={() => saveShownFilters(new Set(FILTER_DEFS.map((f) => f.key)))}
+            onClearValues={() => FILTER_DEFS.forEach((f) => resetFilterValue(f.key))}
+          />
 
           {canCreateOrder && (
             <button
@@ -1854,6 +2082,7 @@ export default function OrderTracking({
                 <th className="p-4 w-10 text-center text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">#</th>
                 <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Order ID</th>
                 {visibleCols.has("platform") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Platform</th>}
+                {visibleCols.has("category") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Category</th>}
                 {visibleCols.has("items") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Items</th>}
                 {visibleCols.has("orderDate") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Order Date</th>}
                 {visibleCols.has("lastDelivery") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Last Delivery</th>}
@@ -2021,6 +2250,19 @@ export default function OrderTracking({
                           {batch.firmName === "GeM" && <Building size={10} />}
                           {batch.firmName || "Other"}
                         </span>
+                      </td>
+                      )}
+
+                      {visibleCols.has("category") && (
+                      <td className="p-4">
+                        {batch.categories?.length ? (
+                          <div className="flex flex-col items-start gap-1" title={batch.categories.join(", ")}>
+                            <span className="inline-block max-w-[170px] truncate px-2.5 py-1 rounded-lg text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-100">{batch.categories[0]}</span>
+                            {batch.categories.length > 1 && <span className="text-[10px] font-bold text-slate-400">+{batch.categories.length - 1} more</span>}
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
                       )}
 
@@ -2263,7 +2505,7 @@ export default function OrderTracking({
                 })
               ) : (
                 <tr>
-                  <td colSpan="13" className="p-12 text-center">
+                  <td colSpan="14" className="p-12 text-center">
                     <Package size={48} className={`mx-auto mb-3 ${activeTab === "completed" ? "text-emerald-200" :
                         activeTab === "cancelled" ? "text-red-200" :
                           activeTab === "returned" ? "text-orange-200" :
@@ -2362,7 +2604,9 @@ export default function OrderTracking({
         </div>
       )}
 
-      {/* ==================== MODAL ==================== */}
+      </div>
+
+      {/* ==================== ORDER DETAILS (full page) ==================== */}
       {modalOpen && selectedBatch && (
         <OrderDetailModal
           {...{

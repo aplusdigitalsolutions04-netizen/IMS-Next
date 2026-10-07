@@ -1,24 +1,16 @@
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
-import { Edit2, Loader2, Users, Plus, Search, Trash2, X, MapPin, FileText, Phone, User } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Edit2, Loader2, Users, Plus, Search, Trash2 } from "lucide-react";
 import Swal from "sweetalert2";
 import { clientsService } from "@/lib/services/clientsService";
-import { platformsService } from "@/lib/services/platformsService";
 import { hasPermission } from "@/lib/client/rbac";
 
-const EMPTY_FORM = {
-  guid: null, name: "", gstNumber: "", contactNumber: "",
-  shippingAddress: "", buyerAddress: "", consigneeName: "", allowedPlatforms: [],
-};
-
 export default function ClientMaster({ currentUser }) {
+  const router = useRouter();
   const [clients, setClients] = useState([]);
-  const [platforms, setPlatforms] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState(EMPTY_FORM);
 
   // "clientMaster" isn't a PROTECTED_EDIT_PERMISSIONS tab (see lib/auth.js) —
   // the view permission alone is enough to add/edit, same as Godown/Company
@@ -41,7 +33,6 @@ export default function ClientMaster({ currentUser }) {
 
   useEffect(() => {
     fetchClients();
-    platformsService.getPlatforms().then(setPlatforms).catch((err) => console.error("Failed to load platforms:", err));
   }, []);
 
   const filteredClients = useMemo(() => {
@@ -54,59 +45,7 @@ export default function ClientMaster({ currentUser }) {
     );
   }, [clients, searchTerm]);
 
-  const openModal = (client = null) => {
-    setFormData(client ? {
-      guid: client.guid,
-      name: client.name || "",
-      gstNumber: client.gstNumber || "",
-      contactNumber: client.contactNumber || "",
-      shippingAddress: client.shippingAddress || "",
-      buyerAddress: client.buyerAddress || "",
-      consigneeName: client.consigneeName || "",
-      allowedPlatforms: Array.isArray(client.allowedPlatforms) ? client.allowedPlatforms : [],
-    } : EMPTY_FORM);
-    setShowModal(true);
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setFormData(EMPTY_FORM);
-  };
-
-  const togglePlatform = (value) => {
-    setFormData((prev) => ({
-      ...prev,
-      allowedPlatforms: prev.allowedPlatforms.includes(value)
-        ? prev.allowedPlatforms.filter((p) => p !== value)
-        : [...prev.allowedPlatforms, value],
-    }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const name = formData.name.trim();
-    if (!name) {
-      Swal.fire("Warning", "Client name is required", "warning");
-      return;
-    }
-
-    try {
-      setSaving(true);
-      if (formData.guid) {
-        await clientsService.updateClient(formData.guid, { ...formData, name });
-        Swal.fire("Success", "Client updated", "success");
-      } else {
-        await clientsService.addClient({ ...formData, name });
-        Swal.fire("Success", "Client added", "success");
-      }
-      closeModal();
-      fetchClients();
-    } catch (error) {
-      Swal.fire("Error", error.response?.data?.message || error.message || "Failed to save client", "error");
-    } finally {
-      setSaving(false);
-    }
-  };
+  const openModal = (client = null) => router.push(client ? `/clientMaster/${client.guid}` : "/clientMaster/new");
 
   const handleDelete = async (client) => {
     const confirm = await Swal.fire({
@@ -223,127 +162,6 @@ export default function ClientMaster({ currentUser }) {
           </div>
         )}
       </div>
-
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <h3 className="text-lg font-bold text-slate-900">{formData.guid ? "Edit Client" : "Add Client"}</h3>
-              <button onClick={closeModal} className="rounded-lg p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-600">
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-5">
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-700"><Users size={14} className="text-slate-400" /> Client Name *</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-indigo-500"
-                    placeholder="e.g. SKIMS Medical College & Hospital"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-700"><FileText size={14} className="text-slate-400" /> GSTIN</label>
-                    <input
-                      type="text"
-                      value={formData.gstNumber}
-                      onChange={(e) => setFormData({ ...formData, gstNumber: e.target.value.toUpperCase() })}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-indigo-500 uppercase"
-                      placeholder="e.g. 27ABCDE1234F1Z5"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-700"><Phone size={14} className="text-slate-400" /> Contact No.</label>
-                    <input
-                      type="text"
-                      value={formData.contactNumber}
-                      onChange={(e) => setFormData({ ...formData, contactNumber: e.target.value })}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-indigo-500"
-                      placeholder="e.g. 9876543210"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-700"><MapPin size={14} className="text-slate-400" /> Shipping Address</label>
-                  <textarea
-                    value={formData.shippingAddress}
-                    onChange={(e) => setFormData({ ...formData, shippingAddress: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-indigo-500"
-                    placeholder="Full shipping address..."
-                    rows={2}
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-700"><MapPin size={14} className="text-slate-400" /> Buyer Address</label>
-                  <textarea
-                    value={formData.buyerAddress}
-                    onChange={(e) => setFormData({ ...formData, buyerAddress: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-indigo-500"
-                    placeholder="Full buyer address..."
-                    rows={2}
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 flex items-center gap-1.5 text-sm font-bold text-slate-700"><User size={14} className="text-slate-400" /> Consignee Name</label>
-                  <input
-                    type="text"
-                    value={formData.consigneeName}
-                    onChange={(e) => setFormData({ ...formData, consigneeName: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-indigo-500"
-                    placeholder="Consignee Name"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-bold text-slate-700">Selling Platforms</label>
-                  <p className="mb-2 text-xs text-slate-400">Leave all unselected to show this client for every platform in New Dispatch.</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {platforms.map((p) => {
-                      const checked = formData.allowedPlatforms.includes(p.name);
-                      return (
-                        <button
-                          key={p.name}
-                          type="button"
-                          onClick={() => togglePlatform(p.name)}
-                          className={`px-3 py-2 rounded-lg border-2 text-xs font-bold transition-all text-left truncate ${
-                            checked ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500 hover:border-slate-300 bg-white"
-                          }`}
-                        >
-                          {p.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end gap-3">
-                <button type="button" onClick={closeModal} className="rounded-lg px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-60"
-                >
-                  {saving && <Loader2 size={16} className="animate-spin" />}
-                  {formData.guid ? "Save Changes" : "Add Client"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

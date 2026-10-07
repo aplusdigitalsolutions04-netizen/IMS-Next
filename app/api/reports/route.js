@@ -165,15 +165,11 @@ export const GET = withErrorHandling(async (request) => {
        WHERE serialStatus = 'Available' AND isDeleted = 0 GROUP BY itemVariantId
      ) lp ON s.itemVariantId = lp.itemVariantId
      LEFT JOIN (
-       SELECT s1.itemVariantId, s1.landingPrice as lastLandingPrice
-       FROM inventorystockinserial s1
-       WHERE s1.isDeleted = 0
-         AND s1.guid = (
-           SELECT s2.guid FROM inventorystockinserial s2
-           WHERE s2.itemVariantId = s1.itemVariantId AND s2.isDeleted = 0
-           ORDER BY s2.createdAt DESC, s2.guid DESC
-           LIMIT 1
-         )
+       SELECT itemVariantId, landingPrice as lastLandingPrice FROM (
+         SELECT itemVariantId, landingPrice,
+                ROW_NUMBER() OVER (PARTITION BY itemVariantId ORDER BY createdAt DESC, guid DESC) as rn
+         FROM inventorystockinserial WHERE isDeleted = 0
+       ) ranked WHERE rn = 1
      ) lk ON s.itemVariantId = lk.itemVariantId
      WHERE s.serialStatus = 'Available' AND s.isDeleted = 0${companyClause("s")}`,
     companyParam

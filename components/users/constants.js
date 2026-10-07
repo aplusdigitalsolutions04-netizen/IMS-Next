@@ -4,6 +4,7 @@ import {
   Ruler, ArrowDownCircle, ArrowUpCircle, Plus, Truck, Users,
   Building2, Globe, UploadCloud, Mail, Inbox, Send, ShieldAlert, DatabaseBackup,
   ShieldHalf, HardDrive, Trash2, ArrowRightLeft, Briefcase, Sparkles, Hash, PackagePlus, RotateCcw,
+  ListChecks, Pencil, KeyRound, Eye, ClipboardList,
 } from "lucide-react";
 
 // Having view access to a tab is enough to add/edit everything in it, except
@@ -90,13 +91,37 @@ export const PERMISSIONS_LIST = [
   { id: "aiSettings",         label: "AI Settings",            icon: Sparkles },
   { id: "googleDrive",        label: "Google Drive",           icon: HardDrive },
   { id: "deletedItems",       label: "Deleted Items",          icon: RotateCcw },
+  { id: "tasks",              label: "Tasks",                  icon: ListChecks },
+  { id: "credentials",        label: "Credentials",            icon: KeyRound },
+  { id: "dailyTasks",         label: "Daily Tasks",            icon: ClipboardList },
+  { id: "contractGroups",     label: "Contract Groups",        icon: Layers },
+  // Dashboard widgets — which user sees which card on the Dashboard. The widget
+  // also needs its module permission (Tasks / Email Inbox / Contract Groups) to
+  // have any data to show.
+  { id: "dash_myTasks",       label: "Dashboard: My Tasks",         icon: ListChecks },
+  { id: "dash_mail",          label: "Dashboard: Mail Inbox",       icon: Mail },
+  { id: "dash_contractGroups",label: "Dashboard: Contract Groups",  icon: Layers },
+  { id: "dash_orders", label: "Dashboard: Orders card", icon: ShoppingCart },
+  { id: "dash_dispatch", label: "Dashboard: Dispatched card", icon: Truck },
+  { id: "dash_returns", label: "Dashboard: Returns card", icon: RotateCcw },
+  { id: "dash_stockIn", label: "Dashboard: Stock In card", icon: ArrowDownCircle },
+  { id: "dash_damaged", label: "Dashboard: Damaged card", icon: AlertOctagon },
+  { id: "dash_stockAvailable", label: "Dashboard: Stock Available card", icon: Package },
+  { id: "dash_duePayments", label: "Dashboard: Due Payments card", icon: Receipt },
+  { id: "dash_pendingBill", label: "Dashboard: Pending Bill card", icon: FileText },
+  { id: "dash_totalOrder", label: "Dashboard: Total Order card", icon: ShoppingCart },
+  { id: "dash_stockHealth", label: "Dashboard: Stock Health chart", icon: ShieldCheck },
+  { id: "dash_sales", label: "Dashboard: Sales chart", icon: BarChart3 },
+  { id: "dash_godownStock", label: "Dashboard: Godown Stock chart", icon: Building2 },
+  { id: "dash_topCategory", label: "Dashboard: Top 10 Stock by Category", icon: Layers },
 ];
 
 export const PERMISSION_GROUPS = [
   { name: "Sales & Orders",   icon: ShoppingCart, color: "indigo",  permissions: ["orders", "billing", "dispatch", "installation", "stat_stock_out", "returns", "damage"] },
   { name: "Master Data",      icon: Database,     color: "violet",  permissions: ["stat_category", "stat_brand", "stat_vendor", "stat_item", "stat_combo", "stat_mapping", "stat_unit", "godownMaster", "fbfFbaMaster", "companyMaster", "platformMaster", "deliveryPartnerMaster", "clientMaster", "carePackMaster"] },
   { name: "Inventory",        icon: History,      color: "sky",     permissions: ["print_models", "print_serials", "warranty", "stat_stock_in", "stat_current_stock", "fbfFbaManagement", "godownTransfer"] },
-  { name: "Admin & Analytics",icon: BarChart3,    color: "emerald", permissions: ["dashboard", "notifications", "users", "roles", "userActivity", "reports", "contracts"] },
+  { name: "Admin & Analytics",icon: BarChart3,    color: "emerald", permissions: ["dashboard", "notifications", "users", "roles", "userActivity", "reports", "contracts", "tasks", "credentials", "dailyTasks", "contractGroups"] },
+  { name: "Dashboard Widgets",icon: BarChart3,    color: "indigo",  permissions: ["dash_orders", "dash_dispatch", "dash_returns", "dash_stockIn", "dash_damaged", "dash_stockAvailable", "dash_duePayments", "dash_pendingBill", "dash_totalOrder", "dash_stockHealth", "dash_sales", "dash_godownStock", "dash_topCategory", "dash_myTasks", "dash_mail", "dash_contractGroups"] },
   { name: "Email",            icon: Mail,         color: "amber",   permissions: ["emailAccounts", "emailTemplates", "emailInbox", "sentEmails"] },
   { name: "System Admin",     icon: ShieldAlert,  color: "rose",    permissions: ["apiLogs", "backupRestore", "rateLimitSettings", "aiSettings", "googleDrive", "deletedItems"] },
 ];
@@ -137,6 +162,39 @@ export const EDIT_PERMISSIONS = [
   { key: "allow_add_serial",              label: "Add Serial No. (Item Master)",       icon: Hash,        group: "Master Data" },
   { key: "allow_add_nonserialized_stock", label: "Add Stock Qty (Item Master)",        icon: PackagePlus, group: "Master Data" },
   { key: "allow_transfer_variant",        label: "Transfer Variant (Item Master)",     icon: ArrowRightLeft, group: "Master Data" },
+  // Backs app/api/models/[id]/route.js's PUT (price + Dispatch's "Packaging
+  // Cost & Dimensions" editor) — already the real server-side gate alongside
+  // the "Model Pricing (Dispatch)" view permission, but had no checkbox here.
+  { key: "allow_edit_models",             label: "Edit Model Pricing & Packaging",     icon: Package,     group: "Master Data" },
+  // Selling Platform's own "Manage Fields" screen (custom extra fields per
+  // platform) — already checked by PlatformMaster.jsx and the
+  // app/api/admin/platforms/[id]/fields/* routes via
+  // requirePermissionOrEditFlag(user, "platformMaster", "allow_manage_platform_fields", ...),
+  // but had no checkbox here, so there was no way to actually grant it to a
+  // non-Admin user. Needs the "Selling Platform" view permission too, to see
+  // the page/link at all.
+  { key: "allow_manage_platform_fields",  label: "Manage Platform Fields (Selling Platform)", icon: Globe, group: "Master Data" },
+  // Stock In's Due Purchase Bill tab: entering stock before the bill arrives
+  // and adding the bill details afterwards. See app/Inventory/UpdateDueBill.
+  { key: "allow_due_purchase_bill",       label: "Due Purchase Bill (Stock In)",       icon: Receipt,     group: "Inventory" },
+  // Everyone with the "Tasks" view permission can see and update tasks
+  // assigned to them; this flag additionally lets them create/assign tasks
+  // to other people. See app/api/tasks/route.js.
+  { key: "allow_assign_tasks",            label: "Assign Tasks to Others",             icon: ListChecks,  group: "Admin & Analytics" },
+  // Separate from allow_assign_tasks: a task's own creator can always edit/
+  // delete it (see app/api/tasks/[id]/route.js), these two grant that on
+  // EVERY task, not just ones this user created.
+  { key: "allow_edit_tasks",              label: "Edit Any Task",                      icon: Pencil,      group: "Admin & Analytics" },
+  { key: "allow_delete_tasks",            label: "Delete Any Task",                    icon: Trash2,      group: "Admin & Analytics" },
+  // Credentials: the "Credentials" view permission shows the tab and each
+  // entry's non-secret details; these two are separate on purpose — seeing
+  // passwords (eye/copy/history) and adding/editing/deleting entries.
+  { key: "allow_view_credential_passwords", label: "View Credential Passwords",       icon: Eye,         group: "Admin & Analytics" },
+  // Daily Tasks: everyone with the tab keeps their own list; this lets someone
+  // see EVERY user's daily tasks (the user-wise view). Admin always can.
+  { key: "allow_view_all_daily_tasks",    label: "View Everyone's Daily Tasks",        icon: Eye,         group: "Admin & Analytics" },
+  { key: "allow_manage_daily_task_setup", label: "Manage Daily Task Columns & Statuses", icon: ClipboardList, group: "Admin & Analytics" },
+  { key: "allow_manage_credentials",    label: "Manage Credentials (Add/Edit/Delete)", icon: KeyRound,  group: "Admin & Analytics" },
   ...MASTER_EDIT_ENTRIES,
   ...FULL_CRUD_ENTRIES,
   ...ADMIN_ONLY_DELETE_ENTRIES,

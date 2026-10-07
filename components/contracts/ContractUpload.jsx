@@ -7,7 +7,7 @@ import { contractsService } from "@/lib/services/contractsService";
 import { companyService } from "@/lib/services/companyService";
 import { useCompany } from "@/lib/client/CompanyContext";
 import { getStoredUser } from "@/lib/client/auth";
-import { normGstin, normText, isSameCompany, allGstNumbers } from "@/lib/companyMatch";
+import { normGstin, normText, isSameCompany, allGstNumbers, extractGstins } from "@/lib/companyMatch";
 import AddProductWizard from "./AddProductWizard";
 
 const SECTIONS = [
@@ -107,7 +107,12 @@ function FieldRow({ label, value, onChange, type, readOnly, zebra }) {
   );
 }
 
-export default function ContractUpload() {
+// initialData/onSaved/onCancel let BulkContractUpload embed this same
+// review-and-save screen for an already-extracted file (see
+// components/contracts/BulkContractUpload.jsx) instead of duplicating all of
+// this component's Step-2 review/save logic. Default (no initialData) single
+// upload behavior is unchanged.
+export default function ContractUpload({ initialData, onSaved, onCancel } = {}) {
   const router = useRouter();
   const { activeCompany, availableCompanies, switchCompany, setAvailableCompanies } = useCompany();
   const currentUser = typeof window !== "undefined" ? getStoredUser() : null;
@@ -117,16 +122,18 @@ export default function ContractUpload() {
   const [file, setFile] = useState(null);
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [products, setProducts] = useState([]);
-  const [pdfFilename, setPdfFilename] = useState(null);
-  const [extracted, setExtractedFlag] = useState(false);
-  const [contractNumber, setContractNumber] = useState("");
+  const [form, setForm] = useState(() => (initialData ? { ...EMPTY_FORM, ...initialData.form } : EMPTY_FORM));
+  const [products, setProducts] = useState(() =>
+    initialData ? (Array.isArray(initialData.products) ? initialData.products.map((p) => ({ ...EMPTY_PRODUCT, ...p })) : []) : []
+  );
+  const [pdfFilename, setPdfFilename] = useState(() => initialData?.pdfFilename || null);
+  const [extracted, setExtractedFlag] = useState(!!initialData);
+  const [contractNumber, setContractNumber] = useState(() => initialData?.contractNumber || "");
   const [checkingNumber, setCheckingNumber] = useState(false);
   const [numberExists, setNumberExists] = useState(false);
   const [numberExistsMessage, setNumberExistsMessage] = useState("");
   const [pdfContractNumber, setPdfContractNumber] = useState(null);
-  const [tokenUsage, setTokenUsage] = useState(null);
+  const [tokenUsage, setTokenUsage] = useState(() => initialData?.tokenUsage || null);
   const [wizardProduct, setWizardProduct] = useState(null);
   const wizardResolveRef = React.useRef(null);
 
@@ -231,7 +238,10 @@ export default function ContractUpload() {
     // under the same PAN) — check the extracted seller GSTIN against every
     // one of them, not just activeCompany's primary gstNumber.
     const activeGstNumbers = allGstNumbers(activeCompany);
-    const sameByGstin = sellerGstin && activeGstNumbers.length > 0 && activeGstNumbers.includes(normGstin(sellerGstin));
+    // sellerGstin can itself be several GSTINs glued into one extracted
+    // string (a multi-state seller's letterhead listing all of them) — check
+    // every one of them, not just the whole string as a single GSTIN.
+    const sameByGstin = sellerGstin && activeGstNumbers.length > 0 && extractGstins(sellerGstin).some((g) => activeGstNumbers.includes(g));
     const sameByName = sellerCompany && activeCompany.name &&
       (normText(sellerCompany).includes(normText(activeCompany.name)) || normText(activeCompany.name).includes(normText(sellerCompany)));
 
@@ -486,14 +496,16 @@ export default function ContractUpload() {
     for (const r of results) {
       if (r.exists && r.matchedBy === "name") continue;
 
-      if (r.exists && r.matchedBy === "model") {
+      if (r.exists && (r.matchedBy === "model" || r.matchedBy === "ai")) {
         const choice = await Swal.fire({
-          title: "Model already in inventory",
-          text: `The model for "${r.productName}" matches an existing item ("${r.matchedName}") in your inventory. Use it, or create a separate new item?`,
+          title: r.matchedBy === "ai" ? "Similar product in inventory" : "Model already in inventory",
+          text: r.matchedBy === "ai"
+            ? `AI thinks "${r.productName}" is the same product as the existing item "${r.matchedName}" in your inventory. Use it, or create a separate new item?`
+            : `The model for "${r.productName}" matches an existing item ("${r.matchedName}") in your inventory. Use it, or create a separate new item?`,
           icon: "question",
           showDenyButton: true,
           showCancelButton: true,
-          confirmButtonText: "Use Existing Model",
+          confirmButtonText: r.matchedBy === "ai" ? "Use Existing Item" : "Use Existing Model",
           denyButtonText: "Create New",
           cancelButtonText: "Skip",
         });
@@ -559,14 +571,18 @@ export default function ContractUpload() {
       }
 
       Swal.fire("Saved", "Contract saved successfully.", "success");
-      setForm(EMPTY_FORM);
-      setProducts([]);
-      setFile(null);
-      setPdfFilename(null);
-      setExtractedFlag(false);
-      setContractNumber("");
-      setNumberExists(false);
-      router.push("/contracts");
+      if (onSaved) {
+        onSaved(saveRes?.guid);
+      } else {
+        setForm(EMPTY_FORM);
+        setProducts([]);
+        setFile(null);
+        setPdfFilename(null);
+        setExtractedFlag(false);
+        setContractNumber("");
+        setNumberExists(false);
+        router.push("/contracts");
+      }
     } catch (error) {
       console.error("Save contract failed:", error);
       const message = error?.response?.data?.message || "Failed to save contract";
@@ -585,74 +601,80 @@ export default function ContractUpload() {
           <FileText size={24} />
         </div>
         <div>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Upload Contract</h2>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">{initialData ? "Review Contract" : "Upload Contract"}</h2>
           <p className="text-slate-500 font-medium text-sm mt-0.5">
-            Enter a unique contract number, upload the document, and let AI extract the details.
+            {initialData
+              ? "AI-extracted details below — review, fix anything needed, and save."
+              : "Enter a unique contract number, upload the document, and let AI extract the details."}
           </p>
         </div>
       </div>
 
-      {/* Step 1 */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-black flex items-center justify-center shrink-0">1</span>
-        <h3 className="text-sm font-black text-slate-700 uppercase tracking-wide">Contract Number &amp; File</h3>
-      </div>
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,320px)_1fr] gap-6 items-start">
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">
-              <Hash size={12} /> Contract Number (unique)
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={contractNumber}
-                onChange={(e) => { setContractNumber(e.target.value); setNumberExists(false); setNumberExistsMessage(""); setPdfContractNumber(null); }}
-                onBlur={handleContractNumberBlur}
-                placeholder="Enter a unique Contract Number"
-                className={`w-full bg-white border rounded-xl px-3 py-2.5 pr-9 text-sm font-medium outline-none focus:ring-2 transition-all ${
-                  numberExists ? "border-rose-400 focus:ring-rose-100" : "border-slate-200 focus:ring-indigo-100"
-                }`}
-              />
-              {checkingNumber && <Loader2 className="animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />}
-              {!checkingNumber && contractNumber && !numberExists && (
-                <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500" size={16} />
-              )}
-            </div>
-            {!checkingNumber && numberExists && (
-              <p className="text-xs font-bold text-rose-600 mt-1.5 flex items-center gap-1">{numberExistsMessage}</p>
-            )}
-            {pdfContractNumber && (
-              <p className="text-xs font-bold text-rose-600 mt-1.5">
-                You entered the wrong Contract Number. The actual Contract Number inside this document is{" "}
-                <span className="font-black">{pdfContractNumber}</span>.
-              </p>
-            )}
+      {!initialData && (
+        <>
+          {/* Step 1 */}
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-black flex items-center justify-center shrink-0">1</span>
+            <h3 className="text-sm font-black text-slate-700 uppercase tracking-wide">Contract Number &amp; File</h3>
           </div>
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,320px)_1fr] gap-6 items-start">
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">
+                  <Hash size={12} /> Contract Number (unique)
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={contractNumber}
+                    onChange={(e) => { setContractNumber(e.target.value); setNumberExists(false); setNumberExistsMessage(""); setPdfContractNumber(null); }}
+                    onBlur={handleContractNumberBlur}
+                    placeholder="Enter a unique Contract Number"
+                    className={`w-full bg-white border rounded-xl px-3 py-2.5 pr-9 text-sm font-medium outline-none focus:ring-2 transition-all ${
+                      numberExists ? "border-rose-400 focus:ring-rose-100" : "border-slate-200 focus:ring-indigo-100"
+                    }`}
+                  />
+                  {checkingNumber && <Loader2 className="animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />}
+                  {!checkingNumber && contractNumber && !numberExists && (
+                    <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500" size={16} />
+                  )}
+                </div>
+                {!checkingNumber && numberExists && (
+                  <p className="text-xs font-bold text-rose-600 mt-1.5 flex items-center gap-1">{numberExistsMessage}</p>
+                )}
+                {pdfContractNumber && (
+                  <p className="text-xs font-bold text-rose-600 mt-1.5">
+                    You entered the wrong Contract Number. The actual Contract Number inside this document is{" "}
+                    <span className="font-black">{pdfContractNumber}</span>.
+                  </p>
+                )}
+              </div>
 
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">
-              <UploadCloud size={12} /> Contract File (PDF / Image)
-            </label>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-              <input
-                type="file"
-                accept="application/pdf,image/*"
-                onChange={handleFileChange}
-                className="flex-1 min-w-0 text-sm text-slate-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:bg-indigo-600 file:text-white file:font-bold file:text-sm hover:file:bg-indigo-700 cursor-pointer transition-colors"
-              />
-              <button
-                onClick={handleExtract}
-                disabled={extracting || !file || numberExists}
-                className="shrink-0 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-md shadow-indigo-100 transition-all w-full sm:w-auto justify-center"
-              >
-                {extracting ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
-                {extracting ? "Extracting..." : "Extract with AI"}
-              </button>
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">
+                  <UploadCloud size={12} /> Contract File (PDF / Image)
+                </label>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                  <input
+                    type="file"
+                    accept="application/pdf,image/*"
+                    onChange={handleFileChange}
+                    className="flex-1 min-w-0 text-sm text-slate-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:bg-indigo-600 file:text-white file:font-bold file:text-sm hover:file:bg-indigo-700 cursor-pointer transition-colors"
+                  />
+                  <button
+                    onClick={handleExtract}
+                    disabled={extracting || !file || numberExists}
+                    className="shrink-0 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-md shadow-indigo-100 transition-all w-full sm:w-auto justify-center"
+                  >
+                    {extracting ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
+                    {extracting ? "Extracting..." : "Extract with AI"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
 
       {extracted && (
         <div className="w-full animate-in fade-in slide-in-from-top-2 duration-300">
@@ -789,6 +811,15 @@ export default function ContractUpload() {
           </div>
 
           <div className="flex justify-end gap-3 mt-5">
+            {onCancel && (
+              <button
+                onClick={onCancel}
+                disabled={saving}
+                className="bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-600 px-6 py-3 rounded-xl font-bold transition-all"
+              >
+                Back to List
+              </button>
+            )}
             <button
               onClick={handleSave}
               disabled={saving || !pdfFilename}
