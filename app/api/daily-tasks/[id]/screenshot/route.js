@@ -9,6 +9,39 @@ import { saveUploadedFile, deleteUploadedFile } from "@/lib/upload";
 
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+const shortReason = (err) => String(err?.message || err || "unknown").replace(/\s+/g, " ").trim().slice(0, 220);
+
+// Runs `npm install sharp` inside the app folder. Tries plain `npm` first, then the npm that ships next to the
+// running node binary (hosts often have npm off the PATH of the app process). Resolves with a short note on
+// success; rejects with the last npm error text (kept short so it can be shown to the admin).
+function installSharp() {
+  const path = require("path");
+  const fs = require("fs");
+  const nodeDir = path.dirname(process.execPath);
+  const npmCli = [
+    path.join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
+    path.join(nodeDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+  ].find((f) => fs.existsSync(f));
+  const attempts = [
+    ["npm", ["install", "sharp@0.35.0", "--no-save", "--no-audit", "--no-fund", "--force"], true],
+    ...(npmCli ? [[process.execPath, [npmCli, "install", "sharp@0.35.0", "--no-save", "--no-audit", "--no-fund", "--force"], false]] : []),
+  ];
+  return attempts.reduce(
+    (chain, [cmd, args, shell]) =>
+      chain.catch(
+        () =>
+          new Promise((resolve, reject) =>
+            execFile(cmd, args, { shell, cwd: process.cwd(), timeout: 240000, maxBuffer: 4 * 1024 * 1024 }, (e, stdout, stderr) => {
+              if (e) return reject(new Error(shortReason(String(stderr || "").trim().split("
+").slice(-3).join(" ") || e.message)));
+              resolve("npm install finished");
+            })
+          )
+      ),
+    Promise.reject(new Error("not started"))
+  );
+}
+
 // The user's name and the date/time are stamped onto the image HERE, on the
 // server, using the server's clock and the logged-in account — not by the
 // browser — so the stamp can't be faked by whoever took the screenshot.
@@ -20,15 +53,20 @@ async function stampImage(buffer, label) {
     sharp = (await import("sharp")).default;
   } catch (err) {
     console.error("[daily-tasks] sharp could not be loaded:", err);
+    const loadReason = shortReason(err);
     // No SSH on this host, so try to install it ourselves once, then retry.
+    let installReason = "";
     try {
-      await new Promise((resolve, reject) =>
-        execFile("npm", ["install", "sharp@0.35.0", "--no-save", "--no-audit", "--no-fund", "--force"], { shell: true, cwd: process.cwd(), timeout: 240000 }, (e) => (e ? reject(e) : resolve()))
-      );
+      installReason = await installSharp();
       sharp = (await import("sharp")).default;
     } catch (err2) {
       console.error("[daily-tasks] automatic sharp install failed:", err2);
-      throw new ApiError(500, "Image processing is not available on the server (the 'sharp' package is missing or not built for this server). Restart the app so it can install it, or run: npm install sharp");
+      throw new ApiError(
+        500,
+        `Image processing is not available on the server (the 'sharp' package is missing or not built for this server). ` +
+        `Load error: ${loadReason}. Auto-install: ${installReason || shortReason(err2)}. ` +
+        `Fix: run "npm install sharp@0.35.0" on the server (or ask the host to), then restart the app.`
+      );
     }
   }
   const img = sharp(buffer);
