@@ -218,7 +218,8 @@ export default function Reports({ isAdmin, isAccountant, isSupervisor, returns =
       if (stockTypeFilter === "in" && !isStockInFlow) return;
       if (stockTypeFilter === "out" && isStockInFlow) return;
 
-      const cat = (t.category || "").toLowerCase();
+      // categoryGroup is the old Printers/Stationery bucket; `category` is now the item's real category name (display only).
+      const cat = (t.categoryGroup || t.category || "").toLowerCase();
       const model = (t.modelName || "").toLowerCase();
       const isStationery = !(
         cat.includes("printer") || cat.includes("laser") || cat.includes("aio") || cat.includes("pc") || cat.includes("monitor") || cat.includes("ups") || cat.includes("cpu") ||

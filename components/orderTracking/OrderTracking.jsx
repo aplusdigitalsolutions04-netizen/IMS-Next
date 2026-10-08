@@ -2207,7 +2207,7 @@ export default function OrderTracking({
                       </td>
                       <td className="p-4">
                         <div className="min-w-0">
-                          {(batch.firmName === "GeM" || batch.firmName === "Other") && batch.contractFilename ? (
+                          {(batch.firmName !== "Amazon" && batch.firmName !== "Flipkart") && batch.contractFilename ? (
                             <button
                               onClick={() => handleViewDocument(batch.contractFilename)}
                               className={`font-semibold hover:underline text-sm truncate max-w-[180px] flex items-center gap-1 ${isCancelled ? "text-red-600 hover:text-red-800" :

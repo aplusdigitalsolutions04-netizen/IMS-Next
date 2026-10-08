@@ -801,7 +801,11 @@ export default function NewDispatch({
   };
 
   // ✅ Check if current platform should show Order Status picker
-  const showOrderStatus = form.platform === "GeM" || form.platform === "Other";
+  // Any platform that isn't GeM / Amazon / Flipkart (so "Other" AND every platform added later in Platform Master)
+  // gets the general order-details form — previously only the literal name "Other" did, so a new platform
+  // such as Meesho showed no address/contact/consignee fields and saved "N/A" for them.
+  const isGeneralPlatform = !!form.platform && !["GeM", "Amazon", "Flipkart"].includes(form.platform);
+  const showOrderStatus = form.platform === "GeM" || isGeneralPlatform;
   const isECommerce = form.platform === "Amazon" || form.platform === "Flipkart";
 
   const handleSubmit = async (e) => {
@@ -887,7 +891,7 @@ export default function NewDispatch({
           consigneeName: form.consigneeName,
           warranty: form.warranty
         };
-      } else if (form.platform === "Other") {
+      } else if (isGeneralPlatform) {
         if (!form.gemOrderDate || !form.gemAddress || !form.gemContact) {
           setError("Please fill Order Date, Address and Contact No.");
           return;
@@ -931,11 +935,11 @@ export default function NewDispatch({
         firmName: form.platform,
         customer: form.orderId,
         address:
-          form.platform === "GeM" || form.platform === "Other"
+          form.platform === "GeM" || isGeneralPlatform
             ? form.gemAddress || "N/A"
             : "N/A",
         buyerAddress:
-          form.platform === "GeM" || form.platform === "Other"
+          form.platform === "GeM" || isGeneralPlatform
             ? (form.sameAsShippingAddress ? form.gemAddress : form.gemBuyerAddress)
             : "N/A",
         user: currentUser?.username || "Unknown",
@@ -1818,7 +1822,7 @@ export default function NewDispatch({
                   )}
 
                   {/* Other platform fields */}
-                  {form.platform === "Other" && (
+                  {isGeneralPlatform && (
                     <div className="bg-gradient-to-br from-violet-50/60 to-purple-50/40 border border-violet-200/60 rounded-xl p-4 space-y-4">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-lg">🔗</span>

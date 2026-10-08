@@ -61,7 +61,8 @@ export const GET = withErrorHandling(async (request) => {
            o.status, ol.logisticsStatus, oi.sellingPrice * COALESCE(oi.quantity, 1) as sellingPrice,
            COALESCE(NULLIF(s.landingPrice,0), itv.purchasePrice, 0) * COALESCE(oi.quantity, 1) as landingPrice,
            o.platform AS firmName, o.orderid AS customerName, itv.variantName as modelName, s.serialNumber as serialValue,
-           'Printers' as category, o.invoiceFilename as invoiceFile, o.ewayBillFilename as ewayBillFile,
+           COALESCE(cat.categoryName, 'Printers') as category, 'Printers' as categoryGroup,
+           o.invoiceFilename as invoiceFile, o.ewayBillFilename as ewayBillFile,
            -- commission/packagingCost/freightCharges are all stored once per
            -- order, but the Reports UI groups by order and SUMS each of
            -- these columns across every item row in that order — dividing
@@ -76,7 +77,9 @@ export const GET = withErrorHandling(async (request) => {
     FROM order_items oi JOIN orders o ON oi.orderGuid=o.guid
     LEFT JOIN order_logistics ol ON o.guid=ol.orderGuid
     LEFT JOIN inventorystockinserial s ON oi.serialNumberGuid=s.guid
-    LEFT JOIN inventoryitemvariant itv ON s.itemVariantId=itv.itemVariantId
+    LEFT JOIN inventoryitemvariant itv ON COALESCE(oi.itemVariantId, s.itemVariantId)=itv.itemVariantId
+    LEFT JOIN inventoryitemmaster iim ON itv.itemId=iim.itemId
+    LEFT JOIN inventorycategorymaster cat ON iim.categoryId=cat.categoryId
     JOIN (SELECT orderGuid, COUNT(*) as itemCount FROM order_items GROUP BY orderGuid) oic ON oic.orderGuid = o.guid
     ${s2.w}
   `, s2.params);
@@ -88,13 +91,15 @@ export const GET = withErrorHandling(async (request) => {
            0 as sellingPrice, COALESCE(NULLIF(s.landingPrice,0), itv.purchasePrice, 0) as landingPrice,
            IFNULL(v.vendorFirmName,'Internal') as firmName,
            'Inventory Inward' as customerName, itv.variantName as modelName, s.serialNumber as serialValue,
-           'Printers' as category, MAX(st.invoiceFile) as invoiceFile
+           COALESCE(cat.categoryName, 'Printers') as category, 'Printers' as categoryGroup, MAX(st.invoiceFile) as invoiceFile
     FROM inventorystockinserial s
     LEFT JOIN inventoryitemvariant itv ON s.itemVariantId=itv.itemVariantId
+    LEFT JOIN inventoryitemmaster iim ON itv.itemId=iim.itemId
+    LEFT JOIN inventorycategorymaster cat ON iim.categoryId=cat.categoryId
     LEFT JOIN inventorystockindetail st_d ON s.stockInDetailId=st_d.stockInDetailId
     LEFT JOIN inventorystockin st ON st_d.stockInId=st.stockInId
     LEFT JOIN inventoryvendor v ON st.vendorId=v.vendorId
-    ${s3.w} GROUP BY s.guid,s.createdAt,s.landingPrice,itv.variantName,itv.purchasePrice,s.serialNumber,st.invoiceNo,v.vendorFirmName
+    ${s3.w} GROUP BY s.guid,s.createdAt,s.landingPrice,itv.variantName,itv.purchasePrice,s.serialNumber,st.invoiceNo,v.vendorFirmName,cat.categoryName
   `, s3.params);
 
   const s4 = buildWhere(" WHERE o.isDeleted=0", "o.issueDate", true, "o");

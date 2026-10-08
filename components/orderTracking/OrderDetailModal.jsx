@@ -1554,9 +1554,10 @@ export default function OrderDetailModal({
                                 { label: "Order Date", value: safeFormatDate(selectedBatch.orderDate) || "—" },
                                 { label: "Last Delivery", value: safeFormatDate(selectedBatch.lastDeliveryDate) || "—" },
                               ].map((item, i) => (
-                                <div key={i} className="flex justify-between text-xs">
-                                  <span className="text-orange-600">{item.label}</span>
-                                  <span className={`font-bold text-slate-800 ${item.small ? "text-[10px]" : ""}`}>{item.value || "N/A"}</span>
+                                // Label on top, value under it, so a long e-mail wraps inside its own cell instead of crowding the label.
+                                <div key={i} className="min-w-0 text-xs">
+                                  <div className="text-[10px] font-semibold uppercase tracking-wide text-orange-600">{item.label}</div>
+                                  <div className={`font-bold text-slate-800 break-all ${item.small ? "text-[11px]" : ""}`}>{item.value || "N/A"}</div>
                                 </div>
                               ))}
                             </div>
@@ -2544,9 +2545,9 @@ export default function OrderDetailModal({
                                     { label: "Order Date", value: safeFormatDate(selectedBatch.orderDate) || "—" },
                                     { label: "Last Delivery", value: safeFormatDate(selectedBatch.lastDeliveryDate) || "—" },
                                   ].map((item, i) => (
-                                    <div key={i} className="flex justify-between text-xs">
-                                      <span className="text-orange-600">{item.label}</span>
-                                      <span className={`font-bold text-slate-800 ${item.small ? "text-[10px]" : ""}`}>{item.value || "N/A"}</span>
+                                    <div key={i} className="flex items-start justify-between gap-3 text-xs">
+                                      <span className="shrink-0 text-orange-600">{item.label}</span>
+                                      <span className={`min-w-0 text-right font-bold text-slate-800 break-all ${item.small ? "text-[10px]" : ""}`}>{item.value || "N/A"}</span>
                                     </div>
                                   ))}
                                 </div>
