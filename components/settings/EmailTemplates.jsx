@@ -250,6 +250,13 @@ export default function EmailTemplates({ formFor } = {}) {
   };
 
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  // Files uploaded during this edit. Each upload goes to Drive straight away, so one that is removed again (or
+  // abandoned with Cancel) before Save is deleted from Drive instead of being left behind.
+  const newUploads = useRef([]);
+  const dropUpload = (filename) => {
+    newUploads.current = newUploads.current.filter((f) => f !== filename);
+    api.delete("/email-templates/attachment", { data: { filename } }).catch(() => {});
+  };
   const addAttachments = async (fileList) => {
     const files = Array.from(fileList || []);
     if (!files.length) return;
@@ -257,10 +264,12 @@ export default function EmailTemplates({ formFor } = {}) {
     try {
       const added = [];
       for (const file of files) {
+        // the same file picked twice must not be stored twice
+        if ((form.attachments || []).concat(added).some((a) => a.name === file.name && a.size === file.size)) continue;
         const fd = new FormData();
         fd.append("file", file);
         const res = await api.post("/email-templates/attachment", fd, { headers: { "Content-Type": "multipart/form-data" } });
-        if (res.data?.data) added.push(res.data.data);
+        if (res.data?.data) { added.push(res.data.data); newUploads.current.push(res.data.data.filename); }
       }
       setForm((prev) => ({ ...prev, attachments: [...(prev.attachments || []), ...added] }));
     } catch (err) {
@@ -269,7 +278,10 @@ export default function EmailTemplates({ formFor } = {}) {
       setUploadingFiles(false);
     }
   };
-  const removeAttachment = (filename) => setForm((prev) => ({ ...prev, attachments: (prev.attachments || []).filter((a) => a.filename !== filename) }));
+  const removeAttachment = (filename) => {
+    if (newUploads.current.includes(filename)) dropUpload(filename);
+    setForm((prev) => ({ ...prev, attachments: (prev.attachments || []).filter((a) => a.filename !== filename) }));
+  };
 
   const handleSave = async () => {
     if (!form.emailAccountGuid) {
@@ -288,6 +300,7 @@ export default function EmailTemplates({ formFor } = {}) {
       } else {
         await api.post("/email-templates", payload);
       }
+      newUploads.current = [];
       Swal.fire({ toast: true, position: "top-end", icon: "success", title: "Saved", timer: 1500, showConfirmButton: false });
       router.push("/emailTemplates");
     } catch (err) {
@@ -613,7 +626,7 @@ export default function EmailTemplates({ formFor } = {}) {
             </div>
 
             <div className="sticky bottom-0 z-20 bg-white/95 backdrop-blur rounded-b-2xl p-4 border-t border-slate-200 flex justify-end gap-2">
-              <button onClick={() => router.push("/emailTemplates")} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
+              <button onClick={() => { [...newUploads.current].forEach(dropUpload); router.push("/emailTemplates"); }} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
               <button
                 onClick={handleSave}
                 disabled={saving || !form.emailAccountGuid}
