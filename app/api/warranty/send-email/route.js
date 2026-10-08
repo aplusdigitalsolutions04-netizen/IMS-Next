@@ -25,16 +25,21 @@ export const POST = withErrorHandling(async (request) => {
   if (!to) throw new ApiError(400, '"To" email is required');
   if (!subject) throw new ApiError(400, "Subject is required");
   const validEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s).trim());
-  if (!validEmail(to)) throw new ApiError(400, 'Invalid "To" email address');
-  if (cc && !cc.split(",").every((e) => validEmail(e.trim()))) throw new ApiError(400, "Invalid CC email address");
-  if (bcc && !bcc.split(",").every((e) => validEmail(e.trim()))) throw new ApiError(400, "Invalid BCC email address");
+  // To / CC / BCC may each hold several addresses, separated by comma or semicolon.
+  const splitList = (s) => String(s || "").split(/[,;]+/).map((e) => e.trim()).filter(Boolean);
+  const toList = splitList(to);
+  if (!toList.length || !toList.every(validEmail)) throw new ApiError(400, 'Invalid "To" email address');
+  const ccList = splitList(cc);
+  if (!ccList.every(validEmail)) throw new ApiError(400, "Invalid CC email address");
+  const bccList = splitList(bcc);
+  if (!bccList.every(validEmail)) throw new ApiError(400, "Invalid BCC email address");
 
   try {
     // `purpose` comes from whichever template the user picked in the compose
     // flow — that decides which connected email account the send resolves
     // to (falls back to "warranty" for older callers that don't send it).
     const resolvedAttachments = await resolveEmailAttachments(attachments, { orderGuid, companyGuid: user.companyId });
-    await sendWarrantyEmail({ companyGuid: user.companyId, purpose: purpose || "warranty", accountGuid, to, cc, bcc, subject, body: emailBody, bodyHtml, attachments: resolvedAttachments, orderGuid });
+    await sendWarrantyEmail({ companyGuid: user.companyId, purpose: purpose || "warranty", accountGuid, to: toList.join(", "), cc: ccList.join(", "), bcc: bccList.join(", "), subject, body: emailBody, bodyHtml, attachments: resolvedAttachments, orderGuid });
   } catch (err) {
     console.error("[warranty] POST /send-email:", err);
     throw new ApiError(500, err.message || "Failed to send email");

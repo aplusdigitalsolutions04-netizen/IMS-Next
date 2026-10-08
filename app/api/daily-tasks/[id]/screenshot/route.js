@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import sharp from "sharp";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, requireCompany, requirePermission, isSuperUser, ApiError } from "@/lib/auth";
 import { normalizeRole } from "@/lib/helpers";
@@ -13,6 +12,15 @@ const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 // server, using the server's clock and the logged-in account — not by the
 // browser — so the stamp can't be faked by whoever took the screenshot.
 async function stampImage(buffer, label) {
+  // Loaded here (not at the top of the file) so a server where the native `sharp` binary is missing returns a
+  // readable message instead of a bare "Internal Server Error" for every upload.
+  let sharp;
+  try {
+    sharp = (await import("sharp")).default;
+  } catch (err) {
+    console.error("[daily-tasks] sharp could not be loaded:", err);
+    throw new ApiError(500, "Image processing is not available on the server (the 'sharp' package is missing or not built for this server). Ask the admin to run: npm install sharp");
+  }
   const img = sharp(buffer);
   const { width = 1280, height = 720 } = await img.metadata();
   const barH = Math.max(34, Math.round(height * 0.045));
@@ -55,10 +63,17 @@ export const POST = withErrorHandling(async (request, { params }) => {
   try {
     stamped = await stampImage(raw, `${name}  •  ${when}`);
   } catch (err) {
+    if (err instanceof ApiError) throw err; // e.g. sharp missing on the server — say so
     throw new ApiError(400, "That file isn't a valid image.");
   }
 
-  const saved = await saveUploadedFile(new File([stamped], "screenshot.png", { type: "image/png" }), { prefix: "dailytask", folder: "dailyTaskScreenshot" });
+  let saved;
+  try {
+    saved = await saveUploadedFile(new File([stamped], "screenshot.png", { type: "image/png" }), { prefix: "dailytask", folder: "dailyTaskScreenshot" });
+  } catch (err) {
+    console.error("[daily-tasks] screenshot upload failed:", err);
+    throw new ApiError(500, `Could not save the screenshot (${err?.message || "storage error"}). Check the Google Drive connection in Settings.`);
+  }
   if (row.screenshotFilename) await deleteUploadedFile(row.screenshotFilename);
   await mysqlPool.query("UPDATE daily_tasks SET screenshotFilename = ?, screenshotAt = NOW() WHERE guid = ?", [saved.filename, id]);
 
