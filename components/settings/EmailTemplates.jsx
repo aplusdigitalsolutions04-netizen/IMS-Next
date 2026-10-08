@@ -1,11 +1,14 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Plus, Pencil, Trash2, X, Loader2, Save, Eye, EyeOff, Tags, Lock, ArrowLeft } from "lucide-react";
+import { FileText, Plus, Pencil, Trash2, X, Loader2, Save, Eye, EyeOff, Tags, Lock, ArrowLeft, Paperclip } from "lucide-react";
 import Swal from "sweetalert2";
 import api from "@/lib/client/apiClient";
 import { useCompany } from "@/lib/client/CompanyContext";
 import LogoText from "@/components/common/LogoText";
+import RichTextEditor from "@/components/settings/RichTextEditor";
+import EmailHtmlPreview from "@/components/common/EmailHtmlPreview";
+import { bodyAsHtml, htmlIsEmpty } from "@/lib/emailHtml";
 
 const EMPTY_FORM = {
   guid: null,
@@ -18,6 +21,7 @@ const EMPTY_FORM = {
   emailBcc: "",
   isActive: true,
   emailAccountGuid: "",
+  attachments: [],
 };
 
 // Mirrors the fixed set app/api/warranty/email-preview/[orderGuid]/route.js
@@ -105,6 +109,16 @@ function insertAtCursor(ref, text) {
 }
 
 // formFor: undefined = the list, "new" = full-page new-template form, <guid> = full-page edit form.
+// `attachments` comes back from the API as a JSON string.
+const parseAttachments = (raw) => {
+  try {
+    const list = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+};
+
 export default function EmailTemplates({ formFor } = {}) {
   const router = useRouter();
   const [formReady, setFormReady] = useState(false);
@@ -123,7 +137,6 @@ export default function EmailTemplates({ formFor } = {}) {
   const [openGroups, setOpenGroups] = useState(() => new Set(["Order & Invoice"]));
 
   const subjectRef = useRef(null);
-  const bodyRef = useRef(null);
   const lastFocus = useRef("body"); // 'subject' | 'body'
 
   const load = async () => {
@@ -180,11 +193,12 @@ export default function EmailTemplates({ formFor } = {}) {
       purpose: tpl.purpose,
       templateName: tpl.templateName,
       emailSubject: tpl.emailSubject,
-      emailBody: tpl.emailBody,
+      emailBody: bodyAsHtml(tpl.emailBody),
       emailCc: tpl.emailCc || "",
       emailBcc: tpl.emailBcc || "",
       isActive: !!tpl.isActive,
       emailAccountGuid: tpl.emailAccountGuid || "",
+      attachments: parseAttachments(tpl.attachments),
     });
     setPreview(false);
   };
@@ -207,8 +221,17 @@ export default function EmailTemplates({ formFor } = {}) {
 
   const handleField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
+  // The body is a rich-text editor (bold, italic, lists, links, images, emoji); variables are put at its caret.
+  const [boldVars, setBoldVars] = useState(false);
+  const editorApi = useRef(null);
+
   const insertVariable = (name) => {
     const token = `{{${name}}}`;
+    if (lastFocus.current !== "subject" && editorApi.current) {
+      if (boldVars && name !== "COMPANY_LOGO") editorApi.current.insertHtml(`<b>${token}</b>`);
+      else editorApi.current.insertText(token);
+      return;
+    }
     const targetKey = lastFocus.current === "subject" ? "emailSubject" : "emailBody";
     const targetRef = lastFocus.current === "subject" ? subjectRef : bodyRef;
     const newVal = insertAtCursor(targetRef, token);
@@ -226,9 +249,35 @@ export default function EmailTemplates({ formFor } = {}) {
     setCustomVarName("");
   };
 
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const addAttachments = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    setUploadingFiles(true);
+    try {
+      const added = [];
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await api.post("/email-templates/attachment", fd, { headers: { "Content-Type": "multipart/form-data" } });
+        if (res.data?.data) added.push(res.data.data);
+      }
+      setForm((prev) => ({ ...prev, attachments: [...(prev.attachments || []), ...added] }));
+    } catch (err) {
+      Swal.fire("Error", err?.response?.data?.message || "Failed to upload file", "error");
+    } finally {
+      setUploadingFiles(false);
+    }
+  };
+  const removeAttachment = (filename) => setForm((prev) => ({ ...prev, attachments: (prev.attachments || []).filter((a) => a.filename !== filename) }));
+
   const handleSave = async () => {
     if (!form.emailAccountGuid) {
       Swal.fire("Email Account required", "Pick which email account this template sends from.", "warning");
+      return;
+    }
+    if (htmlIsEmpty(form.emailBody)) {
+      Swal.fire("Body required", "Write the email body first.", "warning");
       return;
     }
     setSaving(true);
@@ -328,6 +377,10 @@ export default function EmailTemplates({ formFor } = {}) {
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
                     Click to insert into Subject/Body at your cursor — auto-filled from the order when sent
                   </p>
+                  <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 cursor-pointer select-none">
+                    <input type="checkbox" checked={boldVars} onChange={(e) => setBoldVars(e.target.checked)} />
+                    Insert variables in <b>bold</b>
+                  </label>
                   <input
                     value={varSearch}
                     onChange={(e) => setVarSearch(e.target.value)}
@@ -357,6 +410,7 @@ export default function EmailTemplates({ formFor } = {}) {
                                   key={v.name}
                                   type="button"
                                   title={`{{${v.name}}}`}
+                                  onMouseDown={(e) => e.preventDefault()}
                                   onClick={() => insertVariable(v.name)}
                                   className="text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-1 rounded-lg transition-colors"
                                 >
@@ -493,34 +547,59 @@ export default function EmailTemplates({ formFor } = {}) {
               </div>
 
               <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Files sent with every mail <span className="normal-case font-medium text-slate-400">(optional)</span></label>
+                <div className="bg-white border border-slate-200 rounded-xl p-3">
+                  {(form.attachments || []).length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {form.attachments.map((a) => (
+                        <span key={a.filename} className="flex items-center gap-1.5 bg-slate-100 text-slate-700 text-xs px-2.5 py-1 rounded-full border border-slate-200">
+                          <Paperclip size={11} className="text-slate-400" />
+                          <a href={`/uploads/${encodeURIComponent(a.filename)}`} target="_blank" rel="noreferrer" className="hover:text-indigo-600 hover:underline max-w-[220px] truncate" title="Open this file">{a.name}</a>
+                          <button type="button" onClick={() => removeAttachment(a.filename)} title="Remove" className="text-red-400 hover:text-red-600"><X size={12} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <label className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border border-dashed border-indigo-300 text-indigo-600 hover:bg-indigo-50 cursor-pointer ${uploadingFiles ? "opacity-60 pointer-events-none" : ""}`}>
+                    {uploadingFiles ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                    {uploadingFiles ? "Uploading..." : "Add files"}
+                    <input type="file" multiple className="hidden" onChange={(e) => { addAttachments(e.target.files); e.target.value = ""; }} />
+                  </label>
+                  <p className="text-[11px] text-slate-400 mt-2">Added once here, attached automatically to every mail written from this template (they can still be removed while composing). Max 15 MB each. Save the template to keep them.</p>
+                </div>
+              </div>
+
+              <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">Email Body</label>
                   {!preview && (
+                    <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => { lastFocus.current = "body"; insertVariable("COMPANY_LOGO"); }}
                       className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg"
                       title="Puts {{COMPANY_LOGO}} where the cursor is — the logo from Company Master is embedded when the mail is sent"
                     >
                       + Insert company logo
                     </button>
+                    </div>
                   )}
                 </div>
                 {preview ? (
-                  <div className="border border-slate-200 rounded-xl px-3 py-3 text-sm bg-slate-50 text-slate-800 min-h-[220px] whitespace-pre-wrap">
-                    {form.emailBody
-                      ? <LogoText text={renderPreview(form.emailBody)} logoSrc={logoSrc} />
-                      : <span className="text-slate-400 italic">No body set</span>}
+                  <div className="border border-slate-200 rounded-xl px-3 py-3 bg-slate-50 min-h-[220px]">
+                    {!htmlIsEmpty(form.emailBody)
+                      ? <EmailHtmlPreview html={renderPreview(form.emailBody)} logoSrc={logoSrc} />
+                      : <span className="text-slate-400 italic text-sm">No body set</span>}
                   </div>
                 ) : (
-                  <textarea
-                    ref={bodyRef}
-                    rows={20}
+                  <RichTextEditor
                     value={form.emailBody}
-                    onChange={(e) => handleField("emailBody", e.target.value)}
+                    onChange={(html) => handleField("emailBody", html)}
+                    apiRef={editorApi}
                     onFocus={() => { lastFocus.current = "body"; }}
-                    placeholder={`Dear {{CUSTOMER_NAME}},\n\nYour order {{ORDER_ID}} for {{PRODUCT_NAME}} has been dispatched.\n\nThanks,\n{{COMPANY_NAME}}`}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-100 font-mono resize-y"
+                    placeholder="Write the mail. Use the toolbar for bold, italic, lists, links, images, emoji. Pick variables from the left panel."
+                    minHeight={360}
                   />
                 )}
               </div>

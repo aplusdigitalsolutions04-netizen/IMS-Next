@@ -13,7 +13,7 @@ const EMOJI_SET = [
   "🎉","✅","❌","⚠️","📌","📎","📧","📞","🚀","💡","🔥","⭐","❤️","💯","🕐","📅",
 ];
 
-export default function RichTextEditor({ value, onChange, onInsertInlineImage, placeholder, minHeight = 200 }) {
+export default function RichTextEditor({ value, onChange, onInsertInlineImage, placeholder, minHeight = 200, apiRef, onFocus }) {
   // Body editors (Compose) pass onInsertInlineImage and get a proper cid
   // attachment tracked alongside that one send. Callers with nothing to
   // attach an image to across future sends — a saved Signature, reused on
@@ -47,6 +47,17 @@ export default function RichTextEditor({ value, onChange, onInsertInlineImage, p
   };
 
   const handleInput = () => emitChange();
+
+  // Lets a parent (the template editor's variable picker) put text/HTML at the caret.
+  useEffect(() => {
+    if (!apiRef) return;
+    apiRef.current = {
+      insertText: (text) => { focusEditor(); document.execCommand("insertText", false, text); emitChange(); },
+      insertHtml: (html) => { focusEditor(); document.execCommand("insertHTML", false, html); emitChange(); },
+    };
+    return () => { apiRef.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiRef]);
 
   const insertLink = () => {
     const url = window.prompt("Link URL (include https://)");
@@ -122,10 +133,11 @@ export default function RichTextEditor({ value, onChange, onInsertInlineImage, p
         contentEditable
         suppressContentEditableWarning
         onInput={handleInput}
+        onFocus={onFocus}
         onBlur={() => setShowEmoji(false)}
         data-placeholder={placeholder}
         style={{ minHeight }}
-        className="w-full px-3 py-2 text-sm outline-none font-sans [&:empty]:before:content-[attr(data-placeholder)] [&:empty]:before:text-slate-400 overflow-y-auto"
+        className="w-full px-3 py-2 text-sm outline-none font-sans [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-6 [&_ol]:pl-6 [&_a]:text-indigo-600 [&_a]:underline [&:empty]:before:content-[attr(data-placeholder)] [&:empty]:before:text-slate-400 overflow-y-auto"
       />
     </div>
   );

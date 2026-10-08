@@ -4,6 +4,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requirePermission, authorizeMasterWrite, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { ensureEmailTemplatesAccountColumn } from "@/lib/emailAccountsMigration";
+import { serializeTemplateAttachments } from "@/lib/emailTemplateAttachments";
 
 async function validatePurpose(purpose) {
   const [[row]] = await mysqlPool.query("SELECT purposeKey FROM email_purposes WHERE purposeKey = ? AND isActive = 1", [purpose]);
@@ -31,7 +32,7 @@ export const POST = withErrorHandling(async (request) => {
   await ensureEmailTemplatesAccountColumn();
 
   const body = await parseJsonBody(request);
-  const { companyGuid, purpose, templateName, emailSubject, emailBody, isActive, emailCc, emailBcc, emailAccountGuid } = body;
+  const { companyGuid, purpose, templateName, emailSubject, emailBody, isActive, emailCc, emailBcc, emailAccountGuid, attachments } = body;
 
   await validatePurpose(purpose);
   if (!templateName?.trim()) throw new ApiError(400, "Template name is required");
@@ -41,9 +42,9 @@ export const POST = withErrorHandling(async (request) => {
 
   const guid = randomUUID();
   await mysqlPool.query(
-    `INSERT INTO email_templates (guid, companyGuid, purpose, templateName, emailSubject, emailBody, isActive, emailCc, emailBcc, emailAccountGuid)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [guid, companyGuid || null, purpose, templateName.trim(), emailSubject.trim(), emailBody, isActive === false ? 0 : 1, emailCc?.trim() || null, emailBcc?.trim() || null, emailAccountGuid || null]
+    `INSERT INTO email_templates (guid, companyGuid, purpose, templateName, emailSubject, emailBody, isActive, emailCc, emailBcc, emailAccountGuid, attachments)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [guid, companyGuid || null, purpose, templateName.trim(), emailSubject.trim(), emailBody, isActive === false ? 0 : 1, emailCc?.trim() || null, emailBcc?.trim() || null, emailAccountGuid || null, serializeTemplateAttachments(attachments)]
   );
 
   return NextResponse.json({ message: "Template created", guid });

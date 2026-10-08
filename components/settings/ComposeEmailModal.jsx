@@ -4,6 +4,7 @@ import { Mail, X, FileText, Plus, Loader2, Send, AlertCircle, CheckCircle, Trash
 import Swal from "sweetalert2";
 import api from "@/lib/client/apiClient";
 import RichTextEditor, { insertHtmlAtEnd } from "./RichTextEditor";
+import { bodyAsHtml } from "@/lib/emailHtml";
 
 // A fresh, order-independent email — for Settings > Email Inbox, where
 // there's an account (and so an accountGuid + purpose) to send from but no
@@ -54,7 +55,8 @@ export default function ComposeEmailModal({ account, onClose, onSent }) {
   // Templates are authored as plain text (Settings > Email Templates uses a
   // plain textarea) — the rich editor here treats draft.body as HTML, so a
   // bare "\n" would just be swallowed instead of showing as a line break.
-  const plainToHtml = (text) => (text || "").replace(/\n/g, "<br>");
+  // (Templates written in the rich-text editor are already HTML and are passed through as they are.)
+  const plainToHtml = (text) => bodyAsHtml(text);
 
   const pickTemplate = (tpl) => {
     setPickedTemplateGuid(tpl.guid);

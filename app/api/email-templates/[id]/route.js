@@ -3,6 +3,7 @@ import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, authorizeMasterWrite, authorizeMasterDelete, ApiError } from "@/lib/auth";
 import { withErrorHandling, parseJsonBody } from "@/lib/apiResponse";
 import { ensureEmailTemplatesAccountColumn } from "@/lib/emailAccountsMigration";
+import { serializeTemplateAttachments, deleteRemovedAttachments } from "@/lib/emailTemplateAttachments";
 
 async function validatePurpose(purpose) {
   const [[row]] = await mysqlPool.query("SELECT purposeKey FROM email_purposes WHERE purposeKey = ? AND isActive = 1", [purpose]);
@@ -16,7 +17,7 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   const { id } = await params;
 
   const body = await parseJsonBody(request);
-  const { companyGuid, purpose, templateName, emailSubject, emailBody, isActive, emailCc, emailBcc, emailAccountGuid } = body;
+  const { companyGuid, purpose, templateName, emailSubject, emailBody, isActive, emailCc, emailBcc, emailAccountGuid, attachments } = body;
 
   await validatePurpose(purpose);
   if (!templateName?.trim()) throw new ApiError(400, "Template name is required");
@@ -24,12 +25,15 @@ export const PUT = withErrorHandling(async (request, { params }) => {
   if (!emailBody?.trim()) throw new ApiError(400, "Email body is required");
   if (!emailAccountGuid) throw new ApiError(400, "An email account is required — pick which webmail this template sends from.");
 
+  const [[before]] = await mysqlPool.query("SELECT attachments FROM email_templates WHERE guid = ?", [id]);
+  const newAttachments = serializeTemplateAttachments(attachments);
   const [result] = await mysqlPool.query(
-    `UPDATE email_templates SET companyGuid = ?, purpose = ?, templateName = ?, emailSubject = ?, emailBody = ?, isActive = ?, emailCc = ?, emailBcc = ?, emailAccountGuid = ?
+    `UPDATE email_templates SET companyGuid = ?, purpose = ?, templateName = ?, emailSubject = ?, emailBody = ?, isActive = ?, emailCc = ?, emailBcc = ?, emailAccountGuid = ?, attachments = ?
      WHERE guid = ?`,
-    [companyGuid || null, purpose, templateName.trim(), emailSubject.trim(), emailBody, isActive === false ? 0 : 1, emailCc?.trim() || null, emailBcc?.trim() || null, emailAccountGuid || null, id]
+    [companyGuid || null, purpose, templateName.trim(), emailSubject.trim(), emailBody, isActive === false ? 0 : 1, emailCc?.trim() || null, emailBcc?.trim() || null, emailAccountGuid || null, newAttachments, id]
   );
   if (result.affectedRows === 0) throw new ApiError(404, "Template not found");
+  await deleteRemovedAttachments(before?.attachments, newAttachments);
 
   return NextResponse.json({ message: "Template updated" });
 });
@@ -39,8 +43,11 @@ export const DELETE = withErrorHandling(async (request, { params }) => {
   authorizeMasterDelete(user, "emailTemplates", "You do not have permission to delete email templates.");
   const { id } = await params;
 
+  await ensureEmailTemplatesAccountColumn();
+  const [[before]] = await mysqlPool.query("SELECT attachments FROM email_templates WHERE guid = ?", [id]);
   const [result] = await mysqlPool.query("DELETE FROM email_templates WHERE guid = ?", [id]);
   if (result.affectedRows === 0) throw new ApiError(404, "Template not found");
+  await deleteRemovedAttachments(before?.attachments, null);
 
   return NextResponse.json({ message: "Template deleted" });
 });

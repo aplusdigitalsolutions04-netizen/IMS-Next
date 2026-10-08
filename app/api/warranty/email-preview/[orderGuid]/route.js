@@ -1,4 +1,7 @@
 import { getOrderEmailDocuments } from "@/lib/orderEmailDocuments";
+import { ensureEmailTemplatesAccountColumn } from "@/lib/emailAccountsMigration";
+import { parseTemplateAttachments } from "@/lib/emailTemplateAttachments";
+import { bodyAsHtml, escapeHtml } from "@/lib/emailHtml";
 import { NextResponse } from "next/server";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireCompany, ApiError } from "@/lib/auth";
@@ -70,9 +73,11 @@ export const GET = withErrorHandling(async (request, { params }) => {
   let template = defaultTemplate;
   let chosenPurpose = null;
   let chosenAccountGuid = null;
+  let templateAttachments = [];
   if (templateGuid) {
+    await ensureEmailTemplatesAccountColumn();
     const [chosenRows] = await mysqlPool.query(
-      `SELECT emailSubject, emailBody, emailCc, emailBcc, purpose, emailAccountGuid FROM email_templates
+      `SELECT emailSubject, emailBody, emailCc, emailBcc, purpose, emailAccountGuid, attachments FROM email_templates
        WHERE guid = ? AND isActive = 1 AND (companyGuid = ? OR companyGuid IS NULL)`,
       [templateGuid, user.companyId]
     );
@@ -82,6 +87,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
       // An explicit account on the template wins outright — the purpose
       // match alone can't tell two accounts sharing a purpose apart.
       chosenAccountGuid = chosen.emailAccountGuid || null;
+      templateAttachments = parseTemplateAttachments(chosen.attachments);
       template = {
         ...defaultTemplate,
         emailSubject: chosen.emailSubject,
@@ -169,11 +175,13 @@ export const GET = withErrorHandling(async (request, { params }) => {
     "{{WARRANTY_START_DATE}}": fmt(order.warrantyStartDate),
   };
 
-  const fillText = (text) => {
+  // Subject is plain text; the body is HTML (the rich-text editor), so values dropped into it are HTML-escaped.
+  const fillText = (text, { html = false } = {}) => {
     if (!text) return "";
     let out = text;
     for (const [k, v] of Object.entries(emailVars)) {
-      out = out.split(k).join(v || "");
+      const val = html ? escapeHtml(v || "").replace(/\n/g, "<br>") : v || "";
+      out = out.split(k).join(val);
     }
     return out;
   };
@@ -201,7 +209,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
   addRecipients(template.emailTo, "Template default");
 
   const subject = fillText(template.emailSubject || "");
-  const body = fillText(template.emailBody || "");
+  const body = fillText(bodyAsHtml(template.emailBody || ""), { html: true });
 
   // Anything still in {{...}} form after fillText() isn't one of the fixed
   // vars above — rather than silently leaving literal "{{FOO}}" text in the
@@ -219,6 +227,7 @@ export const GET = withErrorHandling(async (request, { params }) => {
     to,
     recipientOptions,
     documents,
+    templateAttachments,
     cc: template.emailCc || "",
     bcc: template.emailBcc || "",
     subject,

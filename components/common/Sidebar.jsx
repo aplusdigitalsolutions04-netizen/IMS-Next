@@ -61,8 +61,9 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
 
   const activeTab = pathname.split("/")[1] || "dashboard";
 
+  // Accordion: opening a submenu closes the others, so the list never grows past one open group (less scrolling).
   const toggleSubmenu = (menu) => {
-    setExpandedMenus((prev) => ({ ...prev, [menu]: !prev[menu] }));
+    setExpandedMenus((prev) => (prev[menu] ? {} : { [menu]: true }));
   };
 
   const navItems = [
@@ -94,30 +95,56 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
     { id: "dispatch", label: " Dispatch", icon: Truck, group: "orders", permission: "dispatch" },
     { id: "stockOut", label: "Stock Out", icon: Receipt, group: "orders", permission: "stat_stock_out" },
 
-    // Operations
+    // Returns, Damaged & Installations
     { id: "returns", label: "Returns", icon: RotateCcw, group: "operations", permission: "returns" },
     { id: "damaged", label: "Damaged", icon: Bell, group: "operations", permission: "damage" },
+    { id: "installations", label: "Installations", icon: Wrench, badgeColor: "orange", group: "operations", permission: "installation" },
+
+    // Work
+    { id: "tasks", label: "Tasks", icon: ListChecks, group: "work", permission: "tasks" },
+    { id: "dailyTasks", label: "Daily Tasks", icon: ClipboardList, group: "work", permission: "dailyTasks" },
+    { id: "credentials", label: "Credentials", icon: KeyRound, group: "work", permission: "credentials" },
 
     // Independent
     { id: "billing", label: "Billing", icon: Receipt, permission: "billing" },
     { id: "warranty", label: "Warranty Certs", icon: ShieldAlert, permission: "warranty" },
-    { id: "installations", label: "Installations", icon: Wrench, badgeColor: "orange", permission: "installation" },
-    { id: "tasks", label: "Tasks", icon: ListChecks, permission: "tasks" },
   ].filter((item) => hasPermission(item.permission));
 
   const hasGroup = (group) => navItems.some((i) => i.group === group);
+
+  // Which submenu the current page lives in, so it is open when you land on / reload that page.
+  const SETTINGS_GROUPS = {
+    master: ["companyMaster", "platformMaster", "deliveryPartnerMaster", "clientMaster", "carePackMaster"],
+    user: ["users", "roles", "userActivity"],
+    email: ["emailAccounts", "emailTemplates"],
+    admin: ["apiLogs", "backupRestore", "rateLimitSettings", "aiSettings", "googleDrive", "deletedItems"],
+  };
+  const groupOfTab = () => {
+    if (activeTab === "contracts") return "contracts";
+    if (activeTab === "sentEmails" || activeTab === "emailInbox") return "mainEmail";
+    const item = navItems.find((i) => i.group && i.id === activeTab);
+    if (item) return item.group;
+    return Object.keys(SETTINGS_GROUPS).find((g) => SETTINGS_GROUPS[g].includes(activeTab)) || null;
+  };
+  const [syncedPath, setSyncedPath] = useState(null);
+  if (syncedPath !== pathname) {
+    setSyncedPath(pathname);
+    const g = groupOfTab();
+    if (g) setExpandedMenus({ [g]: true });
+  }
 
   if (!isSidebarVisible) {
     const mastersGroup = ["categoryMaster","brandMaster","vendorMaster","categoryBrandMapping","unitMaster","itemMaster","comboMaster","godownMaster","fbfFbaMaster"];
     const inventoryGroup = ["currentStock","stockIn","fbfFbaManagement","godownTransfer"];
     const ordersGroup = ["orderTracking","dispatch","stockOut"];
-    const operationsGroup = ["returns","damaged"];
+    const operationsGroup = ["returns","damaged","installations"];
+    const workGroup = ["tasks","dailyTasks","credentials"];
     const mainEmailGroup = ["sentEmails","emailInbox"];
     const settingsGroup = ["companyMaster","users","roles","userActivity","reports","profile","userGuide","settings","notifications","warrantyEmail","emailAccounts","emailTemplates","apiLogs","backupRestore","rateLimitSettings","aiSettings","platformMaster","deliveryPartnerMaster","clientMaster","carePackMaster","googleDrive","deletedItems"];
 
     const expandTo = (group) => {
       setIsSidebarVisible(true);
-      setExpandedMenus((prev) => ({ ...prev, [group]: true }));
+      setExpandedMenus({ [group]: true });
     };
 
     return (
@@ -194,42 +221,6 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               <ShieldAlert size={20} />
             </Link>
           )}
-          {hasPermission('installation') && (
-            <Link
-              href="/installations"
-              title="Installations"
-              className={`p-2.5 rounded-xl transition-colors ${activeTab === "installations" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-            >
-              <Wrench size={20} />
-            </Link>
-          )}
-          {hasPermission('tasks') && (
-            <Link
-              href="/tasks"
-              title="Tasks"
-              className={`p-2.5 rounded-xl transition-colors ${activeTab === "tasks" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-            >
-              <ListChecks size={20} />
-            </Link>
-          )}
-          {hasPermission('credentials') && (
-            <Link
-              href="/credentials"
-              title="Credentials"
-              className={`p-2.5 rounded-xl transition-colors ${activeTab === "credentials" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-            >
-              <KeyRound size={20} />
-            </Link>
-          )}
-          {hasPermission('dailyTasks') && (
-            <Link
-              href="/dailyTasks"
-              title="Daily Tasks"
-              className={`p-2.5 rounded-xl transition-colors ${activeTab === "dailyTasks" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
-            >
-              <ClipboardList size={20} />
-            </Link>
-          )}
           {(hasPermission('sentEmails') || hasPermission('emailInbox')) && (
             <button
               onClick={() => expandTo("mainEmail")}
@@ -239,10 +230,19 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
               <Mail size={20} />
             </button>
           )}
+          {hasGroup("work") && (
+            <button
+              onClick={() => expandTo("work")}
+              title="Work"
+              className={`p-2.5 rounded-xl transition-colors ${workGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              <ListChecks size={20} />
+            </button>
+          )}
           {hasGroup("operations") && (
             <button
               onClick={() => expandTo("operations")}
-              title="Returns & Damaged"
+              title="Returns & Installations"
               className={`p-2.5 rounded-xl transition-colors ${operationsGroup.includes(activeTab) ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"}`}
             >
               <RotateCcw size={20} />
@@ -567,34 +567,6 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
           </Link>
         )}
 
-        {/* INSTALLATIONS */}
-        {hasPermission('installation') && (
-          <Link href="/installations" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'installations' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <Wrench size={18} /> <span>Installations</span>
-          </Link>
-        )}
-
-        {/* TASKS */}
-        {hasPermission('tasks') && (
-          <Link href="/tasks" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'tasks' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <ListChecks size={18} /> <span>Tasks</span>
-          </Link>
-        )}
-
-        {/* CREDENTIALS */}
-        {hasPermission('credentials') && (
-          <Link href="/credentials" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'credentials' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <KeyRound size={18} /> <span>Credentials</span>
-          </Link>
-        )}
-
-        {/* DAILY TASKS */}
-        {hasPermission('dailyTasks') && (
-          <Link href="/dailyTasks" className={`w-full flex gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'dailyTasks' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <ClipboardList size={18} /> <span>Daily Tasks</span>
-          </Link>
-        )}
-
         {/* EMAIL (Sent Emails + Email Inbox) */}
         {(hasPermission('sentEmails') || hasPermission('emailInbox')) && (
           <div className="space-y-1">
@@ -619,11 +591,30 @@ export default function Sidebar({ currentUser, isAdmin, hasPermission = () => fa
           </div>
         )}
 
-        {/* OPERATIONS */}
+        {/* WORK (Tasks, Daily Tasks, Credentials) */}
+        {hasGroup("work") && (
+          <div className="space-y-1">
+            <button onClick={() => toggleSubmenu("work")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
+              <div className="flex items-center gap-3"><ListChecks size={18} /><span>Work</span></div>
+              {expandedMenus.work ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {expandedMenus.work && (
+              <div className="space-y-1 ml-4 border-l border-slate-100 animate-in slide-in-from-top-1">
+                {navItems.filter(i => i.group === "work").map(item => (
+                  <Link key={item.id} href={`/${item.id}`} className={`w-full flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === item.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`}>
+                    {item.icon && <item.icon size={14} className="flex-shrink-0" />} <span className="truncate">{item.label}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* OPERATIONS (Returns, Damaged, Installations) */}
         {hasGroup("operations") && (
           <div className="space-y-1">
             <button onClick={() => toggleSubmenu("operations")} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-600 hover:bg-slate-100">
-              <div className="flex items-center gap-3"><RotateCcw size={18} /><span>Returns & Damaged</span></div>
+              <div className="flex items-center gap-3"><RotateCcw size={18} /><span>Returns & Installations</span></div>
               {expandedMenus.operations ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
             {expandedMenus.operations && (

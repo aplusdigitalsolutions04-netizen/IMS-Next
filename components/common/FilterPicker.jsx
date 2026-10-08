@@ -9,6 +9,8 @@ import { SlidersHorizontal, Check, RotateCcw } from "lucide-react";
 //   shown     Set of keys currently shown in the toolbar
 export default function FilterPicker({ filters, shown, onToggle, onShowAll, onClearValues }) {
   const [open, setOpen] = useState(false);
+  // Which edge the popup hangs from: it opens to the right of the button, unless that would run off the screen.
+  const [alignRight, setAlignRight] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -24,7 +26,11 @@ export default function FilterPicker({ filters, shown, onToggle, onShowAll, onCl
     <div className="relative shrink-0" ref={ref}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          const rect = ref.current?.getBoundingClientRect();
+          setAlignRight(!!rect && rect.left + 256 > window.innerWidth - 12);
+          setOpen((v) => !v);
+        }}
         className={`relative flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${open || activeCount ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"}`}
         title="Choose which filters to use"
       >
@@ -36,7 +42,7 @@ export default function FilterPicker({ filters, shown, onToggle, onShowAll, onCl
       </button>
 
       {open && (
-        <div className="absolute z-50 right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl p-2">
+        <div className={`absolute z-50 ${alignRight ? "right-0" : "left-0"} mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl p-2`}>
           <p className="px-2 pt-1 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Show these filters</p>
           {filters.map((f) => {
             const on = shown.has(f.key);

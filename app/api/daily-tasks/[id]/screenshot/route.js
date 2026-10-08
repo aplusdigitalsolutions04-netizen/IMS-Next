@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { execFile } from "child_process";
 import { mysqlPool } from "@/lib/db";
 import { authenticateRequest, requireAuth, requireCompany, requirePermission, isSuperUser, ApiError } from "@/lib/auth";
 import { normalizeRole } from "@/lib/helpers";
@@ -19,7 +20,16 @@ async function stampImage(buffer, label) {
     sharp = (await import("sharp")).default;
   } catch (err) {
     console.error("[daily-tasks] sharp could not be loaded:", err);
-    throw new ApiError(500, "Image processing is not available on the server (the 'sharp' package is missing or not built for this server). Ask the admin to run: npm install sharp");
+    // No SSH on this host, so try to install it ourselves once, then retry.
+    try {
+      await new Promise((resolve, reject) =>
+        execFile("npm", ["install", "sharp@0.35.0", "--no-save", "--no-audit", "--no-fund", "--force"], { shell: true, cwd: process.cwd(), timeout: 240000 }, (e) => (e ? reject(e) : resolve()))
+      );
+      sharp = (await import("sharp")).default;
+    } catch (err2) {
+      console.error("[daily-tasks] automatic sharp install failed:", err2);
+      throw new ApiError(500, "Image processing is not available on the server (the 'sharp' package is missing or not built for this server). Restart the app so it can install it, or run: npm install sharp");
+    }
   }
   const img = sharp(buffer);
   const { width = 1280, height = 720 } = await img.metadata();

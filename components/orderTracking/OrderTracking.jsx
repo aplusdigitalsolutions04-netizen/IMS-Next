@@ -2080,6 +2080,7 @@ export default function OrderTracking({
                   </th>
                 )}
                 <th className="p-4 w-10 text-center text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">#</th>
+                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Action</th>
                 <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Order ID</th>
                 {visibleCols.has("platform") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Platform</th>}
                 {visibleCols.has("category") && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap">Category</th>}
@@ -2097,7 +2098,6 @@ export default function OrderTracking({
                 )}
                 {visibleCols.has("billing") && activeTab === "active" && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Billing / Dispatch</th>}
                 {visibleCols.has("billing") && activeTab === "draft" && <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Billing</th>}
-                <th className="p-4 text-xs uppercase tracking-wider text-slate-500 font-bold whitespace-nowrap text-center">Action</th>
               </tr>
             </thead>
 
@@ -2204,6 +2204,47 @@ export default function OrderTracking({
                       )}
                       <td className="p-4 text-center text-slate-400 font-medium text-sm">
                         {(currentPage - 1) * itemsPerPage + index + 1}
+                      </td>
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          {isRestoreEligible && (
+                            <button
+                              onClick={() => handleRestoreBatch(batch)}
+                              disabled={!isAdmin || isRestoringBatch}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md font-semibold text-[11px] transition-colors ${isAdmin
+                                  ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                  : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                } disabled:opacity-60 disabled:cursor-not-allowed`}
+                              title={isAdmin ? "Restore cancelled order" : "Admin only"}
+                            >
+                              {isRestoringBatch ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                              <span className="hidden sm:inline">{isRestoringBatch ? "Restoring" : "Restore"}</span>
+                            </button>
+                          )}
+
+                          <button
+                            onClick={(e) => openAppearanceModal(e, batch)}
+                            className="p-1.5 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-sm"
+                            title="Appearance & Tags"
+                          >
+                            <Palette size={14} />
+                          </button>
+
+                          <button
+                            onClick={() => openModal(batch)}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md font-semibold text-[11px] transition-colors ${activeTab === "cancelled"
+                                ? "bg-red-50 text-red-600 hover:bg-red-100"
+                                : activeTab === "hold"
+                                  ? "bg-yellow-50 text-yellow-600 hover:bg-yellow-100"
+                                  : activeTab === "completed"
+                                    ? "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                    : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
+                              }`}
+                          >
+                            <Eye size={12} />
+                            <span className="hidden sm:inline">View</span>
+                          </button>
+                        </div>
                       </td>
                       <td className="p-4">
                         <div className="min-w-0">
@@ -2459,47 +2500,6 @@ export default function OrderTracking({
                         </td>
                       )}
 
-                      <td className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          {isRestoreEligible && (
-                            <button
-                              onClick={() => handleRestoreBatch(batch)}
-                              disabled={!isAdmin || isRestoringBatch}
-                              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md font-semibold text-[11px] transition-colors ${isAdmin
-                                  ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                  : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                                } disabled:opacity-60 disabled:cursor-not-allowed`}
-                              title={isAdmin ? "Restore cancelled order" : "Admin only"}
-                            >
-                              {isRestoringBatch ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
-                              <span className="hidden sm:inline">{isRestoringBatch ? "Restoring" : "Restore"}</span>
-                            </button>
-                          )}
-
-                          <button
-                            onClick={(e) => openAppearanceModal(e, batch)}
-                            className="p-1.5 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-sm"
-                            title="Appearance & Tags"
-                          >
-                            <Palette size={14} />
-                          </button>
-
-                          <button
-                            onClick={() => openModal(batch)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md font-semibold text-[11px] transition-colors ${activeTab === "cancelled"
-                                ? "bg-red-50 text-red-600 hover:bg-red-100"
-                                : activeTab === "hold"
-                                  ? "bg-yellow-50 text-yellow-600 hover:bg-yellow-100"
-                                  : activeTab === "completed"
-                                    ? "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                    : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
-                              }`}
-                          >
-                            <Eye size={12} />
-                            <span className="hidden sm:inline">View</span>
-                          </button>
-                        </div>
-                      </td>
                     </tr>
                   );
                 })

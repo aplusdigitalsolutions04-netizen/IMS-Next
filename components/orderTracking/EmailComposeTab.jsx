@@ -1,4 +1,7 @@
 "use client";
+import RichTextEditor from "@/components/settings/RichTextEditor";
+import EmailHtmlPreview from "@/components/common/EmailHtmlPreview";
+import { escapeHtml, htmlIsEmpty, htmlToText } from "@/lib/emailHtml";
 import React from "react";
 import { Mail, RefreshCw, Eye, AlertCircle, CheckCircle, Send, Plus, X, FileText, Loader2, History, PenSquare, CornerUpLeft, ExternalLink } from "lucide-react";
 import api from "@/lib/client/apiClient";
@@ -14,6 +17,8 @@ import LogoText from "@/components/common/LogoText";
 // rendered while the Email tab is active.
 // A stored order document, shown as an attachment chip. Sent by reference
 // (the server reads the file itself), so nothing is downloaded to the browser.
+// A file saved on the email template itself (goes with every mail from that template).
+const templateFileToAttachment = (f) => ({ name: f.name, ref: true, template: true, filename: f.filename });
 const docToAttachment = (d) => ({ name: d.displayName || d.label, ref: true, filename: d.filename });
 
 // Opens an attachment in a new tab so it can be checked before sending: a stored
@@ -116,7 +121,8 @@ export default function EmailComposeTab({ orderGuid }) {
       }
       const docs = Array.isArray(res.data?.documents) ? res.data.documents : [];
       setOrderDocs(docs);
-      setEmailAttachments(docs.map(docToAttachment));
+      const tplFiles = Array.isArray(res.data?.templateAttachments) ? res.data.templateAttachments : [];
+      setEmailAttachments([...docs.map(docToAttachment), ...tplFiles.map(templateFileToAttachment)]);
       // The template's own Email Account wins when it has one; otherwise
       // (older template with none set, or "Skip") fall back to the sole
       // account if there's only one — same rule Email Templates uses.
@@ -229,7 +235,7 @@ export default function EmailComposeTab({ orderGuid }) {
     setEmailDraft((d) => ({
       ...d,
       subject: d.subject.split(token).join(value),
-      body: d.body.split(token).join(value),
+      body: d.body.split(token).join(escapeHtml(value)),
     }));
     setPendingVars((prev) => prev.filter((v) => v !== varName));
   };
@@ -237,7 +243,7 @@ export default function EmailComposeTab({ orderGuid }) {
   const handleSendEmail = async () => {
     if (!emailDraft?.to?.trim()) { setEmailError('"To" email is required'); return; }
     if (!emailDraft?.subject?.trim()) { setEmailError('Subject is required'); return; }
-    if (!emailDraft?.body?.trim()) { setEmailError('Email body is required'); return; }
+    if (htmlIsEmpty(emailDraft?.body)) { setEmailError('Email body is required'); return; }
     if (pendingVars.length > 0) { setEmailError(`Fill in the highlighted variable${pendingVars.length > 1 ? "s" : ""} below before sending.`); return; }
     if (!pickedAccountGuid) { setEmailError("Pick which email account to send from."); return; }
     setEmailSending(true);
@@ -248,12 +254,13 @@ export default function EmailComposeTab({ orderGuid }) {
         cc: emailDraft.cc,
         bcc: emailDraft.bcc,
         subject: emailDraft.subject,
-        body: emailDraft.body,
+        body: htmlToText(emailDraft.body),
+        bodyHtml: emailDraft.body,
         purpose: pickedTemplatePurpose,
         accountGuid: pickedAccountGuid,
         orderGuid,
         attachments: emailAttachments.map((a) => (a.ref
-          ? { ref: true, filename: a.filename }
+          ? { ref: true, filename: a.filename, ...(a.template ? { template: true, name: a.name } : {}) }
           : { filename: a.name, content: a.base64, encoding: "base64", contentType: a.type })),
       });
       setEmailSent(true);
@@ -465,8 +472,8 @@ export default function EmailComposeTab({ orderGuid }) {
                 {emailDraft.bcc && <div><span className="font-bold text-slate-700 w-14 inline-block">BCC:</span> {emailDraft.bcc}</div>}
                 <div><span className="font-bold text-slate-700 w-14 inline-block">Sub:</span> {emailDraft.subject || <em className="text-slate-400">—</em>}</div>
               </div>
-              <div className="border border-slate-200 rounded-xl p-4 bg-white text-sm text-slate-800 whitespace-pre-wrap leading-relaxed font-sans min-h-[160px]">
-                {emailDraft.body ? <LogoText text={emailDraft.body} logoSrc={logoSrc} /> : <span className="text-slate-400 italic">No body content</span>}
+              <div className="border border-slate-200 rounded-xl p-4 bg-white min-h-[160px]">
+                {!htmlIsEmpty(emailDraft.body) ? <EmailHtmlPreview html={emailDraft.body} logoSrc={logoSrc} /> : <span className="text-slate-400 italic text-sm">No body content</span>}
               </div>
               {emailAttachments.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -541,7 +548,12 @@ export default function EmailComposeTab({ orderGuid }) {
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Body</label>
-                <textarea rows={18} value={emailDraft.body} onChange={(e) => setEmailDraft((d) => ({ ...d, body: e.target.value }))} className="w-full min-h-[360px] border border-slate-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:ring-2 focus:ring-indigo-400 outline-none resize-y font-mono" />
+                <RichTextEditor
+                  value={emailDraft.body}
+                  onChange={(html) => setEmailDraft((d) => ({ ...d, body: html }))}
+                  placeholder="Write your email..."
+                  minHeight={360}
+                />
                 {String(emailDraft.body || "").includes("{{COMPANY_LOGO}}") && (
                   <div className="mt-2 flex items-center gap-3 border border-dashed border-indigo-200 bg-indigo-50/50 rounded-lg px-3 py-2">
                     <div className="shrink-0">
