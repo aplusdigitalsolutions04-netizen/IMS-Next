@@ -32,8 +32,7 @@ function installSharp() {
         () =>
           new Promise((resolve, reject) =>
             execFile(cmd, args, { shell, cwd: process.cwd(), timeout: 240000, maxBuffer: 4 * 1024 * 1024 }, (e, stdout, stderr) => {
-              if (e) return reject(new Error(shortReason(String(stderr || "").trim().split("
-").slice(-3).join(" ") || e.message)));
+              if (e) return reject(new Error(shortReason(String(stderr || "").trim().split(/\r?\n/).slice(-3).join(" ") || e.message)));
               resolve("npm install finished");
             })
           )
